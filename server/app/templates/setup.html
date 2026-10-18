@@ -65,6 +65,12 @@
     </label>
     <label>From address <input name="from_address" type="email" value="{{ email.from_address }}" placeholder="comsense@example.com" required></label>
     <label>From name <input name="from_name" value="{{ email.from_name }}"></label>
+    <label class="wide">DNS servers for looking up the SMTP server (optional)
+      <input name="dns_servers" value="{{ email.dns_servers|join(", ") }}" placeholder="e.g. 1.1.1.1, 9.9.9.9">
+    </label>
+    <p class="small muted wide">Leave empty to use the server's own DNS. Fill in when sending fails with
+    "could not look up" or "name resolution", e.g. a container whose DNS does not work. The certificate is still
+    checked against the SMTP server's name.</p>
     <div class="wide"><button class="primary">Save email settings</button></div>
   </form>
   {% if email.configured %}

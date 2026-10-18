@@ -138,6 +138,7 @@ def settings_email(
     clear_password: bool = Form(False),
     from_address: str = Form(""),
     from_name: str = Form(""),
+    dns_servers: str = Form(""),
     back: str = Form("/settings/email"),
     next: str = Form("/settings/email"),
     settings: Settings = Depends(get_settings),
@@ -151,6 +152,13 @@ def settings_email(
         return redirect(_page(back, "/settings/email"))
     if security not in SMTP_SECURITY or not 1 <= port <= 65535:
         raise HTTPException(400, "Invalid SMTP security or port")
+    servers = []
+    for entry in (e for e in re.split(r"[\s,;]+", dns_servers.strip()) if e):
+        try:
+            servers.append(str(ipaddress.ip_address(entry)))
+        except ValueError:
+            flash(request, f"DNS servers must be IP addresses: {entry}", "error")
+            return redirect(_page(back, "/settings/email"))
     cfg.enabled = enabled
     cfg.host = host[:255]
     cfg.port = port
@@ -158,6 +166,7 @@ def settings_email(
     cfg.username = username.strip()[:255]
     cfg.from_address = from_address[:255]
     cfg.from_name = from_name.strip()[:128]
+    cfg.dns_servers = servers[:4]
     if clear_password:
         cfg.password_encrypted = ""
     elif password:

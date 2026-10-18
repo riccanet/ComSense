@@ -3,6 +3,7 @@ from __future__ import annotations
 import email
 import re
 import socketserver
+import struct
 import threading
 from datetime import timedelta
 
@@ -275,3 +276,45 @@ def test_profile_email_and_alert_opt_in(client, db):
     admin = db.scalar(select(User).where(User.username == "admin"))
     db.refresh(admin)
     assert admin.email == "me@example.com" and admin.email_alerts
+
+
+class _DNSHandler(socketserver.BaseRequestHandler):
+    """Answers every A query with 127.0.0.1 (via a CNAME first), like a public resolver would."""
+
+    def handle(self):
+        data, sock = self.request
+        self.server.queries.append(data)
+        qid = data[:2]
+        question = data[12:]
+        cname = b"\xc0\x0c" + struct.pack(">HHIH", 5, 1, 60, 6) + b"\x03abc\xc0\x0c"
+        answer = b"\xc0\x0c" + struct.pack(">HHIH", 1, 1, 60, 4) + bytes([127, 0, 0, 1])
+        sock.sendto(qid + struct.pack(">HHHHH", 0x8180, 1, 2, 0, 0) + question + cname + answer, self.client_address)
+
+
+def test_smtp_server_looked_up_through_configured_dns_servers(client, db, smtp, monkeypatch):
+    from app.services import dnsresolve
+
+    dns = socketserver.ThreadingUDPServer(("127.0.0.1", 0), _DNSHandler)
+    dns.queries = []
+    threading.Thread(target=dns.serve_forever, daemon=True).start()
+    monkeypatch.setattr(dnsresolve, "DNS_PORT", dns.server_address[1])
+    try:
+        csrf = login(client)
+        # A name the system resolver cannot know: only the configured DNS server answers for it.
+        _configure_email(client, smtp, csrf, host="mail.comsense-test.invalid", dns_servers="127.0.0.1")
+        resp = client.post("/settings/email/test", data={"to": "me@example.com", "csrf_token": csrf})
+        assert "Test email sent" in resp.text, resp.text
+        assert dns.queries and b"comsense-test" in dns.queries[0]
+        assert smtp.messages[-1][0] == ["me@example.com"]
+
+        # Without DNS servers the system resolver fails, and the error says what to do.
+        _configure_email(client, smtp, csrf, host="mail.comsense-test.invalid", dns_servers="")
+        resp = client.post("/settings/email/test", data={"to": "me@example.com", "csrf_token": csrf})
+        assert "Sending failed" in resp.text and "DNS servers" in resp.text
+
+        # Only IP addresses are accepted.
+        resp = client.post("/settings/email", data={"host": "x", "dns_servers": "dns.example.com", "csrf_token": csrf})
+        assert "must be IP addresses" in resp.text
+    finally:
+        dns.shutdown()
+        dns.server_close()

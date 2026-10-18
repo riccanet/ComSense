@@ -40,6 +40,9 @@ class EmailSettings:
     password_encrypted: str = ""
     from_address: str = ""
     from_name: str = "ComSense Firewall Manager"
+    # Optional: look up the SMTP server through these DNS servers instead of the system resolver
+    # (for containers whose DNS does not work). TLS is still verified against the host name.
+    dns_servers: list[str] = field(default_factory=list)
 
     @property
     def configured(self) -> bool:
