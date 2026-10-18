@@ -253,7 +253,7 @@ function csfm_collect_carp() {
 
 function csfm_collect_packages() {
 	$out = array();
-	exec("/usr/bin/timeout 60 /usr/sbin/pkg-static query -x '%n\t%v' '^pfSense-pkg-' 2>/dev/null", $lines);
+	exec('/usr/bin/timeout 60 ' . CSFM_PKG . " query -x '%n\t%v' '^pfSense-pkg-' 2>/dev/null", $lines);
 	foreach ($lines as $line) {
 		$parts = explode("\t", $line);
 		if (count($parts) === 2) {
@@ -266,7 +266,7 @@ function csfm_collect_packages() {
 /* Package upgrades available from the configured repository. */
 function csfm_outdated_packages() {
 	$out = array();
-	exec("/usr/bin/timeout 300 /usr/sbin/pkg-static version -vRl '<' 2>/dev/null", $lines);
+	exec('/usr/bin/timeout 300 ' . CSFM_PKG . " version -vRl '<' 2>/dev/null", $lines);
 	foreach ($lines as $line) {
 		if (preg_match('/^(\S+)-([^-\s]+)\s+<\s+needs updating \(remote has ([^)]+)\)/', $line, $m)) {
 			if (strpos($m[1], 'pfSense-pkg-') === 0) {

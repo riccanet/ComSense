@@ -151,6 +151,8 @@ def test_agent_package_is_a_valid_pkg_archive(tmp_path):
         assert manifest["files"][path] == "1$" + hashlib.sha256(content).hexdigest()
         assert member.uname == "root" and member.gname == "wheel"
         assert b"%%" not in content, path
+        # pfSense has pkg-static in /usr/local/sbin; /usr/sbin only holds FreeBSD's pkg bootstrap.
+        assert b"/usr/sbin/pkg-static" not in content, path
     assert files["/usr/local/sbin/comsense-agentd"][0].mode == 0o755
     assert manifest["flatsize"] == sum(len(c) for _, c in files.values())
     # /etc/rc.packages strips "pfSense-pkg-" from the package name, reads

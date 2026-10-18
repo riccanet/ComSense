@@ -6,7 +6,7 @@
  * config accessors wrapped below, so it can be exercised outside a firewall.
  */
 
-define('CSFM_AGENT_VERSION', '0.1.3');
+define('CSFM_AGENT_VERSION', '0.1.4');
 if (!defined('CSFM_DB_DIR')) {
 	/* Overridable so the agent can be exercised outside a firewall. */
 	define('CSFM_DB_DIR', '/var/db/comsense');
@@ -17,6 +17,8 @@ define('CSFM_INTERVAL_FILE', CSFM_DB_DIR . '/interval');
 define('CSFM_CA_FILE', CSFM_DB_DIR . '/server-ca.pem');
 define('CSFM_CONFIG_PATH', 'installedpackages/comsense/config/0');
 define('CSFM_SYSTEM_CA_BUNDLE', '/etc/ssl/cert.pem');
+/* pkg(8) on pfSense; /usr/sbin/pkg is only FreeBSD's bootstrap stub. */
+define('CSFM_PKG', '/usr/local/sbin/pkg-static');
 
 /* Actions the firewall owner can allow in the package settings. */
 $csfm_capability_fields = array(

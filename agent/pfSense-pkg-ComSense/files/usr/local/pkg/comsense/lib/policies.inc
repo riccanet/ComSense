@@ -506,7 +506,7 @@ function csfm_apply_config_set($pid, $content, $prev) {
 /* ---------------------------------------------------------------- packages */
 
 function csfm_pkg_installed($name) {
-	exec('/usr/sbin/pkg-static info -e ' . escapeshellarg($name), $out, $rc);
+	exec(CSFM_PKG . ' info -e ' . escapeshellarg($name), $out, $rc);
 	return $rc === 0;
 }
 

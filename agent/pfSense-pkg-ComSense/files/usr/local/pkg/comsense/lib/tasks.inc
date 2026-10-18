@@ -225,7 +225,7 @@ function csfm_task_upgrade_packages($client, $id, $payload) {
 		return array('output' => 'All packages are up to date');
 	}
 	$names = array_map(function ($p) { return escapeshellarg($p['name']); }, $outdated);
-	list($rc, $out) = csfm_exec('/usr/sbin/pkg-static upgrade -y ' . implode(' ', $names), 3000);
+	list($rc, $out) = csfm_exec(CSFM_PKG . ' upgrade -y ' . implode(' ', $names), 3000);
 	csfm_schedule_update_check(true);
 	if ($rc !== 0) {
 		throw new Exception("pkg upgrade exited with {$rc}\n" . csfm_truncate($out));
