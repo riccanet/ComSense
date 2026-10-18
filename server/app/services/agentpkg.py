@@ -28,8 +28,16 @@ log = logging.getLogger("comsense.agentpkg")
 NAME = "pfSense-pkg-ComSense"
 ABI = "FreeBSD:*"
 MARKER = ".generated"
-# Fixed timestamp for the archived files, so builds are reproducible.
-MTIME = 1767225600  # 2026-01-01
+# File timestamps come from each file's content: identical builds stay byte-for-byte identical,
+# while a changed file gets a new timestamp. That matters on pfSense, whose web server PHP caches
+# compiled files (opcache) and only reloads one whose timestamp changed; a fixed timestamp kept the
+# GUI on the previous version's code after an upgrade. All values fall within 2025, in the past.
+MTIME_BASE = 1735689600  # 2025-01-01
+MTIME_SPAN = 365 * 86400
+
+
+def _mtime(data: bytes) -> int:
+    return MTIME_BASE + int.from_bytes(hashlib.sha256(data).digest()[:8], "big") % MTIME_SPAN
 _HERE = Path(__file__).resolve()
 
 # Source file (relative to files/) -> installed path and mode, as in build-pkg.sh.
@@ -120,7 +128,7 @@ def build_package(port: Path) -> tuple[str, bytes]:
     with tarfile.open(fileobj=raw, mode="w", format=tarfile.PAX_FORMAT) as tar:
         for path, data, mode in [("+COMPACT_MANIFEST", compact, 0o644), ("+MANIFEST", full_json, 0o644), *entries]:
             info = tarfile.TarInfo(path)
-            info.size, info.mode, info.mtime = len(data), mode, MTIME
+            info.size, info.mode, info.mtime = len(data), mode, _mtime(data)
             info.uname, info.gname, info.uid, info.gid = "root", "wheel", 0, 0
             tar.addfile(info, io.BytesIO(data))
     return f"{NAME}-{version}.pkg", lzma.compress(raw.getvalue(), preset=6)

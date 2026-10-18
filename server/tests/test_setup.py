@@ -154,6 +154,13 @@ def test_agent_package_is_a_valid_pkg_archive(tmp_path):
         # pfSense has pkg-static in /usr/local/sbin; /usr/sbin only holds FreeBSD's pkg bootstrap.
         assert b"/usr/sbin/pkg-static" not in content, path
     assert files["/usr/local/sbin/comsense-agentd"][0].mode == 0o755
+    # Timestamps follow content (pfSense's opcache reloads a file only when its mtime changes),
+    # are in the past, and differ between files with different content.
+    import time as _time
+
+    mtimes = {path: member.mtime for path, (member, _) in files.items()}
+    assert all(0 < m < _time.time() for m in mtimes.values())
+    assert mtimes["/usr/local/pkg/comsense/lib/common.inc"] != mtimes["/usr/local/pkg/comsense/lib/agent.inc"]
     assert manifest["flatsize"] == sum(len(c) for _, c in files.values())
     # /etc/rc.packages strips "pfSense-pkg-" from the package name, reads
     # /usr/local/share/<package>/info.xml and then looks the package up by that name
