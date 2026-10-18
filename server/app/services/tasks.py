@@ -23,6 +23,7 @@ TASK_CAPABILITY: dict[TaskType, str | None] = {
     TaskType.restart_service: "services",
     TaskType.restore_backup: "restore",
     TaskType.reboot: "reboot",
+    TaskType.update_agent: "upgrade",
 }
 
 # How long a task may stay "sent"/"running" without a final result.
@@ -33,6 +34,7 @@ TASK_TIMEOUT: dict[TaskType, timedelta] = {
     TaskType.remove_package: timedelta(minutes=30),
     TaskType.restore_backup: timedelta(minutes=30),
     TaskType.reboot: timedelta(minutes=30),
+    TaskType.update_agent: timedelta(minutes=30),
 }
 DEFAULT_TASK_TIMEOUT = timedelta(minutes=15)
 # Tasks that are not picked up within this window expire, so a box that was offline
@@ -44,6 +46,9 @@ OPEN_STATES = (TaskStatus.pending, TaskStatus.sent, TaskStatus.running)
 # Tasks that only read from or copy off the firewall. Everything else changes it
 # and is available only with CSFM_ENABLE_FIREWALL_CHANGES.
 SAFE_TASKS = frozenset({TaskType.backup, TaskType.check_updates, TaskType.refresh_inventory})
+# Updating ComSense's own agent does not change the firewall's configuration, so it is not
+# "coming soon"; it still needs the firewall's local upgrade permission.
+AGENT_TASKS = frozenset({TaskType.update_agent})
 COMING_SOON = "Coming soon: changing firewall settings from ComSense is not available yet."
 
 
@@ -60,7 +65,7 @@ def queue_task(
     pickup_window: timedelta = DEFAULT_PICKUP_WINDOW,
     changes_enabled: bool = False,
 ) -> Task:
-    if ttype not in SAFE_TASKS and not changes_enabled:
+    if ttype not in SAFE_TASKS and ttype not in AGENT_TASKS and not changes_enabled:
         raise TaskError(COMING_SOON)
     if device.status == DeviceStatus.disabled:
         raise TaskError("Device is disabled")

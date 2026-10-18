@@ -11,6 +11,11 @@
 <div class="heading">
   <h1>{{ device.name }} {{ status_badge(device.status.value) }}</h1>
   <div class="actions">
+    {% set agent_old = latest_agent and device.agent_version and device.agent_version|agent_outdated(latest_agent) %}
+    {% if can_operate and device.status.value not in ("pending", "disabled") %}
+    {{ post_button("/devices/" ~ device.id ~ "/check-now", "Check now", "", "") }}
+    {% if agent_old %}{{ post_button("/devices/" ~ device.id ~ "/update-agent", "Update agent to " ~ latest_agent, "primary", "Install agent " ~ latest_agent ~ " on this firewall? It updates itself in the background and checks in again.") }}{% endif %}
+    {% endif %}
     {% if is_admin and device.status.value == "pending" %}
     <form method="post" action="/devices/{{ device.id }}/status" class="inline">
       {{ csrf() }}<input type="hidden" name="action" value="approve"><button class="primary">Approve</button>
@@ -55,7 +60,7 @@ reach ComSense by then, it restores its previous configuration automatically.</d
       <dt>Platform</dt><dd>{{ device.platform }}</dd>
       <dt>Architecture</dt><dd>{{ device.arch|arch if device.arch else "unknown" }}</dd>
       <dt>Serial / ID</dt><dd>{{ device.serial or device.unique_id }}</dd>
-      <dt>Agent</dt><dd>{{ device.agent_version }}</dd>
+      <dt>Agent</dt><dd>{{ device.agent_version }}{% if agent_old %} <span class="badge s-pending" title="This server provides {{ latest_agent }}">{{ latest_agent }} available</span>{% endif %}</dd>
       <dt>WAN IP</dt><dd>{{ device.wan_ip }}</dd>
       <dt>Checks in from</dt><dd>{{ device.last_seen_ip }}</dd>
       <dt>Last seen</dt><dd>{{ device.last_seen_at|ago }}</dd>

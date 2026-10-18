@@ -13,6 +13,10 @@ if (!$dir) {
 	exit(2);
 }
 define('CSFM_DB_DIR', $dir . '/db');
+/* Pretend to be another agent version (self-update tests). */
+if (getenv('CSFM_TEST_AGENT_VERSION')) {
+	define('CSFM_AGENT_VERSION', getenv('CSFM_TEST_AGENT_VERSION'));
+}
 define('CSFM_CFG_JSON', $dir . '/config.json');
 define('CSFM_ACTIONS_LOG', $dir . '/actions.log');
 define('CSFM_GUARD_DIR', $dir . '/guard');
@@ -146,6 +150,10 @@ switch ($argv[1] ?? 'run') {
 	case 'check-updates':
 		echo json_encode(csfm_check_updates()) . "\n";
 		break;
+	case 'wait':
+		$r = csfm_wait_for_work((int)($argv[2] ?? 60));
+		echo $r . "\n";
+		exit($r === 'wake' ? 0 : ($r === 'idle' ? 1 : 2));
 	case 'watchdog':
 		echo csfm_guard_watchdog() . "\n";
 		break;

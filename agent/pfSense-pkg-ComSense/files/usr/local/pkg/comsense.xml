@@ -116,7 +116,7 @@
 			<fielddescr>Upgrades</fielddescr>
 			<fieldname>allow_upgrade</fieldname>
 			<type>checkbox</type>
-			<description>Upgrade pfSense and installed packages (system upgrades reboot the firewall)</description>
+			<description>Upgrade pfSense, installed packages and this agent (system upgrades reboot the firewall)</description>
 		</field>
 		<field>
 			<fielddescr>Services</fielddescr>

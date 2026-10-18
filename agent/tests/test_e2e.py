@@ -352,7 +352,65 @@ def test_full_lifecycle(env):
     restored = (env["fw"] / "conf" / "config.xml").read_text()
     assert "<pfsense>" in restored
 
-    # 8. A disabled device is locked out.
+    # 8. Between check-ins the agent waits on the server, which answers early when work is queued.
+    def wait(seconds: str):
+        return subprocess.run(
+            ["php", str(HARNESS), "wait", seconds],
+            env={**os.environ, "CSFM_TEST_DIR": str(env["fw"]), "CSFM_AGENT_DIR": str(AGENT_DIR)},
+            capture_output=True, text=True, timeout=120,
+        )
+
+    idle = wait("1")
+    assert (idle.returncode, idle.stdout.strip()) == (1, "idle"), idle.stdout + idle.stderr
+    with env["db"]() as db:
+        queue_task(db, db.get(Device, creds["device_id"]), TaskType.refresh_inventory, actor="e2e")
+        db.commit()
+    woke = wait("50")
+    assert (woke.returncode, woke.stdout.strip()) == (0, "wake"), woke.stdout + woke.stderr
+    agent(env, "run")
+
+    # 9. Self-update: an older agent downloads the server's package over its API, checks the hash and
+    # hands it to pkg in a detached process; the next cycle (now the new version) reports success.
+    from app.services.agentpkg import latest_package
+
+    package = latest_package(env["dir"] / "data" / "downloads")
+    old = {"CSFM_TEST_AGENT_VERSION": "0.0.1"}
+    set_fw_settings(env, allow_upgrade="on")  # self-updates need the firewall's "upgrade" permission
+    agent(env, "run", extra_env=old)
+    with env["db"]() as db:
+        device = db.get(Device, creds["device_id"])
+        assert "upgrade" in device.capabilities and device.agent_version == "0.0.1"
+        bad = queue_task(db, device, TaskType.update_agent,
+                         {"version": package["version"], "file": package["name"], "sha256": "0" * 64}, actor="e2e")
+        db.commit()
+        bad_id = bad.id
+    agent(env, "run", extra_env=old)
+    with env["db"]() as db:
+        bad = db.get(Task, bad_id)
+        assert bad.status == TaskStatus.failed and "Checksum mismatch" in bad.output
+    with env["db"]() as db:
+        device = db.get(Device, creds["device_id"])
+        task = queue_task(db, device, TaskType.update_agent,
+                          {"version": package["version"], "file": package["name"], "sha256": package["sha256"]},
+                          actor="e2e")
+        db.commit()
+        task_id = task.id
+    agent(env, "run", extra_env=old)
+    with env["db"]() as db:
+        assert db.get(Task, task_id).status == TaskStatus.running
+    staged = env["fw"] / "db" / "agent-update.pkg"
+    assert staged.read_bytes() == (env["dir"] / "data" / "downloads" / package["name"]).read_bytes()
+    actions = (env["fw"] / "actions.log").read_text()
+    assert "mwexec: /usr/sbin/daemon -f /bin/sh -c " in actions and "pkg-static add" in actions
+    agent(env, "run")  # pkg installed the new files: this is the new agent
+    with env["db"]() as db:
+        task = db.get(Task, task_id)
+        assert task.status == TaskStatus.success, task.output
+        assert f"-> {package['version']}" in task.output
+        assert db.get(Device, creds["device_id"]).agent_version == package["version"]
+    assert not staged.exists()
+
+    # 10. A disabled device is locked out.
     with env["db"]() as db:
         from app.models import DeviceStatus
 

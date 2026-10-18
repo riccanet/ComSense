@@ -47,7 +47,7 @@ from ..security import (
     verify_password,
 )
 from ..enrollment import make_code
-from ..services.agentpkg import latest_package
+from ..services.agentpkg import agent_outdated, latest_package
 from ..services.appsettings import agent_tls_names, effective_agent_url, get_email_settings, setup_pending
 from ..services.backups import delete_backup_file, load_backup
 from ..services.policy_examples import EXAMPLES
@@ -82,6 +82,16 @@ MANUAL_TASKS = {
     TaskType.upgrade_packages: "Upgrade all packages",
     TaskType.upgrade_system: "Upgrade pfSense (reboots)",
     TaskType.reboot: "Reboot",
+}
+
+
+# Actions for selected firewalls on the Firewalls page ("check_now" is a refresh that wakes them).
+BULK_TASKS = (TaskType.backup, TaskType.check_updates, TaskType.update_agent)
+BULK_LABELS = {
+    "check_now": "Check now",
+    TaskType.backup.value: "Back up configuration now",
+    TaskType.check_updates.value: "Check for updates",
+    TaskType.update_agent.value: "Update agent",
 }
 
 
@@ -134,6 +144,7 @@ def _fmt_isodate(value) -> str:
 
 TEMPLATES.env.filters["ago"] = _ago
 TEMPLATES.env.filters["isodate"] = _fmt_isodate
+TEMPLATES.env.filters["agent_outdated"] = agent_outdated
 TEMPLATES.env.filters["arch"] = _fmt_arch
 TEMPLATES.env.filters["dt"] = _fmt_dt
 TEMPLATES.env.filters["bytes"] = _fmt_bytes
@@ -334,7 +345,7 @@ def devices(
         org=org,
         q=q,
         open_alerts=open_alerts,
-        bulk_tasks={t: MANUAL_TASKS[t] for t in (TaskType.backup, TaskType.check_updates, TaskType.refresh_inventory)},
+        bulk_tasks=BULK_LABELS,
     )
 
 
@@ -344,25 +355,41 @@ async def devices_bulk(
 ):
     form = await request.form()
     ids = form.getlist("device_ids")
-    try:
-        ttype = TaskType(str(form.get("task_type", "")))
-    except ValueError as exc:
-        raise HTTPException(400, "Unknown task type") from exc
-    if ttype not in (TaskType.backup, TaskType.check_updates, TaskType.refresh_inventory):
-        raise HTTPException(400, "That task cannot be run in bulk")
+    action = str(form.get("task_type", ""))
+    package = None
+    if action == "check_now":
+        ttype = TaskType.refresh_inventory
+    else:
+        try:
+            ttype = TaskType(action)
+        except ValueError as exc:
+            raise HTTPException(400, "Unknown task type") from exc
+        if ttype not in BULK_TASKS:
+            raise HTTPException(400, "That task cannot be run in bulk")
+        if ttype == TaskType.update_agent:
+            package = latest_package(request.app.state.settings.data_dir / "downloads")
+            if package is None:
+                flash(request, "No agent package is available on this server.", "error")
+                return redirect("/devices")
     queued, skipped = 0, 0
     for device_id in ids:
         device = db.get(Device, str(device_id))
         if device is None:
             continue
         try:
-            queue_task(db, device, ttype, actor=user.username)
+            if action == "check_now":
+                _check_now(db, device, user.username)
+            elif package is not None:
+                _update_agent(db, device, user.username, package)
+            else:
+                queue_task(db, device, ttype, actor=user.username)
             queued += 1
         except TaskError:
             skipped += 1
-    audit(db, user.username, "task.bulk", detail=f"{ttype.value} x{queued}", ip=_ip(request))
+    audit(db, user.username, "task.bulk", detail=f"{action} x{queued}", ip=_ip(request))
     db.commit()
-    flash(request, f"Queued {ttype.value} on {queued} device(s); skipped {skipped}.", "success")
+    label = BULK_LABELS.get(action, action)
+    flash(request, f"{label}: queued on {queued} firewall(s); skipped {skipped}.", "success")
     return redirect("/devices")
 
 
@@ -412,6 +439,7 @@ def device_detail(
         alerts=alerts,
         policy_state=policy_state,
         policy_names={str(p.id): p.name for p in db.scalars(select(Policy))} if device.rolled_back_policies else {},
+        latest_agent=_latest_agent_version(request),
         assignable=[
             p for p in db.scalars(select(Policy).order_by(Policy.name)) if p.id not in assigned_ids
         ],
@@ -461,6 +489,68 @@ def device_queue_task(
     audit(db, user.username, f"task.{ttype.value}", target=device.id, detail=json.dumps(payload), ip=_ip(request))
     db.commit()
     flash(request, f"Queued task #{task.id} ({ttype.value}). It runs at the next check-in.", "success")
+    return redirect(f"/devices/{device_id}")
+
+
+def _latest_agent_version(request: Request) -> str:
+    package = latest_package(request.app.state.settings.data_dir / "downloads")
+    return package["version"] if package else ""
+
+
+def _check_now(db: Session, device: Device, actor: str) -> Task:
+    """Queue a full refresh; a firewall waiting on the agent API (long poll) picks it up at once."""
+    existing = db.scalar(
+        select(Task).where(
+            Task.device_id == device.id, Task.type == TaskType.refresh_inventory, Task.status == TaskStatus.pending
+        )
+    )
+    return existing or queue_task(db, device, TaskType.refresh_inventory, actor=actor)
+
+
+def _update_agent(db: Session, device: Device, actor: str, package: dict[str, str]) -> Task:
+    if not agent_outdated(device.agent_version, package["version"]):
+        raise TaskError(f"Agent {device.agent_version or '?'} is already current")
+    payload = {"version": package["version"], "file": package["name"], "sha256": package["sha256"]}
+    return queue_task(db, device, TaskType.update_agent, payload, actor=actor)
+
+
+@router.post("/devices/{device_id}/check-now")
+def device_check_now(device_id: str, request: Request, user: User = Depends(operator), db: Session = Depends(get_db)):
+    device = _get_device(db, device_id)
+    try:
+        _check_now(db, device, user.username)
+    except TaskError as exc:
+        flash(request, str(exc), "error")
+        return redirect(f"/devices/{device_id}")
+    audit(db, user.username, "device.check_now", target=device.id, ip=_ip(request))
+    db.commit()
+    flash(request, "Check requested. A connected firewall reports back within a few seconds; refresh the page.", "success")
+    return redirect(f"/devices/{device_id}")
+
+
+@router.post("/devices/{device_id}/update-agent")
+def device_update_agent(
+    device_id: str,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    user: User = Depends(operator),
+    db: Session = Depends(get_db),
+):
+    device = _get_device(db, device_id)
+    package = latest_package(settings.data_dir / "downloads")
+    if package is None:
+        flash(request, "No agent package is available on this server.", "error")
+        return redirect(f"/devices/{device_id}")
+    try:
+        task = _update_agent(db, device, user.username, package)
+    except TaskError as exc:
+        flash(request, str(exc), "error")
+        return redirect(f"/devices/{device_id}")
+    db.flush()
+    audit(db, user.username, "task.update_agent", target=device.id, detail=package["version"], ip=_ip(request))
+    db.commit()
+    flash(request, f"Queued task #{task.id}: update the agent to {package['version']}. "
+          "The firewall installs it and checks in again with the new version.", "success")
     return redirect(f"/devices/{device_id}")
 
 

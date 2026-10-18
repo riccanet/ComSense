@@ -83,9 +83,17 @@ no tasks.
 | `restart_service` | `{"service"}` | services |
 | `restore_backup` | `{"backup_id","sha256"}` | restore |
 | `reboot` | | reboot |
+| `update_agent` | `{"version","file","sha256"}` | upgrade |
 
 Tasks not picked up within 24 h (1 h for restores) expire. Tasks with no final result after their
-timeout (15 min by default, 2 h for system upgrades) are marked failed.
+timeout (15 min by default, 30 min for agent updates, 2 h for system upgrades) are marked failed.
+
+`update_agent` is the console's *Update agent* button. The agent downloads `file` from
+`GET /agent-package/{file}`, refuses it unless its SHA-256 matches and `version` is newer than its own,
+reports `running`, and installs it with `pkg-static add` in a detached process that then restarts the
+agent. The next cycle, run by the new agent, reports `success` (or `failed` with the pkg output).
+Agent updates change no firewall configuration, so they are not held back by
+`CSFM_ENABLE_FIREWALL_CHANGES`.
 
 ## POST /tasks/{id}/result
 
@@ -102,6 +110,18 @@ Response: `{"backup_id", "sha256", "created"}`; `created` is false when an ident
 
 Returns the gzip-compressed backup with an `X-CSFM-SHA256` header, only while a `restore_backup` task
 for that backup is in flight for the calling device.
+
+## GET /wait?timeout=N
+
+Long poll between check-ins. The server answers `{"wake": true}` as soon as a task is pending for the
+device (for example after *Check now* in the console), or `{"wake": false}` after `N` seconds
+(at most 55). The agent loops on this until its next check-in is due and checks in at once on a
+wake. A server without this endpoint, or any error, makes the agent fall back to a plain sleep.
+
+## GET /agent-package/{file}
+
+The agent package (`pfSense-pkg-ComSense-<version>.pkg`) from the server's downloads directory, for
+`update_agent` tasks. Same authentication as the rest of the API.
 
 ## GET /ping
 

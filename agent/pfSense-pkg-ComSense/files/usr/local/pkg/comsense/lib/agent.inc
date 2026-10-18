@@ -114,6 +114,7 @@ function csfm_cycle() {
 	$client = csfm_client();
 	csfm_flush_unsent_results($client);
 	csfm_finish_inflight_upgrade($client);
+	csfm_finish_agent_update($client);
 
 	try {
 		$report = csfm_collect_report();
@@ -176,4 +177,31 @@ function csfm_cycle() {
 	/* After checking in, so a slow or unreachable update repository never delays it. */
 	csfm_schedule_update_check();
 	return sprintf('Checked in; ran %d task(s)', count($tasks));
+}
+
+/*
+ * Between check-ins: wait up to $seconds for the server to say there is work
+ * (a queued task, e.g. "Check now" in the console). The firewall still only
+ * connects out; the server holds each request for up to 55 seconds.
+ * Returns 'wake', 'idle' (the time passed) or 'error'.
+ */
+function csfm_wait_for_work($seconds) {
+	$settings = csfm_settings();
+	if (empty($settings['enable']) || !csfm_is_enrolled()) {
+		return 'error';
+	}
+	$end = time() + max(1, (int)$seconds);
+	try {
+		$client = csfm_client();
+		while (($left = $end - time()) > 0) {
+			$chunk = min(55, $left);
+			$resp = $client->getJson('/wait?timeout=' . $chunk, $chunk + 15);
+			if (!empty($resp['wake'])) {
+				return 'wake';
+			}
+		}
+	} catch (Exception $e) {
+		return 'error';
+	}
+	return 'idle';
 }

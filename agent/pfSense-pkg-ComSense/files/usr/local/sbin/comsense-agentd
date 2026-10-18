@@ -22,5 +22,11 @@ while true; do
 	case "${INTERVAL}" in
 		''|*[!0-9]*) INTERVAL=60 ;;
 	esac
-	sleep "${INTERVAL}"
+	# Wait for the next check-in on the server's agent API: it answers early when
+	# there is work (e.g. "Check now" in the console). Exit 0 = work, 1 = time up;
+	# anything else (server unreachable, older server) falls back to a plain sleep.
+	/usr/bin/timeout $((INTERVAL + 60)) "${PHP}" -f "${AGENT}" wait "${INTERVAL}" >/dev/null 2>&1
+	if [ $? -gt 1 ]; then
+		sleep "${INTERVAL}"
+	fi
 done

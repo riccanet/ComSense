@@ -45,7 +45,7 @@
   <div class="toolbar">
     <label>With selected:
       <select name="task_type">
-        {% for t, label in bulk_tasks.items() %}<option value="{{ t.value }}">{{ label }}</option>{% endfor %}
+        {% for value, label in bulk_tasks.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
       </select>
     </label>
     <button>Queue</button>

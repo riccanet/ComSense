@@ -283,3 +283,4 @@ table.list td.num, table.list th.num { text-align: right; }
 table.processes td.cmd { max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 h2 a.plain { color: inherit; }
 h2 a.plain:hover { color: var(--accent); text-decoration: none; }
+.heading .actions { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }

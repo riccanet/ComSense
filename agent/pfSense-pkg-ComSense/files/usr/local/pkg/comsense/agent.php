@@ -6,6 +6,7 @@
  *   php /usr/local/pkg/comsense/agent.php status   print enrollment and last check-in
  *   php /usr/local/pkg/comsense/agent.php backup   upload config.xml now
  *   php /usr/local/pkg/comsense/agent.php unenroll forget this firewall's device token
+ *   php /usr/local/pkg/comsense/agent.php wait N    wait up to N seconds for work from the server
  *   php /usr/local/pkg/comsense/agent.php check-updates  query the update repository (run in the background)
  *   php /usr/local/pkg/comsense/agent.php watchdog roll back an unconfirmed change whose time is up
  *   php /usr/local/pkg/comsense/agent.php confirm  keep the change on probation (no rollback)
@@ -60,6 +61,11 @@ switch ($cmd) {
 			'last_rollback' => $state['last_rollback'] ?? null,
 		), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
 		break;
+	case 'wait':
+		/* Exit 0: work is waiting, 1: the time passed, 2: could not ask the server. */
+		$r = csfm_wait_for_work((int)($argv[2] ?? 60));
+		echo $r . "\n";
+		exit($r === 'wake' ? 0 : ($r === 'idle' ? 1 : 2));
 	case 'check-updates':
 		echo json_encode(csfm_check_updates(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
 		break;
@@ -87,6 +93,6 @@ switch ($cmd) {
 		echo "Credentials removed. Enter a new enrollment key to reconnect.\n";
 		break;
 	default:
-		fwrite(STDERR, "Usage: agent.php run|status|backup|unenroll|check-updates|watchdog|confirm|rollback [-v]\n");
+		fwrite(STDERR, "Usage: agent.php run|status|backup|unenroll|wait|check-updates|watchdog|confirm|rollback [-v]\n");
 		exit(2);
 }

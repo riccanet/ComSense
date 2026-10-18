@@ -28,6 +28,7 @@ $csfm_task_capability = array(
 	'restart_service' => 'services',
 	'restore_backup' => 'restore',
 	'reboot' => 'reboot',
+	'update_agent' => 'upgrade',
 );
 
 /* Tasks that change the configuration and run under the change guard (guard.inc). */
@@ -132,6 +133,9 @@ function csfm_task_label($type, $payload) {
 	}
 	if ($type === 'restore_backup') {
 		return 'restore backup #' . (int)($payload['backup_id'] ?? 0);
+	}
+	if ($type === 'update_agent') {
+		return 'update agent to ' . ($payload['version'] ?? '?');
 	}
 	return $type;
 }
@@ -298,6 +302,72 @@ function csfm_finish_inflight_upgrade($client) {
 	csfm_save_state($state);
 	csfm_forget_updates();
 	csfm_schedule_update_check(true);
+}
+
+/* ------------------------------------------------------------ agent update */
+
+define('CSFM_AGENT_UPDATE_PKG', CSFM_DB_DIR . '/agent-update.pkg');
+define('CSFM_AGENT_UPDATE_LOG', CSFM_DB_DIR . '/agent-update.log');
+
+/*
+ * Install a newer agent package from the management server. The package comes
+ * over the authenticated, pinned API and must match the SHA-256 in the task.
+ * pkg runs in a detached process (it replaces these files and the agent is
+ * restarted afterwards); the next cycle reports the outcome.
+ */
+function csfm_task_update_agent($client, $id, $payload) {
+	$version = (string)($payload['version'] ?? '');
+	$file = (string)($payload['file'] ?? '');
+	$sha = strtolower((string)($payload['sha256'] ?? ''));
+	if (!preg_match('/^\d+(\.\d+)*([._-][0-9A-Za-z]+)*$/', $version) || $file !== "pfSense-pkg-ComSense-{$version}.pkg"
+	    || !preg_match('/^[0-9a-f]{64}$/', $sha)) {
+		throw new Exception('Malformed agent update task');
+	}
+	if (version_compare($version, CSFM_AGENT_VERSION, '<=')) {
+		return array('output' => 'The agent is already at ' . CSFM_AGENT_VERSION);
+	}
+	list($data) = $client->download('/agent-package/' . rawurlencode($file), 300);
+	if (!hash_equals($sha, hash('sha256', (string)$data))) {
+		throw new Exception('Checksum mismatch; update aborted');
+	}
+	csfm_ensure_db_dir();
+	file_put_contents(CSFM_AGENT_UPDATE_PKG, $data);
+	chmod(CSFM_AGENT_UPDATE_PKG, 0600);
+	@unlink(CSFM_AGENT_UPDATE_LOG);
+	csfm_state_set('inflight_agent_update', array(
+		'task_id' => $id, 'from' => CSFM_AGENT_VERSION, 'to' => $version, 'started' => time(),
+	));
+	csfm_report_result($client, $id, 'running', "Downloaded {$file} (sha256 verified); installing.");
+	$log = escapeshellarg(CSFM_AGENT_UPDATE_LOG);
+	$cmd = 'sleep 2; ' . CSFM_PKG . ' add ' . escapeshellarg(CSFM_AGENT_UPDATE_PKG) . " > {$log} 2>&1; "
+	    . "/usr/local/etc/rc.d/comsense.sh restart >> {$log} 2>&1";
+	/* daemon(8) detaches fully: the install survives the agent restart it triggers. */
+	mwexec('/usr/sbin/daemon -f /bin/sh -c ' . escapeshellarg($cmd));
+	csfm_log("Agent update to {$version} started (task {$id})", LOG_NOTICE);
+	throw new CsfmTaskDeferred();
+}
+
+/* At the start of each cycle: report an agent update started earlier. */
+function csfm_finish_agent_update($client) {
+	$up = csfm_state()['inflight_agent_update'] ?? null;
+	if (!is_array($up)) {
+		return;
+	}
+	$log = csfm_truncate((string)@file_get_contents(CSFM_AGENT_UPDATE_LOG), 6000);
+	if (CSFM_AGENT_VERSION === $up['to']) {
+		csfm_report_result($client, $up['task_id'], 'success', "Agent updated {$up['from']} -> {$up['to']}\n" . $log);
+	} else {
+		exec('/bin/pgrep -f ' . escapeshellarg('agent-update.pkg'), $pids, $rc);
+		if ($rc === 0 && time() - (int)$up['started'] < 1800) {
+			return; /* still installing */
+		}
+		csfm_report_result($client, $up['task_id'], 'failed',
+		    "The agent is still at " . CSFM_AGENT_VERSION . " after installing {$up['to']}.\n" . $log);
+	}
+	$state = csfm_state();
+	unset($state['inflight_agent_update']);
+	csfm_save_state($state);
+	@unlink(CSFM_AGENT_UPDATE_PKG);
 }
 
 function csfm_task_restore_backup($client, $id, $payload) {

@@ -66,6 +66,7 @@ class TaskType(str, enum.Enum):
     restore_backup = "restore_backup"
     reboot = "reboot"
     refresh_inventory = "refresh_inventory"
+    update_agent = "update_agent"
 
 
 class PolicyType(str, enum.Enum):

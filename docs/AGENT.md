@@ -53,7 +53,7 @@ From **Diagnostics > Command Prompt** or an SSH shell:
 Copy the install command from the server's *Enrollment keys* page. It looks like:
 
 ```sh
-fetch -o /tmp/comsense.pkg --no-verify-peer --no-verify-hostname https://comsense.example.com:10443/downloads/pfSense-pkg-ComSense-0.1.8.pkg \
+fetch -o /tmp/comsense.pkg --no-verify-peer --no-verify-hostname https://comsense.example.com:10443/downloads/pfSense-pkg-ComSense-0.1.9.pkg \
   && [ "$(sha256 -q /tmp/comsense.pkg)" = "<sha256 shown on the page>" ] \
   && pkg-static add /tmp/comsense.pkg
 ```
@@ -99,6 +99,20 @@ Every check-in interval (60 s by default, set by the server) the agent:
 4. Runs the tasks in a safe order (rules are removed before aliases, aliases created before rules)
    and reports each result.
 
+Between cycles the agent waits on the server (`GET /wait`, a long poll of up to 55 s at a time), so
+*Check now* in the console reaches a connected firewall within a few seconds. The firewall still only
+makes outgoing connections. If the server cannot be reached the agent simply sleeps until the next
+check-in.
+
+### Updating the agent from the console
+
+When the server has a newer agent package than a firewall runs, the firewall's page shows
+*Update agent to x.y.z* (and the firewall list offers it as a bulk action). The agent downloads the
+package over its pinned, authenticated connection, checks its SHA-256, installs it with
+`pkg-static add` and restarts itself; the task turns green when the new version checks in. It needs
+the **Upgrades** permission on the firewall (Services > ComSense Agent). Agents older than 0.1.9 do not know
+this task: install 0.1.9 once by hand.
+
 Each cycle runs in a new PHP process so it always sees the current configuration, under a lock so a
 manual *Check in now* cannot overlap a scheduled one.
 
@@ -139,6 +153,7 @@ php /usr/local/pkg/comsense/agent.php status     # enrollment state, last check-
 php /usr/local/pkg/comsense/agent.php run -v     # one cycle, verbose
 php /usr/local/pkg/comsense/agent.php backup     # upload config.xml now
 php /usr/local/pkg/comsense/agent.php unenroll   # forget the device token
+php /usr/local/pkg/comsense/agent.php wait 60    # wait up to 60 s for work from the server
 php /usr/local/pkg/comsense/agent.php watchdog   # roll back a change whose probation ended without contact
 php /usr/local/pkg/comsense/agent.php confirm    # keep the change on probation
 php /usr/local/pkg/comsense/agent.php rollback   # undo the change on probation now

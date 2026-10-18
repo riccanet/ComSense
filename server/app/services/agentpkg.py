@@ -28,6 +28,7 @@ log = logging.getLogger("comsense.agentpkg")
 NAME = "pfSense-pkg-ComSense"
 ABI = "FreeBSD:*"
 MARKER = ".generated"
+PACKAGE_RE = re.compile(rf"{NAME}-(\d+(?:\.\d+)*(?:[._-][0-9A-Za-z]+)*)\.pkg")
 # File timestamps come from each file's content: identical builds stay byte-for-byte identical,
 # while a changed file gets a new timestamp. That matters on pfSense, whose web server PHP caches
 # compiled files (opcache) and only reloads one whose timestamp changed; a fixed timestamp kept the
@@ -160,10 +161,28 @@ def ensure_package(downloads: Path) -> Path | None:
     return target
 
 
+def _version_key(version: str) -> tuple:
+    return tuple(int(p) if p.isdigit() else p for p in re.split(r"[._-]", version))
+
+
 def latest_package(downloads: Path) -> dict[str, str] | None:
-    """Newest package in downloads/ as {name, sha256}, or None."""
-    packages = sorted(downloads.glob(f"{NAME}-*.pkg"), key=lambda p: p.stat().st_mtime)
+    """Newest package in downloads/ as {name, version, sha256}, or None."""
+    packages = []
+    for path in downloads.glob(f"{NAME}-*.pkg"):
+        m = PACKAGE_RE.fullmatch(path.name)
+        if m:
+            packages.append((_version_key(m.group(1)), path.stat().st_mtime, m.group(1), path))
     if not packages:
         return None
-    latest = packages[-1]
-    return {"name": latest.name, "sha256": hashlib.sha256(latest.read_bytes()).hexdigest()}
+    _, _, version, latest = max(packages)
+    return {"name": latest.name, "version": version, "sha256": hashlib.sha256(latest.read_bytes()).hexdigest()}
+
+
+def agent_outdated(installed: str, latest: str) -> bool:
+    """True if the agent version a firewall reports is older than the one this server serves."""
+    if not installed or not latest:
+        return False
+    try:
+        return _version_key(installed) < _version_key(latest)
+    except TypeError:  # mixed number/text parts
+        return installed != latest

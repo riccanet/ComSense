@@ -6,19 +6,21 @@ only way to obtain one.
 """
 from __future__ import annotations
 
+import asyncio
 import gzip
 import json
 from datetime import timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import __version__
 from ..audit import audit
 from ..config import Settings, get_settings
-from ..db import get_db
+from ..db import get_db, session_factory
 from ..models import (
     Backup,
     Device,
@@ -32,6 +34,7 @@ from ..models import (
     utcnow,
 )
 from ..security import RateLimiter, generate_device_token, hash_secret
+from ..services import agentpkg
 from ..services import alerts as alert_svc
 from ..services.backups import BackupError, load_backup, prune_backups, store_backup
 from ..services.policies import reconcile_device_policies
@@ -260,6 +263,57 @@ def ping(device: Device = Depends(current_device), db: Session = Depends(get_db)
     """Cheap authenticated call the agent uses to confirm it can still reach us after a change."""
     db.commit()
     return {"ok": True}
+
+
+WAIT_MAX = 55  # seconds; below common proxy and NAT idle timeouts
+WAIT_POLL = 2.0
+
+
+def _has_pending_task(device_id: str) -> bool:
+    with session_factory()() as db:
+        return db.scalar(
+            select(Task.id).where(Task.device_id == device_id, Task.status == TaskStatus.pending).limit(1)
+        ) is not None
+
+
+def _authenticate(request: Request, authorization: str) -> str:
+    with session_factory()() as db:
+        device = current_device(request, authorization, db)
+        db.commit()
+        return device.id
+
+
+@router.get("/wait")
+async def wait_for_work(request: Request, timeout: int = 50, authorization: str = Header(default="")) -> dict[str, bool]:
+    """Long poll between check-ins: answers as soon as a task is queued for this device (e.g. the
+    console's "Check now"), or after `timeout` seconds. The firewall still only connects out.
+    Holds no database connection while waiting, so many waiting firewalls cost little."""
+    device_id = await asyncio.to_thread(_authenticate, request, authorization)
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + max(1, min(timeout, WAIT_MAX))
+    while True:
+        if await asyncio.to_thread(_has_pending_task, device_id):
+            return {"wake": True}
+        if loop.time() >= deadline:
+            return {"wake": False}
+        await asyncio.sleep(min(WAIT_POLL, max(0.0, deadline - loop.time())))
+
+
+@router.get("/agent-package/{name}")
+def agent_package(
+    name: str,
+    device: Device = Depends(current_device),
+    settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db),
+):
+    """The agent package for self-updates (update_agent tasks), over the authenticated API."""
+    db.commit()
+    if not agentpkg.PACKAGE_RE.fullmatch(name):
+        raise HTTPException(404, "No such package")
+    path = settings.data_dir / "downloads" / name
+    if not path.is_file():
+        raise HTTPException(404, "No such package")
+    return FileResponse(path, media_type="application/octet-stream")
 
 
 @router.post("/token/rotate")
