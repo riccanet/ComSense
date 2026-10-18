@@ -114,7 +114,7 @@ python -m app.serve        # web console on :8000, agent listener on :10443
 
 ## Status
 
-Version 0.2.1. The server and the agent's protocol, policy and task logic are covered by automated
+Version 0.2.2. The server and the agent's protocol, policy and task logic are covered by automated
 tests, including an end-to-end run of the real PHP agent against the real server. The pfSense
 integration points (package hooks, GUI pages, pfSense library calls) follow the conventions of
 packages in the official pfSense ports tree but should be validated on a lab firewall for each pfSense

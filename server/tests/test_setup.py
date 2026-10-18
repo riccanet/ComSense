@@ -162,6 +162,10 @@ def test_agent_package_is_a_valid_pkg_archive(tmp_path):
         for line in files[daemon][1].decode().splitlines():
             if "/usr/bin/lockf" in line:
                 assert "timeout --foreground" in line, (daemon, line)
+    # FreeBSD pkill skips the caller's ancestors without -a, and the stale timeout is usually ours.
+    agentd = files["/usr/local/sbin/comsense-agentd"][1].decode()
+    kills = [line for line in agentd.splitlines() if "/bin/pkill" in line and "timeout" in line]
+    assert kills and all("pkill -a " in line for line in kills)
     # Timestamps follow content (pfSense's opcache reloads a file only when its mtime changes),
     # are in the past, and differ between files with different content.
     import time as _time
