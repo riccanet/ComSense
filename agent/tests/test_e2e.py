@@ -59,6 +59,8 @@ def env(tmp_path_factory):
         "CSFM_BACKUP_ENCRYPTION_KEY": generate_fernet_key(),
         "CSFM_DATA_DIR": str(d / "data"),
         "CSFM_RUN_SCHEDULER": "false",
+        # The end-to-end test exercises policies, restarts and restores ("coming soon" by default).
+        "CSFM_ENABLE_FIREWALL_CHANGES": "true",
         "CSFM_PUBLIC_URL": "https://localhost",
         "CSFM_WEB_HOST": "127.0.0.1",
         "CSFM_WEB_PORT": str(web_port),
@@ -190,7 +192,7 @@ def test_full_lifecycle(env):
         db.flush()
         for p in (rules, aliases, system):
             db.add(PolicyAssignment(policy_id=p.id, device_id=device.id))
-        queue_task(db, device, TaskType.restart_service, {"service": "unbound"}, actor="e2e")
+        queue_task(db, device, TaskType.restart_service, {"service": "unbound"}, actor="e2e", changes_enabled=True)
         queue_task(db, device, TaskType.check_updates, actor="e2e")
         db.commit()
         policy_ids = {p.name: p.id for p in (rules, aliases, system)}
@@ -225,7 +227,7 @@ def test_full_lifecycle(env):
     with env["db"]() as db:
         device = db.get(Device, creds["device_id"])
         device.capabilities = device.capabilities + ["reboot"]  # pretend the server thinks it's allowed
-        reboot = queue_task(db, device, TaskType.reboot, actor="e2e")
+        reboot = queue_task(db, device, TaskType.reboot, actor="e2e", changes_enabled=True)
         db.commit()
         reboot_id = reboot.id
     agent(env, "run")
@@ -237,7 +239,7 @@ def test_full_lifecycle(env):
     with env["db"]() as db:
         device = db.get(Device, creds["device_id"])
         backup = db.scalar(select(Backup).where(Backup.device_id == device.id).order_by(Backup.id))
-        restore = queue_task(db, device, TaskType.restore_backup, {"backup_id": backup.id}, actor="e2e")
+        restore = queue_task(db, device, TaskType.restore_backup, {"backup_id": backup.id}, actor="e2e", changes_enabled=True)
         db.commit()
         restore_id = restore.id
     agent(env, "run")

@@ -37,6 +37,10 @@ The server has two separate listeners, so it needs only two ports forwarded thro
 
 ## Features
 
+> Features that change firewalls (policies, package and pfSense upgrades, service restarts, restores and
+> reboots) are marked **Coming soon** in the console and are switched off unless
+> `CSFM_ENABLE_FIREWALL_CHANGES=true`. Monitoring, alerts, update checks and backups work today.
+
 | Area | What you get |
 | --- | --- |
 | **Monitoring** | Online/offline status, CPU, memory, disk, load, pf states, uptime, interfaces, gateways (loss/delay), services, CARP, installed packages; 24 h charts; alerts for down gateways, stopped services, full disks, high memory and firewalls that stop checking in. |

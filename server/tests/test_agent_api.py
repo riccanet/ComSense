@@ -106,7 +106,7 @@ def test_task_round_trip_and_capability_check(client, db, agent):
     creds = enroll(agent, make_key(db), capabilities=["backup"])
     device = db.get(Device, creds["device_id"])
     try:
-        queue_task(db, device, TaskType.reboot)
+        queue_task(db, device, TaskType.reboot, changes_enabled=True)
         raise AssertionError("reboot should need the reboot capability")
     except TaskError:
         pass
@@ -180,7 +180,9 @@ def test_restore_download_requires_open_restore_task(client, db, agent):
     url = f"/api/agent/v1/backups/{backup_id}"
     assert agent.get(url, headers=auth(creds["token"])).status_code == 403
 
-    queue_task(db, db.get(Device, creds["device_id"]), TaskType.restore_backup, {"backup_id": backup_id})
+    queue_task(
+        db, db.get(Device, creds["device_id"]), TaskType.restore_backup, {"backup_id": backup_id}, changes_enabled=True
+    )
     db.commit()
     agent.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"]))
     resp = agent.get(url, headers=auth(creds["token"]))

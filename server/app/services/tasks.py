@@ -41,6 +41,11 @@ DEFAULT_PICKUP_WINDOW = timedelta(days=1)
 
 OPEN_STATES = (TaskStatus.pending, TaskStatus.sent, TaskStatus.running)
 
+# Tasks that only read from or copy off the firewall. Everything else changes it
+# and is available only with CSFM_ENABLE_FIREWALL_CHANGES.
+SAFE_TASKS = frozenset({TaskType.backup, TaskType.check_updates, TaskType.refresh_inventory})
+COMING_SOON = "Coming soon: changing firewall settings from ComSense is not available yet."
+
 
 class TaskError(ValueError):
     pass
@@ -53,7 +58,10 @@ def queue_task(
     payload: dict[str, Any] | None = None,
     actor: str = "system",
     pickup_window: timedelta = DEFAULT_PICKUP_WINDOW,
+    changes_enabled: bool = False,
 ) -> Task:
+    if ttype not in SAFE_TASKS and not changes_enabled:
+        raise TaskError(COMING_SOON)
     if device.status == DeviceStatus.disabled:
         raise TaskError("Device is disabled")
     if device.status == DeviceStatus.pending:

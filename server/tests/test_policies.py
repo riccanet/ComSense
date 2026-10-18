@@ -38,6 +38,7 @@ def _checkin(agent, token, applied=None):
     return agent.post("/api/agent/v1/checkin", json=body, headers=auth(token)).json()["tasks"]
 
 
+@pytest.mark.changes
 def test_policy_reconciliation(client, db, agent):
     creds = enroll(agent, make_key(db))
     device = db.get(Device, creds["device_id"])
@@ -97,11 +98,11 @@ def test_pending_task_superseded_by_new_revision(client, db, agent):
 
     from app.services.policies import reconcile_device_policies
 
-    first = reconcile_device_policies(db, device)
+    first = reconcile_device_policies(db, device, changes_enabled=True)
     db.commit()
     policy.content = {"timezone": "Europe/Paris"}
     db.commit()
-    second = reconcile_device_policies(db, device)
+    second = reconcile_device_policies(db, device, changes_enabled=True)
     db.commit()
     assert db.get(Task, first[0].id).status == TaskStatus.cancelled
     assert second[0].payload["policy"]["content"] == {"timezone": "Europe/Paris"}

@@ -64,6 +64,12 @@ class Settings:
     agent_tls_key: str = field(default_factory=lambda: os.environ.get("CSFM_AGENT_TLS_KEY", ""))
     # Extra DNS names / IPs for the self-issued certificate, comma separated.
     agent_tls_names: str = field(default_factory=lambda: os.environ.get("CSFM_AGENT_TLS_NAMES", ""))
+    # Actions that change firewalls (policies, package and system upgrades,
+    # service restarts, restores, reboots) are "coming soon" and stay off unless
+    # this is set. Monitoring, backups and update checks always work.
+    enable_firewall_changes: bool = field(
+        default_factory=lambda: _bool("CSFM_ENABLE_FIREWALL_CHANGES", False)
+    )
     # Set to false only for local development over plain HTTP.
     secure_cookies: bool = field(default_factory=lambda: _bool("CSFM_SECURE_COOKIES", True))
     session_max_age: int = field(default_factory=lambda: _int("CSFM_SESSION_MAX_AGE", 8 * 3600))

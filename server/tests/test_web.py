@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import re
 
+import pytest
+
 from conftest import ADMIN_PASSWORD, csrf_from, enroll, login, make_key
 from sqlalchemy import select
 
@@ -30,6 +32,7 @@ def test_post_without_csrf_is_rejected(client):
     assert resp.status_code == 403
 
 
+@pytest.mark.changes
 def test_all_pages_render(client, db, agent):
     csrf = login(client)
     creds = enroll(agent, make_key(db))
@@ -113,6 +116,7 @@ def test_operator_queues_task_and_admin_approves(client, db, agent):
     assert db.scalar(select(Task)).type.value == "backup"
 
 
+@pytest.mark.changes
 def test_invalid_policy_shows_error(client):
     csrf = login(client)
     resp = client.post(

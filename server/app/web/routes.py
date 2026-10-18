@@ -51,13 +51,22 @@ from ..enrollment import make_code
 from ..services.backups import delete_backup_file, load_backup
 from ..services.policy_examples import EXAMPLES
 from ..services.policies import PolicyError, desired_policies, policy_hash, validate_policy
-from ..services.tasks import TASK_CAPABILITY, TaskError, queue_task
+from ..services.tasks import COMING_SOON, SAFE_TASKS, TASK_CAPABILITY, TaskError, queue_task
 from ..tls import ensure_agent_tls
 from .auth import csrf_token, current_user, flash, pop_flashes, require, verify_csrf
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
 router = APIRouter(dependencies=[Depends(verify_csrf)])
+
+
+def changes_allowed(user: User = Depends(current_user), settings: Settings = Depends(get_settings)) -> None:
+    """Guard for actions that change firewalls; they are "coming soon" until enabled."""
+    if not settings.enable_firewall_changes:
+        raise HTTPException(403, COMING_SOON)
+
+
+CHANGES = [Depends(changes_allowed)]
 login_limiter = RateLimiter(limit=10, window_seconds=300)
 
 viewer = require(Role.viewer)
@@ -132,6 +141,8 @@ def render(request: Request, template: str, status_code: int = 200, **ctx: Any) 
         version=__version__,
         Role=Role,
         theme=theme_preference(request),
+        changes_enabled=request.app.state.settings.enable_firewall_changes,
+        safe_tasks=SAFE_TASKS,
     )
     return TEMPLATES.TemplateResponse(request, template, ctx, status_code=status_code)
 
@@ -379,6 +390,7 @@ def device_queue_task(
     task_type: str = Form(...),
     package: str = Form(""),
     service: str = Form(""),
+    settings: Settings = Depends(get_settings),
     user: User = Depends(operator),
     db: Session = Depends(get_db),
 ):
@@ -401,7 +413,9 @@ def device_queue_task(
     elif ttype not in MANUAL_TASKS:
         raise HTTPException(400, "This task cannot be started manually")
     try:
-        task = queue_task(db, device, ttype, payload, actor=user.username)
+        task = queue_task(
+            db, device, ttype, payload, actor=user.username, changes_enabled=settings.enable_firewall_changes
+        )
     except TaskError as exc:
         flash(request, str(exc), "error")
         return redirect(f"/devices/{device_id}")
@@ -476,7 +490,7 @@ def device_delete(
     return redirect("/devices")
 
 
-@router.post("/devices/{device_id}/policies")
+@router.post("/devices/{device_id}/policies", dependencies=CHANGES)
 def device_assign_policy(
     device_id: str,
     request: Request,
@@ -495,7 +509,7 @@ def device_assign_policy(
     return redirect(f"/devices/{device_id}")
 
 
-@router.post("/devices/{device_id}/policies/{policy_id}/unassign")
+@router.post("/devices/{device_id}/policies/{policy_id}/unassign", dependencies=CHANGES)
 def device_unassign_policy(
     device_id: str,
     policy_id: int,
@@ -622,7 +636,7 @@ def backup_delete(
     return redirect(f"/devices/{device_id}#backups")
 
 
-@router.post("/backups/{backup_id}/restore")
+@router.post("/backups/{backup_id}/restore", dependencies=CHANGES)
 def backup_restore(
     backup_id: int,
     request: Request,
@@ -643,6 +657,7 @@ def backup_restore(
             {"backup_id": backup.id, "sha256": backup.sha256},
             actor=user.username,
             pickup_window=timedelta(hours=1),
+            changes_enabled=True,  # the route itself is guarded by changes_allowed
         )
     except TaskError as exc:
         flash(request, str(exc), "error")
@@ -797,7 +812,14 @@ def policies_page(request: Request, user: User = Depends(viewer), db: Session = 
 
 
 @router.get("/policies/new", response_class=HTMLResponse)
-def policy_new(request: Request, type: str = "aliases", user: User = Depends(operator)):
+def policy_new(
+    request: Request,
+    type: str = "aliases",
+    settings: Settings = Depends(get_settings),
+    user: User = Depends(operator),
+):
+    if not settings.enable_firewall_changes:
+        return redirect("/policies")
     ptype = PolicyType(type) if type in PolicyType.__members__ else PolicyType.aliases
     return render(
         request,
@@ -823,7 +845,7 @@ def _parse_policy_form(ptype_raw: str, content_raw: str) -> tuple[PolicyType, di
     return ptype, content
 
 
-@router.post("/policies")
+@router.post("/policies", dependencies=CHANGES)
 def policy_create(
     request: Request,
     name: str = Form(...),
@@ -864,7 +886,15 @@ def policy_create(
 
 
 @router.get("/policies/{policy_id}", response_class=HTMLResponse)
-def policy_detail(policy_id: int, request: Request, user: User = Depends(viewer), db: Session = Depends(get_db)):
+def policy_detail(
+    policy_id: int,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    user: User = Depends(viewer),
+    db: Session = Depends(get_db),
+):
+    if not settings.enable_firewall_changes:
+        return redirect("/policies")
     policy = db.get(Policy, policy_id)
     if policy is None:
         raise HTTPException(404, "Policy not found")
@@ -887,7 +917,7 @@ def policy_detail(policy_id: int, request: Request, user: User = Depends(viewer)
     )
 
 
-@router.post("/policies/{policy_id}")
+@router.post("/policies/{policy_id}", dependencies=CHANGES)
 def policy_update(
     policy_id: int,
     request: Request,
@@ -920,7 +950,7 @@ def policy_update(
     return redirect(f"/policies/{policy_id}")
 
 
-@router.post("/policies/{policy_id}/delete")
+@router.post("/policies/{policy_id}/delete", dependencies=CHANGES)
 def policy_delete(policy_id: int, request: Request, user: User = Depends(operator), db: Session = Depends(get_db)):
     policy = db.get(Policy, policy_id)
     if policy is None:
@@ -932,7 +962,7 @@ def policy_delete(policy_id: int, request: Request, user: User = Depends(operato
     return redirect("/policies")
 
 
-@router.post("/policies/{policy_id}/assign")
+@router.post("/policies/{policy_id}/assign", dependencies=CHANGES)
 def policy_assign(
     policy_id: int,
     request: Request,
@@ -963,7 +993,7 @@ def policy_assign(
     return redirect(f"/policies/{policy_id}")
 
 
-@router.post("/assignments/{assignment_id}/delete")
+@router.post("/assignments/{assignment_id}/delete", dependencies=CHANGES)
 def assignment_delete(
     assignment_id: int, request: Request, user: User = Depends(operator), db: Session = Depends(get_db)
 ):

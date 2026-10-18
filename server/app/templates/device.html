@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import status_badge, csrf, post_button with context %}
+{% from "macros.html" import status_badge, csrf, post_button, coming_soon with context %}
 {% block title %}{{ device.name }}{% endblock %}
 {% block content %}
 {% set inv = device.inventory or {} %}
@@ -80,11 +80,16 @@
       <select name="task_type">
         {% for t, label in manual_tasks.items() %}
           {% set cap = task_capability[t] %}
+          {% if t not in safe_tasks and not changes_enabled %}
+          <option value="{{ t.value }}" disabled>{{ label }} (coming soon)</option>
+          {% else %}
           <option value="{{ t.value }}"{% if cap and cap not in device.capabilities %} disabled{% endif %}>{{ label }}{% if cap and cap not in device.capabilities %} (not allowed on firewall){% endif %}</option>
+          {% endif %}
         {% endfor %}
       </select>
       <button>Queue task</button>
     </form>
+    {% if not changes_enabled %}<p class="small muted">Upgrades and reboots from ComSense are {{ coming_soon() }}</p>{% endif %}
     {% endif %}
   </section>
 </div>
@@ -125,7 +130,7 @@
 </section>
 
 <section class="card">
-  <h2>Services</h2>
+  <h2>Services{% if not changes_enabled %} <span class="h-badge muted small">restart {{ coming_soon() }}</span>{% endif %}</h2>
   <table>
     <thead><tr><th>Service</th><th>Status</th><th></th></tr></thead>
     <tbody>
@@ -134,7 +139,9 @@
         <td>{{ s.name }} <span class="muted small">{{ s.description }}</span></td>
         <td>{{ status_badge("running" if s.running else "stopped") }}</td>
         <td>
-          {% if can_operate and "services" in device.capabilities %}
+          {% if can_operate and not changes_enabled %}
+          <button class="small" disabled>Restart</button>
+          {% elif can_operate and "services" in device.capabilities %}
           <form method="post" action="/devices/{{ device.id }}/tasks" class="inline">
             {{ csrf() }}
             <input type="hidden" name="task_type" value="restart_service">
@@ -152,7 +159,7 @@
 
 <div class="grid2">
 <section class="card">
-  <h2>Packages</h2>
+  <h2>Packages{% if not changes_enabled %} <span class="h-badge">{{ coming_soon() }}</span>{% endif %}</h2>
   <table>
     <thead><tr><th>Package</th><th>Version</th></tr></thead>
     <tbody>
@@ -160,7 +167,9 @@
     {% else %}<tr><td colspan="2" class="muted">None reported.</td></tr>{% endfor %}
     </tbody>
   </table>
-  {% if can_operate and "packages" in device.capabilities %}
+  {% if not changes_enabled %}
+  <p class="small muted">Installing, removing and upgrading packages from ComSense is coming soon.</p>
+  {% elif can_operate and "packages" in device.capabilities %}
   <form method="post" action="/devices/{{ device.id }}/tasks" class="toolbar">
     {{ csrf() }}
     <input name="package" placeholder="pfSense-pkg-name" required>
@@ -171,7 +180,11 @@
 </section>
 
 <section class="card">
-  <h2>Policies</h2>
+  <h2>Policies{% if not changes_enabled %} <span class="h-badge">{{ coming_soon() }}</span>{% endif %}</h2>
+  {% if not changes_enabled %}
+  <p class="muted">Push aliases, firewall rules, DNS/NTP settings and packages to firewalls from reusable policies.
+  This is coming soon; for now ComSense monitors firewalls and backs them up without changing them.</p>
+  {% else %}
   <table>
     <thead><tr><th>Policy</th><th>Type</th><th>State</th><th></th></tr></thead>
     <tbody>
@@ -192,6 +205,7 @@
     <select name="policy_id">{% for p in assignable %}<option value="{{ p.id }}">{{ p.name }} ({{ p.type.value }})</option>{% endfor %}</select>
     <button>Assign</button>
   </form>
+  {% endif %}
   {% endif %}
 </section>
 </div>
@@ -214,7 +228,11 @@
           <a class="button small" href="/backups/{{ b.id }}/download">Download</a>
           {{ post_button("/backups/" ~ b.id ~ "/pin", "Unpin" if b.pinned else "Pin", "small") }}
           {% endif %}
+          {% if is_admin and not changes_enabled %}
+          <button class="small" disabled title="Restoring from ComSense is coming soon">Restore</button>
+          {% endif %}
           {% if is_admin %}
+          {% if changes_enabled %}
           <details class="inline">
             <summary class="button small">Restore…</summary>
             <form method="post" action="/backups/{{ b.id }}/restore" class="stack">
@@ -224,6 +242,7 @@
               <button class="danger small">Restore and reboot</button>
             </form>
           </details>
+          {% endif %}
           {{ post_button("/backups/" ~ b.id ~ "/delete", "Delete", "small danger", "Delete this backup permanently?") }}
           {% endif %}
         </td>

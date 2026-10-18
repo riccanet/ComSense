@@ -210,3 +210,21 @@ canvas { width: 100%; max-width: 420px; height: auto; margin-top: .75rem; }
 input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px;
 }
+
+/* "Coming soon" markers for features that change firewalls */
+.badge.soon {
+  background: transparent; color: var(--accent); border: 1px solid var(--accent);
+  font-size: 11px; font-weight: 600; letter-spacing: .02em; vertical-align: middle;
+}
+h1 .badge.soon, h2 .badge.soon { margin-left: .35rem; }
+.h-badge { font-weight: 400; }
+.nav-soon {
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--accent); border: 1px solid currentColor; border-radius: 999px; padding: 0 .3rem;
+  vertical-align: 2px; margin-left: .15rem;
+}
+.soon-card { max-width: 760px; }
+.soon-card ul { padding-left: 1.2rem; }
+.soon-card li { margin: .25rem 0; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button:disabled:hover { border-color: var(--line); }

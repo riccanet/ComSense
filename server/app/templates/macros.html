@@ -2,6 +2,10 @@
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 {%- endmacro %}
 
+{% macro coming_soon() -%}
+<span class="badge soon" title="Changing firewall settings from ComSense is not available yet">Coming soon</span>
+{%- endmacro %}
+
 {% macro status_badge(status) -%}
 <span class="badge s-{{ status|replace(" ", "-") }}">{{ status }}</span>
 {%- endmacro %}

@@ -248,12 +248,15 @@ def _open_policy_tasks(db: Session, device: Device) -> dict[str, Task]:
     return out
 
 
-def reconcile_device_policies(db: Session, device: Device, actor: str = "system") -> list[Task]:
+def reconcile_device_policies(
+    db: Session, device: Device, actor: str = "system", changes_enabled: bool = False
+) -> list[Task]:
     """Queue apply/remove tasks so the device converges on its assigned policies.
 
-    Returns the newly created tasks. The caller commits.
+    Does nothing unless firewall changes are enabled. Returns the newly created
+    tasks. The caller commits.
     """
-    if "policy" not in (device.capabilities or []):
+    if not changes_enabled or "policy" not in (device.capabilities or []):
         return []
     open_tasks = _open_policy_tasks(db, device)
     applied = dict(device.applied_policies or {})

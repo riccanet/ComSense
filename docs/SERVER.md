@@ -125,6 +125,7 @@ All settings are environment variables:
 | `CSFM_DATABASE_URL` | local PostgreSQL | SQLAlchemy URL |
 | `CSFM_SECRET_KEY` | *(required)* | Signs session cookies (32+ characters) |
 | `CSFM_BACKUP_ENCRYPTION_KEY` | *(required)* | Fernet key encrypting stored backups. **Back it up**: losing it makes all backups unreadable. |
+| `CSFM_ENABLE_FIREWALL_CHANGES` | false | Turns on the "coming soon" features that change firewalls: policies, package installs and upgrades, pfSense upgrades, service restarts, restores and reboots. Off, ComSense only monitors, checks for updates and takes backups. |
 | `CSFM_PUBLIC_URL` | | Web console URL |
 | `CSFM_WEB_HOST` / `CSFM_WEB_PORT` | `0.0.0.0` / 8000 | Web console listener (plain HTTP, for the proxy) |
 | `CSFM_FORWARDED_ALLOW_IPS` | `*` | Proxies trusted for `X-Forwarded-For` on the web listener |

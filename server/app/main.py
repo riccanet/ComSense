@@ -90,6 +90,7 @@ def create_web_app(settings: Settings) -> FastAPI:
         openapi_url=None,
     )
     app.dependency_overrides[get_settings] = lambda: settings
+    app.state.settings = settings
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,

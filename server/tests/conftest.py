@@ -27,9 +27,14 @@ from app.web import routes as web_routes  # noqa: E402
 ADMIN_PASSWORD = "correct horse battery staple"
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "changes: run with CSFM_ENABLE_FIREWALL_CHANGES on")
+
+
 @pytest.fixture
-def settings(tmp_path: Path) -> Settings:
+def settings(tmp_path: Path, request) -> Settings:
     return Settings(
+        enable_firewall_changes=request.node.get_closest_marker("changes") is not None,
         database_url=f"sqlite:///{tmp_path / 'test.db'}",
         secret_key="x" * 48,
         backup_encryption_key=generate_fernet_key(),

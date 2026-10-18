@@ -23,7 +23,7 @@
       ("/alerts", "Alerts", False), ("/organizations", "Organizations", False),
       ("/keys", "Enrollment keys", True), ("/users", "Users", True), ("/audit", "Audit log", True)] %}
       {% if not admin_only or user.role == Role.admin %}
-      <a href="{{ href }}"{% if path == href or (href != "/" and path.startswith(href)) %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
+      <a href="{{ href }}"{% if path == href or (href != "/" and path.startswith(href)) %} class="active" aria-current="page"{% endif %}>{{ label }}{% if href == "/policies" and not changes_enabled %} <span class="nav-soon">soon</span>{% endif %}</a>
       {% endif %}
     {% endfor %}
   </nav>

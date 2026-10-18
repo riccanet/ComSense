@@ -244,7 +244,7 @@ async def checkin(
     if config.get("sha256") and config["sha256"] != device.config_sha256:
         response["upload_backup"] = True  # config changed since our last stored copy
 
-    reconcile_device_policies(db, device)
+    reconcile_device_policies(db, device, changes_enabled=settings.enable_firewall_changes)
     db.flush()
     response["tasks"] = [task_to_wire(t) for t in take_pending_tasks(db, device)]
     if utcnow() - aware(device.token_rotated_at) > TOKEN_MAX_AGE:
