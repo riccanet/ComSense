@@ -37,23 +37,64 @@ self-issued certificate; add more with `CSFM_AGENT_TLS_NAMES`.
 * A DNS name. Inbound TCP 443 for admins (plus 80 if Caddy obtains the certificate) and TCP 8443 for firewalls.
 * PostgreSQL 13+ (bundled in both install methods).
 
-## Option A: Docker Compose
+## Choose a deployment
+
+Pick one of two options. Both run the same app; they differ only in what serves the web console.
+
+| | Option 1: bundled Caddy | Option 2: bring your own proxy |
+| --- | --- | --- |
+| Web console | Caddy on 80/443 with a free Let's Encrypt certificate | Plain HTTP on `CSFM_WEB_BIND:8000` for your proxy (Nginx Proxy Manager, Traefik, HAProxy, NetBird, a WAF…) |
+| Agent port | 8443, TLS by the app, published directly | Same |
+| Ports to forward | 80, 443, 8443 | 8443 (plus whatever your proxy already uses) |
+| Docker / Portainer | `deploy/docker-compose.caddy.yml` | `deploy/docker-compose.byo-proxy.yml` |
+| Debian/Ubuntu, no Docker | `install-debian.sh <domain> [email]` | `install-debian.sh --byo-proxy[=BIND] <domain>` |
+
+### With Docker Compose
 
 ```sh
 cd deploy
 cp .env.example .env
-docker compose run --rm app python -m app.cli keygen
+echo CSFM_SECRET_KEY=$(openssl rand -base64 48 | tr -d '\n/+=') >> .env
+echo CSFM_BACKUP_ENCRYPTION_KEY=$(openssl rand -base64 32 | tr '+/' '-_') >> .env
+$EDITOR .env          # set CSFM_DOMAIN and POSTGRES_PASSWORD; remove the empty key lines
+
+docker compose -f docker-compose.caddy.yml up -d        # option 1
+docker compose -f docker-compose.byo-proxy.yml up -d    # option 2
+docker logs comsense-app 2>&1 | grep -A1 'username:'    # first admin's one-time password
 ```
 
-Copy the two printed lines into `.env`, then set `CSFM_DOMAIN`, `ACME_EMAIL` and `POSTGRES_PASSWORD`,
-and start it:
+### With Portainer
+
+*Stacks > Add stack > Repository*, this repository, compose path `deploy/docker-compose.caddy.yml` or
+`deploy/docker-compose.byo-proxy.yml`, and add the variables from `.env.example` as stack environment
+variables. Portainer builds the image from `server/`. The first admin's password is in the
+`comsense-app` container log.
+
+### Debian/Ubuntu without Docker
 
 ```sh
-docker compose up -d
-docker compose logs app | grep -A1 'username:'   # the first admin's one-time password
+sudo ./deploy/install-debian.sh comsense.example.com admin@example.com          # option 1
+sudo ./deploy/install-debian.sh --byo-proxy=10.0.0.5 comsense.example.com        # option 2
+journalctl -u comsense | grep -A1 'username:'                                    # one-time password
 ```
 
-### First sign-in
+The script installs PostgreSQL and Python (and Caddy for option 1) from the distribution, creates the
+database with a random password, writes `/etc/comsense/comsense.env` with fresh keys and installs the
+sandboxed systemd unit `comsense.service`. With `--byo-proxy` the console listens on the given address
+(default 127.0.0.1) port 8000. Re-running it upgrades the code and keeps data and keys.
+
+### Setting up your own proxy (option 2)
+
+Point an HTTPS proxy host for `CSFM_DOMAIN` at `http://<CSFM_WEB_BIND>:8000` (no WebSockets needed). Then lock it down as you see fit; firewalls never use it.
+Bind the console to an address only the proxy can reach (127.0.0.1 when the proxy is on the same host,
+otherwise a LAN or VPN address). If anything other than the proxy can reach that port, set
+`CSFM_FORWARDED_ALLOW_IPS` to the proxy's address.
+
+Do **not** route the agent port through the proxy: forward it straight to the server, so the app's
+pinned certificate reaches the firewalls and their real addresses are seen. If `CSFM_DOMAIN` points at
+the proxy or a CDN, give the agent port its own DNS name with `CSFM_AGENT_DOMAIN`.
+
+## First sign-in
 
 On its first start the server creates the admin account (`CSFM_INITIAL_ADMIN_USER`, default `admin`)
 with a random one-time password unique to that install, and writes it to the log once, in a banner:
@@ -69,30 +110,11 @@ with a random one-time password unique to that install, and writes it to the log
 
 Signing in with it leads straight to *Choose a new password*; nothing else is reachable until it is
 changed. Passwords that admins set for other users, or reset, are one-time in the same way.
-Lost the admin password? `python -m app.cli create-user admin` sets a new one-time password.
+Lost the admin password? `python -m app.cli create-user admin` (in the container:
+`docker exec -it comsense-app python -m app.cli create-user admin`) sets a new one-time password.
 
-Volumes: `db-data` (PostgreSQL), `app-data` (encrypted backups and the `downloads` folder),
-`caddy-data` (certificates).
-
-## Option B: Debian/Ubuntu without Docker
-
-```sh
-sudo ./deploy/install-debian.sh comsense.example.com admin@example.com
-```
-
-The script installs PostgreSQL, Python and Caddy from the distribution, creates the database with a
-random password, writes `/etc/comsense/comsense.env` with fresh keys, installs the systemd unit
-`comsense.service` (sandboxed, listening on 127.0.0.1:8000) and configures Caddy. It prints the
-initial admin password once. Re-running it upgrades the code and keeps data and keys.
-
-## Using your own certificate or reverse proxy
-
-Any proxy works for the web console if it terminates TLS, forwards to the app's web port (8000) and sets
-`X-Forwarded-For`. Set `CSFM_FORWARDED_ALLOW_IPS` to the proxy's address if anything other than the proxy
-can reach port 8000. The agent port is not proxied: forward it straight to the app, so agents' real
-addresses are seen and per-address lockouts work.
-
-A Portainer stack for running behind an existing proxy is in `deploy/portainer-stack.yml`.
+Data lives in the volumes `comsense-db` (PostgreSQL) and `comsense-data` (encrypted backups, agent
+certificate, `downloads`), plus `caddy-data` (certificates) for option 1.
 
 ## Configuration
 

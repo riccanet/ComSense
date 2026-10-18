@@ -64,18 +64,18 @@ docs/                        Server, agent, protocol, policy and security docume
 
 ## Quick start
 
-1. **Server** (any Linux host with Docker and a DNS name pointing at it):
+1. **Server**: choose **bundled Caddy** (it gets the console a Let's Encrypt certificate) or
+   **bring your own proxy** (Nginx Proxy Manager, Traefik, NetBird, a WAF…). With Docker:
 
    ```sh
-   cd deploy
-   cp .env.example .env
-   docker compose run --rm app python -m app.cli keygen   # paste both values into .env
-   $EDITOR .env                                            # set CSFM_DOMAIN, POSTGRES_PASSWORD, etc.
-   docker compose up -d
-   docker compose logs app | grep -A1 'username:'          # first admin's one-time password
+   cd deploy && cp .env.example .env     # set CSFM_DOMAIN, POSTGRES_PASSWORD and the two keys
+   docker compose -f docker-compose.caddy.yml up -d       # option 1
+   docker compose -f docker-compose.byo-proxy.yml up -d   # option 2
+   docker logs comsense-app 2>&1 | grep -A1 'username:'   # first admin's one-time password
    ```
 
-   Or without Docker: `sudo ./deploy/install-debian.sh comsense.example.com you@example.com`.
+   Both work as Portainer stacks too. Without Docker:
+   `sudo ./deploy/install-debian.sh [--byo-proxy] comsense.example.com`.
    Details in [docs/SERVER.md](docs/SERVER.md).
 
 2. **Package**: build `pfSense-pkg-ComSense-<version>.pkg` (`sh agent/build-pkg.sh` on FreeBSD or

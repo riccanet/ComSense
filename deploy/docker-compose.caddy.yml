@@ -1,0 +1,114 @@
+# ComSense Firewall Manager, option 1: bundled Caddy reverse proxy.
+#
+#   docker compose -f docker-compose.caddy.yml up -d
+#
+# Caddy obtains a Let's Encrypt certificate for CSFM_DOMAIN and serves the web
+# console on 443. The agent listener terminates TLS itself on its own port.
+# Forward/open these ports to this host:
+#   80, 443  web console (80 is needed for certificate issuance). Restrict 443 to
+#            admins if you like; firewalls never use it.
+#   8443     agents (CSFM_AGENT_PORT_PUBLIC changes it).
+#
+# Required: CSFM_DOMAIN, POSTGRES_PASSWORD, CSFM_SECRET_KEY, CSFM_BACKUP_ENCRYPTION_KEY
+# (generate the keys with:
+#    echo CSFM_SECRET_KEY=$(openssl rand -base64 48 | tr -d '\n/+=')
+#    echo CSFM_BACKUP_ENCRYPTION_KEY=$(openssl rand -base64 32 | tr '+/' '-_')
+#  and keep a copy of the backup key: stored backups cannot be read without it).
+# Docker Compose reads them from deploy/.env (see .env.example); in Portainer
+# (Stacks > Add stack > Repository, compose path deploy/<this file>) set them as
+# stack environment variables.
+#
+# First sign-in: the admin's one-time password is written to the comsense-app log
+# on first start (docker logs comsense-app) and must be changed when first used.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: comsense-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: comsense
+      POSTGRES_USER: comsense
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - comsense-db:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U comsense -d comsense"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  app:
+    build: ../server
+    image: comsense-server:local
+    container_name: comsense-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      CSFM_DATABASE_URL: postgresql+psycopg://comsense:${POSTGRES_PASSWORD}@db:5432/comsense
+      CSFM_PUBLIC_URL: https://${CSFM_DOMAIN:?CSFM_DOMAIN is required}
+      CSFM_AGENT_URL: https://${CSFM_AGENT_DOMAIN:-${CSFM_DOMAIN}}:${CSFM_AGENT_PORT_PUBLIC:-8443}
+      CSFM_AGENT_TLS_NAMES: ${CSFM_AGENT_TLS_NAMES:-}
+      CSFM_SECRET_KEY: ${CSFM_SECRET_KEY:?CSFM_SECRET_KEY is required}
+      CSFM_BACKUP_ENCRYPTION_KEY: ${CSFM_BACKUP_ENCRYPTION_KEY:?CSFM_BACKUP_ENCRYPTION_KEY is required}
+      CSFM_INITIAL_ADMIN_USER: ${CSFM_INITIAL_ADMIN_USER:-admin}
+      CSFM_CHECKIN_INTERVAL: ${CSFM_CHECKIN_INTERVAL:-60}
+      CSFM_BACKUP_RETENTION_COUNT: ${CSFM_BACKUP_RETENTION_COUNT:-5}
+      CSFM_METRICS_RETENTION_DAYS: ${CSFM_METRICS_RETENTION_DAYS:-30}
+      CSFM_TASK_RETENTION_DAYS: ${CSFM_TASK_RETENTION_DAYS:-90}
+    ports:
+      - "${CSFM_AGENT_BIND:-0.0.0.0}:${CSFM_AGENT_PORT_PUBLIC:-8443}:8443"
+    networks:
+      - internal
+    volumes:
+      - comsense-data:/var/lib/comsense
+    labels:
+      # Built locally, so there is nothing for Watchtower to pull.
+      com.centurylinklabs.watchtower.enable: "false"
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    logging: *logging
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: comsense-caddy
+    restart: unless-stopped
+    depends_on:
+      - app
+    # Automatic HTTPS for the console; no Caddyfile needed.
+    command: caddy reverse-proxy --from ${CSFM_DOMAIN} --to app:8000
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - internal
+    logging: *logging
+
+volumes:
+  comsense-db:
+  comsense-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  internal: {}
