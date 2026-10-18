@@ -17,7 +17,7 @@
 
 ## Transport
 
-* Agents talk to a **dedicated listener** on its own port (8443 by default). It serves only the agent API
+* Agents talk to a **dedicated listener** on its own port (10443 by default). It serves only the agent API
   and package downloads; the web console is a different listener that should be reachable only through
   your reverse proxy. Admins can therefore lock the console down completely (allow-lists, WAF, SSO,
   VPN) while the fleet keeps working, and the internet-facing surface is limited to token-authenticated

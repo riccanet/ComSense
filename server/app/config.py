@@ -54,7 +54,7 @@ class Settings:
         default_factory=lambda: os.environ.get("CSFM_FORWARDED_ALLOW_IPS", "*")
     )
     agent_host: str = field(default_factory=lambda: os.environ.get("CSFM_AGENT_HOST", "0.0.0.0"))
-    agent_port: int = field(default_factory=lambda: _int("CSFM_AGENT_PORT", 8443))
+    agent_port: int = field(default_factory=lambda: _int("CSFM_AGENT_PORT", 10443))
     # Address firewalls use to reach the agent listener (after NAT). Defaults to
     # the public URL's host on the agent port.
     agent_url_override: str = field(default_factory=lambda: os.environ.get("CSFM_AGENT_URL", ""))

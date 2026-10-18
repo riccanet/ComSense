@@ -55,7 +55,7 @@
 			<fieldname>server_url</fieldname>
 			<type>input</type>
 			<size>60</size>
-			<description>Filled in automatically from the enrollment code. The server's agent address, e.g. https://comsense.example.com:8443 (the agent port, not the web console). Plain HTTP is not accepted.</description>
+			<description>Filled in automatically from the enrollment code. The server's agent address, e.g. https://comsense.example.com:10443 (the agent port, not the web console). Plain HTTP is not accepted.</description>
 		</field>
 		<field>
 			<fielddescr>Enrollment code</fielddescr>

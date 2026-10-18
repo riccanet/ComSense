@@ -8,7 +8,7 @@
 #                HTTP. Point your proxy at it, terminate HTTPS there and protect it
 #                as you like. Bind it to an address only the proxy can reach, e.g.
 #                127.0.0.1, a private LAN IP or a NetBird/WireGuard IP.
-#   Agents       CSFM_AGENT_BIND:CSFM_AGENT_PORT_PUBLIC (default 0.0.0.0:8443), TLS
+#   Agents       CSFM_AGENT_BIND:CSFM_AGENT_PORT_PUBLIC (default 0.0.0.0:10443), TLS
 #                terminated by the app with a pinned certificate. Do not proxy it;
 #                forward it straight to this host.
 #
@@ -63,7 +63,7 @@ services:
     environment:
       CSFM_DATABASE_URL: postgresql+psycopg://comsense:${POSTGRES_PASSWORD}@db:5432/comsense
       CSFM_PUBLIC_URL: https://${CSFM_DOMAIN:?CSFM_DOMAIN is required}
-      CSFM_AGENT_URL: https://${CSFM_AGENT_DOMAIN:-${CSFM_DOMAIN}}:${CSFM_AGENT_PORT_PUBLIC:-8443}
+      CSFM_AGENT_URL: https://${CSFM_AGENT_DOMAIN:-${CSFM_DOMAIN}}:${CSFM_AGENT_PORT_PUBLIC:-10443}
       CSFM_AGENT_TLS_NAMES: ${CSFM_AGENT_TLS_NAMES:-}
       CSFM_SECRET_KEY: ${CSFM_SECRET_KEY:?CSFM_SECRET_KEY is required}
       CSFM_BACKUP_ENCRYPTION_KEY: ${CSFM_BACKUP_ENCRYPTION_KEY:?CSFM_BACKUP_ENCRYPTION_KEY is required}
@@ -76,7 +76,7 @@ services:
       CSFM_FORWARDED_ALLOW_IPS: ${CSFM_FORWARDED_ALLOW_IPS:-*}
     ports:
       - "${CSFM_WEB_BIND:-127.0.0.1}:${CSFM_WEB_PORT_PUBLIC:-8000}:8000"
-      - "${CSFM_AGENT_BIND:-0.0.0.0}:${CSFM_AGENT_PORT_PUBLIC:-8443}:8443"
+      - "${CSFM_AGENT_BIND:-0.0.0.0}:${CSFM_AGENT_PORT_PUBLIC:-10443}:10443"
     networks:
       - internal
     volumes:

@@ -7,7 +7,7 @@
 # Forward/open these ports to this host:
 #   80, 443  web console (80 is needed for certificate issuance). Restrict 443 to
 #            admins if you like; firewalls never use it.
-#   8443     agents (CSFM_AGENT_PORT_PUBLIC changes it).
+#   10443     agents (CSFM_AGENT_PORT_PUBLIC changes it).
 #
 # Required: CSFM_DOMAIN, POSTGRES_PASSWORD, CSFM_SECRET_KEY, CSFM_BACKUP_ENCRYPTION_KEY
 # (generate the keys with:
@@ -60,7 +60,7 @@ services:
     environment:
       CSFM_DATABASE_URL: postgresql+psycopg://comsense:${POSTGRES_PASSWORD}@db:5432/comsense
       CSFM_PUBLIC_URL: https://${CSFM_DOMAIN:?CSFM_DOMAIN is required}
-      CSFM_AGENT_URL: https://${CSFM_AGENT_DOMAIN:-${CSFM_DOMAIN}}:${CSFM_AGENT_PORT_PUBLIC:-8443}
+      CSFM_AGENT_URL: https://${CSFM_AGENT_DOMAIN:-${CSFM_DOMAIN}}:${CSFM_AGENT_PORT_PUBLIC:-10443}
       CSFM_AGENT_TLS_NAMES: ${CSFM_AGENT_TLS_NAMES:-}
       CSFM_SECRET_KEY: ${CSFM_SECRET_KEY:?CSFM_SECRET_KEY is required}
       CSFM_BACKUP_ENCRYPTION_KEY: ${CSFM_BACKUP_ENCRYPTION_KEY:?CSFM_BACKUP_ENCRYPTION_KEY is required}
@@ -70,7 +70,7 @@ services:
       CSFM_METRICS_RETENTION_DAYS: ${CSFM_METRICS_RETENTION_DAYS:-30}
       CSFM_TASK_RETENTION_DAYS: ${CSFM_TASK_RETENTION_DAYS:-90}
     ports:
-      - "${CSFM_AGENT_BIND:-0.0.0.0}:${CSFM_AGENT_PORT_PUBLIC:-8443}:8443"
+      - "${CSFM_AGENT_BIND:-0.0.0.0}:${CSFM_AGENT_PORT_PUBLIC:-10443}:10443"
     networks:
       - internal
     volumes:

@@ -24,9 +24,9 @@ def test_agent_listener_serves_only_agent_api(agent):
 
 
 def test_enrollment_code_round_trip():
-    code = make_code("https://fw.example.com:8443", "csfm_enr_abc", "PIN=")
-    assert parse_code(code) == {"url": "https://fw.example.com:8443", "key": "csfm_enr_abc", "pin": "PIN="}
-    assert "pin" not in parse_code(make_code("https://x:8443", "k", None))
+    code = make_code("https://fw.example.com:10443", "csfm_enr_abc", "PIN=")
+    assert parse_code(code) == {"url": "https://fw.example.com:10443", "key": "csfm_enr_abc", "pin": "PIN="}
+    assert "pin" not in parse_code(make_code("https://x:10443", "k", None))
 
 
 def test_self_issued_certificate_keeps_its_pin_across_renewal(settings):

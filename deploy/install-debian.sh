@@ -2,7 +2,7 @@
 #
 # Install the ComSense server on Debian 12+ or Ubuntu 22.04+ without Docker:
 # PostgreSQL, the app under systemd (web console + agent listener with its own
-# TLS on port 8443) and, unless you bring your own proxy, Caddy for the console.
+# TLS on port 10443) and, unless you bring your own proxy, Caddy for the console.
 #
 #   Option 1, bundled Caddy (console on https://<domain>, Let's Encrypt):
 #     sudo ./deploy/install-debian.sh comsense.example.com [admin@example.com]
@@ -12,7 +12,7 @@
 #     BIND_ADDRESS defaults to 127.0.0.1; use a LAN/VPN address if the proxy is on
 #     another host. Point the proxy at http://BIND_ADDRESS:8000.
 #
-# Either way, forward/open TCP 8443 for firewalls. Re-running upgrades the
+# Either way, forward/open TCP 10443 for firewalls. Re-running upgrades the
 # application and keeps existing keys and data.
 set -euo pipefail
 
@@ -116,7 +116,7 @@ if [[ $BYO_PROXY -eq 0 ]]; then
 fi
 
 echo "First sign-in: user admin, one-time password from: journalctl -u comsense | grep -A1 'username:'"
-echo "Agents: https://${DOMAIN}:8443 (forward/open TCP 8443 to this host)."
+echo "Agents: https://${DOMAIN}:10443 (forward/open TCP 10443 to this host)."
 if [[ $BYO_PROXY -eq 0 ]]; then
 	echo "Web console: https://${DOMAIN} via Caddy (open 80 and 443; restrict 443 to admins if you like)."
 else

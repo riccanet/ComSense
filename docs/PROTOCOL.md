@@ -1,6 +1,6 @@
 # Agent protocol
 
-All endpoints are under `https://<server>:<agent port>/api/agent/v1` (port 8443 by default). The agent
+All endpoints are under `https://<server>:<agent port>/api/agent/v1` (port 10443 by default). The agent
 listener is separate from the web console and serves nothing else. Agents authenticate the server by
 pinning its public key (`CURLOPT_PINNEDPUBLICKEY`), or by CA verification when the operator installed
 their own certificate.

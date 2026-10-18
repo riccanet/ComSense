@@ -66,7 +66,7 @@ def client(settings: Settings):
 @pytest.fixture
 def agent(client, settings):
     """Client for the agent listener (a separate app on its own TLS port)."""
-    with TestClient(create_agent_app(settings), base_url="https://testserver:8443") as c:
+    with TestClient(create_agent_app(settings), base_url="https://testserver:10443") as c:
         yield c
 
 

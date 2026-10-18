@@ -5,9 +5,9 @@ The server is a single Python process (FastAPI) backed by PostgreSQL, with two l
 | Listener | Default | Protocol | Expose to |
 | --- | --- | --- | --- |
 | Web console | `:8000` | plain HTTP | Your HTTPS reverse proxy only (Caddy, Nginx Proxy Manager, NetBird, a WAF…), published on 443 |
-| Agent API | `:8443` | TLS, terminated by the app | The internet, or forwarded through NAT; serves nothing but `/api/agent/v1/*` and `/downloads/*` |
+| Agent API | `:10443` | TLS, terminated by the app | The internet, or forwarded through NAT; serves nothing but `/api/agent/v1/*` and `/downloads/*` |
 
-So a deployment needs exactly two inbound ports: **443** for admins and **8443** (or any port you choose)
+So a deployment needs exactly two inbound ports: **443** for admins and **10443** (or any port you choose)
 for firewalls. Because agents never touch the web console, you can restrict 443 as tightly as you like
 (source allow-list, geo-blocking, CrowdSec, SSO in front, VPN only) without affecting the fleet.
 
@@ -27,14 +27,14 @@ enrollment codes carry no pin. Avoid this with Let's Encrypt certificates whose 
 
 Firewalls use `CSFM_AGENT_URL`, which defaults to `https://<host of CSFM_PUBLIC_URL>:<CSFM_AGENT_PORT>`.
 Set it when the outside port or name differs because of NAT, e.g. `CSFM_AGENT_URL=https://fw-mgmt.example.com:9443`
-with the router forwarding 9443 to the server's 8443. Names and IPs in this URL go into the
+with the router forwarding 9443 to the server's 10443. Names and IPs in this URL go into the
 self-issued certificate; add more with `CSFM_AGENT_TLS_NAMES`.
 
 ## Requirements
 
 * Linux host (Debian 12, Ubuntu 22.04/24.04 or any distribution with Docker), 1 vCPU and 1 GB RAM
   covers hundreds of firewalls at the default 60 s check-in interval.
-* A DNS name. Inbound TCP 443 for admins (plus 80 if Caddy obtains the certificate) and TCP 8443 for firewalls.
+* A DNS name. Inbound TCP 443 for admins (plus 80 if Caddy obtains the certificate) and TCP 10443 for firewalls.
 * PostgreSQL 13+ (bundled in both install methods).
 
 ## Choose a deployment
@@ -44,8 +44,8 @@ Pick one of two options. Both run the same app; they differ only in what serves 
 | | Option 1: bundled Caddy | Option 2: bring your own proxy |
 | --- | --- | --- |
 | Web console | Caddy on 80/443 with a free Let's Encrypt certificate | Plain HTTP on `CSFM_WEB_BIND:8000` for your proxy (Nginx Proxy Manager, Traefik, HAProxy, NetBird, a WAF…) |
-| Agent port | 8443, TLS by the app, published directly | Same |
-| Ports to forward | 80, 443, 8443 | 8443 (plus whatever your proxy already uses) |
+| Agent port | 10443, TLS by the app, published directly | Same |
+| Ports to forward | 80, 443, 10443 | 10443 (plus whatever your proxy already uses) |
 | Docker / Portainer | `deploy/docker-compose.caddy.yml` | `deploy/docker-compose.byo-proxy.yml` |
 | Debian/Ubuntu, no Docker | `install-debian.sh <domain> [email]` | `install-debian.sh --byo-proxy[=BIND] <domain>` |
 
@@ -161,8 +161,8 @@ All settings are environment variables:
 | `CSFM_PUBLIC_URL` | | Web console URL |
 | `CSFM_WEB_HOST` / `CSFM_WEB_PORT` | `0.0.0.0` / 8000 | Web console listener (plain HTTP, for the proxy) |
 | `CSFM_FORWARDED_ALLOW_IPS` | `*` | Proxies trusted for `X-Forwarded-For` on the web listener |
-| `CSFM_AGENT_HOST` / `CSFM_AGENT_PORT` | `0.0.0.0` / 8443 | Agent listener (TLS) |
-| `CSFM_AGENT_URL` | `https://<public host>:8443` | Address firewalls use, after NAT; put into enrollment codes |
+| `CSFM_AGENT_HOST` / `CSFM_AGENT_PORT` | `0.0.0.0` / 10443 | Agent listener (TLS) |
+| `CSFM_AGENT_URL` | `https://<public host>:10443` | Address firewalls use, after NAT; put into enrollment codes |
 | `CSFM_AGENT_TLS_CERT` / `_KEY` | self-issued | Use your own certificate for the agent listener |
 | `CSFM_AGENT_TLS_NAMES` | | Extra DNS names / IPs for the self-issued certificate, comma separated |
 | `CSFM_DATA_DIR` | `/var/lib/comsense` | Backups (`backups/`) and agent packages (`downloads/`) |

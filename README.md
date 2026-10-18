@@ -20,12 +20,12 @@ The server has two separate listeners, so it needs only two ports forwarded thro
 | Port | Serves | Who reaches it |
 | --- | --- | --- |
 | **443** (via your reverse proxy) | Web console | Admins. Put it behind whatever protection you use: allow-list, WAF, SSO proxy, VPN. |
-| **8443** (configurable) | Agent API only, TLS terminated by the app | Firewalls. Each agent pins the server's key, so no public certificate is needed. |
+| **10443** (configurable) | Agent API only, TLS terminated by the app | Firewalls. Each agent pins the server's key, so no public certificate is needed. |
 
 ```
                                                   ┌──────────────────────────────────────┐
- ┌────────────────────┐   TLS :8443, pinned key   │ ComSense app                         │
- │ pfSense CE / Plus  │ ────────────────────────▶ │   ├─ agent listener :8443 (own TLS)  │
+ ┌────────────────────┐  TLS :10443, pinned key   │ ComSense app                         │
+ │ pfSense CE / Plus  │ ────────────────────────▶ │   ├─ agent listener :10443 (own TLS) │
  │                    │   enroll · check-in ·     │   │    agent API only                │
  │ pfSense-pkg-       │   task results · backups  │   ├─ web console :8000 (HTTP) ◀──┐   │
  │ ComSense agent     │ ◀──────────────────────── │   └─ scheduler                   │   │
@@ -108,7 +108,7 @@ Run the server locally against SQLite:
 cd server
 export CSFM_DATABASE_URL=sqlite:///./dev.db CSFM_DATA_DIR=./data CSFM_SECURE_COOKIES=false \
        $(python -m app.cli keygen | xargs)   # the admin's one-time password is printed in the log
-python -m app.serve        # web console on :8000, agent listener on :8443
+python -m app.serve        # web console on :8000, agent listener on :10443
 ```
 
 ## Status

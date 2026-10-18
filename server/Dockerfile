@@ -15,8 +15,8 @@ RUN mkdir -p /var/lib/comsense && chown comsense:comsense /var/lib/comsense
 USER comsense
 VOLUME ["/var/lib/comsense"]
 # 8000: web console (plain HTTP, publish only through an HTTPS reverse proxy)
-# 8443: agent listener (TLS terminated here; forward the firewall-facing port to it)
-EXPOSE 8000 8443
+# 10443: agent listener (TLS terminated here; forward the firewall-facing port to it)
+EXPOSE 8000 10443
 
 HEALTHCHECK --interval=30s --timeout=5s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"
 

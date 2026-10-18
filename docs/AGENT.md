@@ -41,7 +41,7 @@ From **Diagnostics > Command Prompt** or an SSH shell:
 Copy the install command from the server's *Enrollment keys* page. It looks like:
 
 ```sh
-fetch -o /tmp/comsense.pkg --no-verify-peer https://comsense.example.com:8443/downloads/pfSense-pkg-ComSense-0.1.0.pkg \
+fetch -o /tmp/comsense.pkg --no-verify-peer https://comsense.example.com:10443/downloads/pfSense-pkg-ComSense-0.1.0.pkg \
   && [ "$(sha256 -q /tmp/comsense.pkg)" = "<sha256 shown on the page>" ] \
   && pkg-static add /tmp/comsense.pkg
 ```
@@ -65,8 +65,8 @@ is kept so a reinstall keeps its identity; delete that directory to reset comple
 | Setting | |
 | --- | --- |
 | Enable | Runs the agent service. |
-| Enrollment code | Paste the code from the server's *Enrollment keys* page. It holds the agent address (`https://host:8443`), a one-time key and the server's public key pin. On **Save** the firewall enrolls immediately; a wrong code, address or pin is shown as an error on the page. On success the key is cleared from `config.xml` and replaced by a per-device token in `/var/db/comsense/credentials.json` (mode 0600), which is not part of config backups. Paste a new code at any time to re-enroll. A bare key also works if you fill in the fields below yourself. |
-| Server URL | Filled in from the code: the server's **agent** port, e.g. `https://comsense.example.com:8443`. HTTP URLs are rejected. |
+| Enrollment code | Paste the code from the server's *Enrollment keys* page. It holds the agent address (`https://host:10443`), a one-time key and the server's public key pin. On **Save** the firewall enrolls immediately; a wrong code, address or pin is shown as an error on the page. On success the key is cleared from `config.xml` and replaced by a per-device token in `/var/db/comsense/credentials.json` (mode 0600), which is not part of config backups. Paste a new code at any time to re-enroll. A bare key also works if you fill in the fields below yourself. |
+| Server URL | Filled in from the code: the server's **agent** port, e.g. `https://comsense.example.com:10443`. HTTP URLs are rejected. |
 | Public key pin | Filled in from the code when the server uses its own certificate. The agent then trusts exactly this key and nothing else. Empty for a publicly trusted certificate. |
 | Server CA certificate | Rarely needed: only for an agent-port certificate issued by your private CA. |
 | Allowed remote actions | What the server may change: backups, policies, packages, upgrades, service restarts, restore, reboot. Monitoring is always on. The agent refuses anything not ticked here, whatever the server asks. |

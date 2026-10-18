@@ -84,7 +84,7 @@ def test_create_enrollment_key_shows_once_and_stores_hash(client, db, agent, set
     parsed = parse_code(code)
     key = parsed["key"]
     assert key.startswith("csfm_enr_")
-    assert parsed["url"] == "https://comsense.test:8443"
+    assert parsed["url"] == "https://comsense.test:10443"
     assert parsed["pin"] == ensure_agent_tls(settings).pin  # self-issued certificate is pinned
     assert key not in client.get("/keys").text
     stored = db.scalar(select(EnrollmentKey))
