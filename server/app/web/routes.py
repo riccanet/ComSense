@@ -267,6 +267,7 @@ def dashboard(request: Request, user: User = Depends(viewer), db: Session = Depe
         "dashboard.html",
         counts={s.value: counts.get(s, 0) for s in DeviceStatus},
         total=len(devices),
+        customers=db.scalar(select(func.count()).select_from(Organization)),
         alerts=alerts,
         updates=updates,
         recent_tasks=recent_tasks,
@@ -279,14 +280,16 @@ def dashboard(request: Request, user: User = Depends(viewer), db: Session = Depe
 @router.get("/devices", response_class=HTMLResponse)
 def devices(
     request: Request,
-    org: int | None = None,
+    org: str = "",
     q: str = "",
     user: User = Depends(viewer),
     db: Session = Depends(get_db),
 ):
     stmt = select(Device).order_by(Device.name)
-    if org:
-        stmt = stmt.where(Device.organization_id == org)
+    if org == "none":
+        stmt = stmt.where(Device.organization_id.is_(None))
+    elif org.isdigit():
+        stmt = stmt.where(Device.organization_id == int(org))
     if q:
         like = f"%{q}%"
         stmt = stmt.where(
@@ -531,7 +534,7 @@ def device_unassign_policy(
         )
     )
     if assignment is None:
-        flash(request, "That policy comes from an organization or global assignment.", "error")
+        flash(request, "That policy comes from a customer-wide or global assignment.", "error")
     else:
         db.delete(assignment)
         audit(db, user.username, "policy.unassigned", target=device_id, detail=str(policy_id), ip=_ip(request))
@@ -683,6 +686,7 @@ def backup_restore(
 @router.get("/keys", response_class=HTMLResponse)
 def keys_page(
     request: Request,
+    customer: int | None = None,
     settings: Settings = Depends(get_settings),
     user: User = Depends(admin),
     db: Session = Depends(get_db),
@@ -707,6 +711,7 @@ def keys_page(
         agent_url=settings.agent_url,
         agent_pin=pin,
         agent_cert_expires=tls.not_after,
+        preselect=customer,
         package=package,
         now=utcnow(),
     )
@@ -752,59 +757,6 @@ def keys_revoke(key_id: int, request: Request, user: User = Depends(admin), db: 
     db.commit()
     flash(request, "Key revoked. Firewalls already enrolled keep working.", "success")
     return redirect("/keys")
-
-
-# ------------------------------------------------------------------ organizations
-
-
-@router.get("/organizations", response_class=HTMLResponse)
-def orgs_page(request: Request, user: User = Depends(viewer), db: Session = Depends(get_db)):
-    counts = dict(
-        db.execute(select(Device.organization_id, func.count()).group_by(Device.organization_id)).all()
-    )
-    return render(
-        request,
-        "organizations.html",
-        orgs=db.scalars(select(Organization).order_by(Organization.name)).all(),
-        counts=counts,
-    )
-
-
-@router.post("/organizations")
-def orgs_create(
-    request: Request,
-    name: str = Form(...),
-    notes: str = Form(""),
-    user: User = Depends(operator),
-    db: Session = Depends(get_db),
-):
-    db.add(Organization(name=name.strip()[:128], notes=notes))
-    try:
-        audit(db, user.username, "organization.created", target=name, ip=_ip(request))
-        db.commit()
-        flash(request, "Organization created.", "success")
-    except IntegrityError:
-        db.rollback()
-        flash(request, "An organization with that name already exists.", "error")
-    return redirect("/organizations")
-
-
-@router.post("/organizations/{org_id}/delete")
-def orgs_delete(org_id: int, request: Request, user: User = Depends(admin), db: Session = Depends(get_db)):
-    org = db.get(Organization, org_id)
-    if org is None:
-        raise HTTPException(404, "Organization not found")
-    if org.devices:
-        flash(request, "Move or delete its devices first.", "error")
-        return redirect("/organizations")
-    for key in db.scalars(select(EnrollmentKey).where(EnrollmentKey.organization_id == org.id)):
-        key.revoked = True
-        key.organization_id = None
-    db.delete(org)
-    audit(db, user.username, "organization.deleted", target=org.name, ip=_ip(request))
-    db.commit()
-    flash(request, "Organization deleted; its enrollment keys were revoked.", "success")
-    return redirect("/organizations")
 
 
 # ----------------------------------------------------------------------- policies
@@ -889,7 +841,7 @@ def policy_create(
         return redirect("/policies/new")
     audit(db, user.username, "policy.created", target=policy.name, ip=_ip(request))
     db.commit()
-    flash(request, "Policy created. Assign it to devices or organizations below.", "success")
+    flash(request, "Policy created. Assign it to firewalls or customers below.", "success")
     return redirect(f"/policies/{policy.id}")
 
 

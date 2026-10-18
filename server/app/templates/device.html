@@ -27,6 +27,7 @@
   <section class="card">
     <h2>System</h2>
     <dl>
+      <dt>Customer</dt><dd>{% if device.organization %}<a href="/customers/{{ device.organization.id }}">{{ device.organization.name }}</a>{% else %}<span class="muted">not assigned</span>{% endif %}</dd>
       <dt>Hostname</dt><dd>{{ device.hostname }}</dd>
       <dt>Edition</dt><dd>{{ "pfSense Plus" if device.edition == "plus" else "pfSense CE" if device.edition == "ce" else device.edition }}</dd>
       <dt>Version</dt><dd>{{ device.product_version }}</dd>
@@ -296,7 +297,7 @@
   <form method="post" action="/devices/{{ device.id }}/edit" class="grid-form">
     {{ csrf() }}
     <label>Name <input name="name" value="{{ device.name }}" required></label>
-    <label>Organization
+    <label>Customer
       <select name="organization_id">
         <option value="">None</option>
         {% for o in orgs %}<option value="{{ o.id }}"{% if device.organization_id == o.id %} selected{% endif %}>{{ o.name }}</option>{% endfor %}

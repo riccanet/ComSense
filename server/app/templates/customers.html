@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}Customers{% endblock %}
+{% block content %}
+<h1>Customers</h1>
+<p class="muted">Each customer groups its firewalls. Create an enrollment key for a customer and every firewall that
+enrolls with it lands under that customer; you can also move a firewall from its page.</p>
+<table class="list">
+  <thead><tr><th>Customer</th><th>Contact</th><th>Firewalls</th><th>Online</th><th>Offline</th><th>Awaiting approval</th><th>Open alerts</th></tr></thead>
+  <tbody>
+  {% for c in customers %}
+    {% set sc = status_counts.get(c.id, {}) %}
+    <tr>
+      <td><a href="/customers/{{ c.id }}">{{ c.name }}</a></td>
+      <td>{{ c.contact_name }}{% if c.contact_email %} <span class="muted small">{{ c.contact_email }}</span>{% endif %}</td>
+      <td>{{ sc.values()|sum }}</td>
+      <td>{% if sc.get("online") %}<span class="badge s-online">{{ sc.online }}</span>{% else %}0{% endif %}</td>
+      <td>{% if sc.get("offline") %}<span class="badge s-offline">{{ sc.offline }}</span>{% else %}0{% endif %}</td>
+      <td>{% if sc.get("pending") %}<span class="badge s-pending">{{ sc.pending }}</span>{% else %}0{% endif %}</td>
+      <td>{% if alert_counts.get(c.id) %}<a href="/customers/{{ c.id }}#alerts"><span class="badge sev-warning">{{ alert_counts[c.id] }}</span></a>{% else %}0{% endif %}</td>
+    </tr>
+  {% else %}<tr><td colspan="7" class="muted">No customers yet. Add one below.</td></tr>{% endfor %}
+  {% if unassigned %}
+    <tr><td colspan="7" class="muted small"><a href="/devices?org=none">{{ unassigned }} firewall{{ "" if unassigned == 1 else "s" }} not assigned to a customer</a></td></tr>
+  {% endif %}
+  </tbody>
+</table>
+{% if user.role.value != "viewer" %}
+<section class="card">
+  <h2>Add customer</h2>
+  <form method="post" action="/customers" class="grid-form">
+    {{ csrf() }}
+    <label>Customer name <input name="name" required></label>
+    <label>Contact name <input name="contact_name"></label>
+    <label>Contact email <input name="contact_email" type="email"></label>
+    <label>Contact phone <input name="contact_phone"></label>
+    <label class="wide">Notes <textarea name="notes" rows="2"></textarea></label>
+    <div><button class="primary">Add customer</button></div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

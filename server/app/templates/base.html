@@ -19,8 +19,8 @@
   <a class="brand" href="/" aria-label="ComSense Firewall Manager home">{{ brand_lockup(32, "hdr") }}</a>
   <nav>
     {% for href, label, admin_only in [
-      ("/", "Dashboard", False), ("/devices", "Firewalls", False), ("/policies", "Policies", False),
-      ("/alerts", "Alerts", False), ("/organizations", "Organizations", False),
+      ("/", "Dashboard", False), ("/customers", "Customers", False), ("/devices", "Firewalls", False),
+      ("/policies", "Policies", False), ("/alerts", "Alerts", False),
       ("/keys", "Enrollment keys", True), ("/users", "Users", True), ("/audit", "Audit log", True),
       ("/settings", "Settings", True)] %}
       {% if not admin_only or user.role == Role.admin %}

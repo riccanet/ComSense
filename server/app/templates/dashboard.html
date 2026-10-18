@@ -4,6 +4,7 @@
 {% block content %}
 <h1>Dashboard</h1>
 <div class="tiles">
+  <a class="tile" href="/customers"><span class="num">{{ customers }}</span><span>Customers</span></a>
   <a class="tile" href="/devices"><span class="num">{{ total }}</span><span>Firewalls</span></a>
   <a class="tile ok" href="/devices"><span class="num">{{ counts.online }}</span><span>Online</span></a>
   <a class="tile bad" href="/devices"><span class="num">{{ counts.offline }}</span><span>Offline</span></a>
@@ -17,10 +18,11 @@
   <h2>Open alerts</h2>
   {% if alerts %}
   <table>
-    <thead><tr><th>Firewall</th><th>Severity</th><th>Alert</th><th>Since</th></tr></thead>
+    <thead><tr><th>Customer</th><th>Firewall</th><th>Severity</th><th>Alert</th><th>Since</th></tr></thead>
     <tbody>
     {% for a in alerts %}
       <tr>
+        <td>{% if a.device.organization %}<a href="/customers/{{ a.device.organization.id }}">{{ a.device.organization.name }}</a>{% else %}—{% endif %}</td>
         <td><a href="/devices/{{ a.device_id }}">{{ a.device.name }}</a></td>
         <td><span class="badge sev-{{ a.severity }}">{{ a.severity }}</span></td>
         <td>{{ a.message }}</td>

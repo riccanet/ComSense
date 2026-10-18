@@ -30,7 +30,7 @@ Response: `{"device_id": "<uuid>", "token": "csfm_dev_…", "status": "online"|"
 "checkin_interval": 60}`.
 
 The key must exist, not be revoked or expired, and have uses left. A firewall that enrolls again
-with the same `unique_id` into the same organization is reattached to its existing record and its old
+with the same `unique_id` into the same customer is reattached to its existing record and its old
 token stops working. Limited to 10 attempts per source address per 10 minutes.
 
 ## POST /checkin

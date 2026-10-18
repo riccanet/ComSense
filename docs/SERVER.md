@@ -116,6 +116,19 @@ Lost the admin password? `python -m app.cli create-user admin` (in the container
 Data lives in the volumes `comsense-db` (PostgreSQL) and `comsense-data` (encrypted backups, agent
 certificate, `downloads`), plus `caddy-data` (certificates) for option 1.
 
+## Customers
+
+Each client is a **customer** (*Customers* in the menu) with contact name, email, phone and notes. A customer
+can have any number of firewalls:
+
+* On a customer's page, *Create enrollment key* makes a key bound to that customer; every firewall that
+  enrolls with it is filed under the customer automatically. Use one key for a whole rollout, or one per site.
+* A firewall can be moved to another customer from its own page (*Settings > Customer*).
+* The customer page shows its firewalls (status, version, last check-in, last backup, updates), open
+  alerts and enrollment keys. The customer list shows online/offline/awaiting-approval counts and open
+  alerts per customer, and links to firewalls not yet assigned to any customer.
+* Alerts, the dashboard and alert emails name the customer next to each firewall.
+
 ## Settings page, email and alerts
 
 Day-to-day settings are edited by admins under **Settings** in the console and stored in the database,

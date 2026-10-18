@@ -21,6 +21,12 @@ RESET_TOKEN_TTL = timedelta(hours=1)
 SEVERITY_RANK = {"info": 0, "warning": 1, "critical": 2}
 
 
+def _where(alert: Alert) -> str:
+    """'Customer / firewall', so recipients see which client is affected."""
+    org = alert.device.organization
+    return f"{org.name} / {alert.device.name}" if org else alert.device.name
+
+
 def _fmt(dt: datetime | None) -> str:
     return aware(dt).strftime("%Y-%m-%d %H:%M UTC") if dt else ""
 
@@ -120,21 +126,21 @@ def _alert_digest(settings: Settings, opened: list[Alert], resolved: list[Alert]
         lines.append("New alerts:")
         for a in opened:
             state = f" (resolved {_fmt(a.resolved_at)})" if a.resolved_at else ""
-            lines.append(f"  [{a.severity.upper()}] {a.device.name}: {a.message} - since {_fmt(a.opened_at)}{state}")
+            lines.append(f"  [{a.severity.upper()}] {_where(a)}: {a.message} - since {_fmt(a.opened_at)}{state}")
             color = "#b42318" if a.severity == "critical" else "#a86500"
             rows.append(
                 f'<tr><td style="padding:6px 8px;color:{color};font-weight:600">{escape(a.severity)}</td>'
-                f'<td style="padding:6px 8px">{escape(a.device.name)}</td>'
+                f'<td style="padding:6px 8px">{escape(_where(a))}</td>'
                 f'<td style="padding:6px 8px">{escape(a.message)}{escape(state)}</td>'
                 f'<td style="padding:6px 8px;color:#667085">{_fmt(a.opened_at)}</td></tr>'
             )
     if resolved:
         lines.append("Resolved:")
         for a in resolved:
-            lines.append(f"  {a.device.name}: {a.message} - resolved {_fmt(a.resolved_at)}")
+            lines.append(f"  {_where(a)}: {a.message} - resolved {_fmt(a.resolved_at)}")
             rows.append(
                 f'<tr><td style="padding:6px 8px;color:#1b7f4a;font-weight:600">resolved</td>'
-                f'<td style="padding:6px 8px">{escape(a.device.name)}</td>'
+                f'<td style="padding:6px 8px">{escape(_where(a))}</td>'
                 f'<td style="padding:6px 8px">{escape(a.message)}</td>'
                 f'<td style="padding:6px 8px;color:#667085">{_fmt(a.resolved_at)}</td></tr>'
             )

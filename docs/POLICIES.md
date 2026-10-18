@@ -3,7 +3,7 @@
 > **Coming soon.** Policies, like every other feature that changes a firewall, are switched off unless the
 > server runs with `CSFM_ENABLE_FIREWALL_CHANGES=true`. They are documented here for testing and preview.
 
-A policy is a typed JSON document. Assign it to a firewall, an organization or all firewalls; each
+A policy is a typed JSON document. Assign it to a firewall, a customer (all of its firewalls) or all firewalls; each
 assigned firewall applies it at its next check-in and reports a hash of what it applied, which the
 console shows as *in sync* or *pending*. Editing a policy creates a new revision that is pushed again.
 Unassigning or deleting it makes the firewall remove what that policy created (and restore values

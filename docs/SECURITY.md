@@ -4,7 +4,7 @@
 
 * A firewall can only obtain credentials by presenting an **enrollment key**. Keys are 256-bit random
   values created by an admin, shown once and stored only as a SHA-256 hash. Each can have an
-  expiry (7 days by default), a maximum number of uses, a target organization, and can be revoked.
+  expiry (7 days by default), a maximum number of uses, a target customer, and can be revoked.
 * Keys can require **admin approval**: the firewall is registered but receives no tasks and cannot
   upload backups until an admin approves it.
 * Enrollment attempts are rate-limited per source address, and failures are audited.
@@ -66,6 +66,6 @@ afterwards and rolled back if the firewall loses contact with the server.
 
 * Restrict the web console (port 443) to admins: source allow-list, VPN, or SSO in your proxy.
   Firewalls never need it. Only the agent port has to be reachable from the internet.
-* Use short-lived, single-organization keys with approval for each rollout, and revoke them after.
+* Use short-lived, single-customer keys with approval for each rollout, and revoke them after.
 * Keep `CSFM_BACKUP_ENCRYPTION_KEY` and `CSFM_SECRET_KEY` in a secrets manager and back them up
   separately from the data.

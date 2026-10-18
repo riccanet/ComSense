@@ -8,10 +8,11 @@
   <a href="/alerts?show=all"{% if show == "all" %} class="active"{% endif %}>All</a>
 </p>
 <table class="list">
-  <thead><tr><th>Firewall</th><th>Severity</th><th>Alert</th><th>Opened</th><th>Resolved</th><th>Acknowledged</th><th></th></tr></thead>
+  <thead><tr><th>Customer</th><th>Firewall</th><th>Severity</th><th>Alert</th><th>Opened</th><th>Resolved</th><th>Acknowledged</th><th></th></tr></thead>
   <tbody>
   {% for a in alerts %}
     <tr>
+      <td>{% if a.device.organization %}<a href="/customers/{{ a.device.organization.id }}">{{ a.device.organization.name }}</a>{% else %}—{% endif %}</td>
       <td><a href="/devices/{{ a.device_id }}">{{ a.device.name }}</a></td>
       <td><span class="badge sev-{{ a.severity }}">{{ a.severity }}</span></td>
       <td>{{ a.message }}</td>
@@ -20,7 +21,7 @@
       <td>{{ a.acknowledged_by }}</td>
       <td>{% if not a.acknowledged_by and user.role.value != "viewer" %}{{ post_button("/alerts/" ~ a.id ~ "/ack", "Acknowledge", "small") }}{% endif %}</td>
     </tr>
-  {% else %}<tr><td colspan="7" class="muted">No alerts.</td></tr>{% endfor %}
+  {% else %}<tr><td colspan="8" class="muted">No alerts.</td></tr>{% endfor %}
   </tbody>
 </table>
 {% endblock %}

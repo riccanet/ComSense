@@ -39,7 +39,7 @@
     <tbody>
     {% for a in policy.assignments %}
       <tr>
-        <td>{% if a.all_devices %}All firewalls{% elif a.organization %}Organization: {{ a.organization.name }}{% elif a.device %}Firewall: <a href="/devices/{{ a.device.id }}">{{ a.device.name }}</a>{% endif %}</td>
+        <td>{% if a.all_devices %}All firewalls{% elif a.organization %}Customer: {{ a.organization.name }}{% elif a.device %}Firewall: <a href="/devices/{{ a.device.id }}">{{ a.device.name }}</a>{% endif %}</td>
         <td>{% if can_edit %}{{ post_button("/assignments/" ~ a.id ~ "/delete", "Remove", "small") }}{% endif %}</td>
       </tr>
     {% else %}<tr><td class="muted">Not assigned.</td></tr>{% endfor %}
@@ -50,7 +50,7 @@
     {{ csrf() }}
     <select name="target">
       <option value="all:">All firewalls</option>
-      <optgroup label="Organizations">{% for o in orgs %}<option value="org:{{ o.id }}">{{ o.name }}</option>{% endfor %}</optgroup>
+      <optgroup label="Customers">{% for o in orgs %}<option value="org:{{ o.id }}">{{ o.name }}</option>{% endfor %}</optgroup>
       <optgroup label="Firewalls">{% for d in devices %}<option value="device:{{ d.id }}">{{ d.name }}</option>{% endfor %}</optgroup>
     </select>
     <button>Assign</button>

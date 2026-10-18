@@ -58,10 +58,10 @@ only thing to paste on the firewall. Once enrolled, the firewall gets its own de
   <form method="post" action="/keys" class="grid-form">
     {{ csrf() }}
     <label>Name <input name="name" placeholder="e.g. Acme Corp rollout" required></label>
-    <label>Organization
+    <label>Customer
       <select name="organization_id">
         <option value="">None</option>
-        {% for o in orgs %}<option value="{{ o.id }}">{{ o.name }}</option>{% endfor %}
+        {% for o in orgs %}<option value="{{ o.id }}"{% if preselect == o.id %} selected{% endif %}>{{ o.name }}</option>{% endfor %}
       </select>
     </label>
     <label>Expires after (days, 0 = never) <input name="expires_days" type="number" min="0" value="7"></label>
@@ -74,13 +74,13 @@ only thing to paste on the firewall. Once enrolled, the firewall gets its own de
 <section class="card">
   <h2>Keys</h2>
   <table>
-    <thead><tr><th>Name</th><th>Key</th><th>Organization</th><th>Uses</th><th>Expires</th><th>Approval</th><th>State</th><th>Created</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Key</th><th>Customer</th><th>Uses</th><th>Expires</th><th>Approval</th><th>State</th><th>Created</th><th></th></tr></thead>
     <tbody>
     {% for k in keys %}
       <tr>
         <td>{{ k.name }}</td>
         <td class="mono small">{{ k.prefix }}…</td>
-        <td>{{ k.organization.name if k.organization else "—" }}</td>
+        <td>{% if k.organization %}<a href="/customers/{{ k.organization.id }}">{{ k.organization.name }}</a>{% else %}—{% endif %}</td>
         <td>{{ k.use_count }}{% if k.max_uses %} / {{ k.max_uses }}{% endif %}</td>
         <td>{{ k.expires_at|dt if k.expires_at else "never" }}</td>
         <td>{{ "required" if k.require_approval else "automatic" }}</td>

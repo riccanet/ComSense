@@ -20,7 +20,7 @@ from .db import init_engine, session_factory, upgrade_schema
 from .models import Role, User
 from .scheduler import scheduler_loop
 from .security import generate_temporary_password, hash_password
-from .web import account_routes
+from .web import account_routes, customer_routes
 from .web import routes as web_routes
 from .web.auth import LoginRequired, PasswordChangeRequired
 
@@ -136,6 +136,7 @@ def create_web_app(settings: Settings) -> FastAPI:
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
     _mount_downloads(app, settings)
     app.include_router(account_routes.router)
+    app.include_router(customer_routes.router)
     app.include_router(web_routes.router)
     return app
 

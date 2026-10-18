@@ -141,7 +141,7 @@ footer { display: flex; flex-direction: column; align-items: center; gap: .6rem;
   display: flex; flex-direction: column; padding: .9rem 1rem; border-radius: 8px;
   background: var(--panel); border: 1px solid var(--line); color: var(--text);
 }
-.tile:hover { text-decoration: none; border-color: var(--accent); }
+a.tile:hover { text-decoration: none; border-color: var(--accent); }
 .tile .num { font-size: 1.8rem; font-weight: 700; }
 .tile.ok .num { color: var(--ok); }
 .tile.bad .num { color: var(--bad); }

@@ -94,12 +94,16 @@ class User(Base):
 
 
 class Organization(Base):
-    """A customer / site grouping. Enrollment keys place new firewalls into one."""
+    """A customer (shown as "Customers" in the console). A customer can have many firewalls;
+    enrollment keys place new firewalls straight into one."""
 
     __tablename__ = "organizations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(128), unique=True)
+    contact_name: Mapped[str] = mapped_column(String(128), default="", server_default="")
+    contact_email: Mapped[str] = mapped_column(String(255), default="", server_default="")
+    contact_phone: Mapped[str] = mapped_column(String(64), default="", server_default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

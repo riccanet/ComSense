@@ -28,7 +28,7 @@ def test_bad_password(client):
 
 def test_post_without_csrf_is_rejected(client):
     login(client)
-    resp = client.post("/organizations", data={"name": "Acme"})
+    resp = client.post("/customers", data={"name": "Acme"})
     assert resp.status_code == 403
 
 
@@ -63,7 +63,7 @@ def test_all_pages_render(client, db, agent):
         "/policies/new",
         f"/policies/{policy_id}",
         "/alerts",
-        "/organizations",
+        "/customers",
         "/keys",
         "/users",
         "/audit",

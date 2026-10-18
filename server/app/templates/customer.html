@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, post_button, status_badge with context %}
+{% block title %}{{ customer.name }}{% endblock %}
+{% block content %}
+{% set can_operate = user.role.value in ("operator", "admin") %}
+<p class="small"><a href="/customers">Customers</a> /</p>
+<div class="heading">
+  <h1>{{ customer.name }}</h1>
+  {% if user.role.value == "admin" %}<a class="button primary" href="/keys?customer={{ customer.id }}">Create enrollment key</a>{% endif %}
+</div>
+
+<div class="tiles">
+  <div class="tile"><span class="num">{{ devices|length }}</span><span>Firewalls</span></div>
+  <div class="tile ok"><span class="num">{{ online }}</span><span>Online</span></div>
+  <div class="tile bad"><span class="num">{{ devices|length - online }}</span><span>Not online</span></div>
+  <a class="tile" href="#alerts"><span class="num">{{ alerts|length }}</span><span>Open alerts</span></a>
+  <div class="tile"><span class="num">{{ updates }}</span><span>Updates available</span></div>
+</div>
+
+<section class="card">
+  <h2>Firewalls</h2>
+  <table>
+    <thead><tr><th>Name</th><th>Status</th><th>Edition / version</th><th>WAN IP</th><th>Last seen</th><th>Last backup</th><th>Updates</th></tr></thead>
+    <tbody>
+    {% for d in devices %}
+      <tr>
+        <td><a href="/devices/{{ d.id }}">{{ d.name }}</a><div class="muted small">{{ d.hostname }}</div></td>
+        <td>{{ status_badge(d.status.value) }}</td>
+        <td>{{ "Plus" if d.edition == "plus" else "CE" if d.edition == "ce" else d.edition }} {{ d.product_version }}</td>
+        <td>{{ d.wan_ip }}</td>
+        <td>{{ d.last_seen_at|ago }}</td>
+        <td>{{ last_backup.get(d.id)|ago if last_backup.get(d.id) else "none yet" }}</td>
+        <td>{% if d.updates.update_available %}<span class="badge s-pending">{{ d.updates.version }}</span>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">No firewalls yet.{% if user.role.value == "admin" %} <a href="/keys?customer={{ customer.id }}">Create an enrollment key</a> for this customer and paste its code on each firewall.{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<div class="grid2">
+<section class="card" id="alerts">
+  <h2>Open alerts</h2>
+  <table>
+    <thead><tr><th>Firewall</th><th>Severity</th><th>Alert</th><th>Since</th></tr></thead>
+    <tbody>
+    {% for a in alerts %}
+      <tr>
+        <td><a href="/devices/{{ a.device_id }}">{{ a.device.name }}</a></td>
+        <td><span class="badge sev-{{ a.severity }}">{{ a.severity }}</span></td>
+        <td>{{ a.message }}</td>
+        <td>{{ a.opened_at|ago }}</td>
+      </tr>
+    {% else %}<tr><td colspan="4" class="muted">No open alerts.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Contact</h2>
+  {% if can_operate %}
+  <form method="post" action="/customers/{{ customer.id }}" class="grid-form">
+    {{ csrf() }}
+    <label>Customer name <input name="name" value="{{ customer.name }}" required></label>
+    <label>Contact name <input name="contact_name" value="{{ customer.contact_name }}"></label>
+    <label>Contact email <input name="contact_email" type="email" value="{{ customer.contact_email }}"></label>
+    <label>Contact phone <input name="contact_phone" value="{{ customer.contact_phone }}"></label>
+    <label class="wide">Notes <textarea name="notes" rows="3">{{ customer.notes }}</textarea></label>
+    <div><button>Save</button></div>
+  </form>
+  {% else %}
+  <dl>
+    <dt>Contact</dt><dd>{{ customer.contact_name }}</dd>
+    <dt>Email</dt><dd>{{ customer.contact_email }}</dd>
+    <dt>Phone</dt><dd>{{ customer.contact_phone }}</dd>
+    <dt>Notes</dt><dd>{{ customer.notes }}</dd>
+  </dl>
+  {% endif %}
+</section>
+</div>
+
+{% if user.role.value == "admin" %}
+<section class="card">
+  <h2>Enrollment keys</h2>
+  <table>
+    <thead><tr><th>Name</th><th>Key</th><th>Uses</th><th>Expires</th><th>State</th></tr></thead>
+    <tbody>
+    {% for k in keys %}
+      <tr>
+        <td>{{ k.name }}</td>
+        <td class="mono small">{{ k.prefix }}…</td>
+        <td>{{ k.use_count }}{% if k.max_uses %} / {{ k.max_uses }}{% endif %}</td>
+        <td>{{ k.expires_at|dt if k.expires_at else "never" }}</td>
+        <td>{% if k.revoked %}<span class="badge s-disabled">revoked</span>{% elif k.usable(now) %}<span class="badge s-online">active</span>{% else %}<span class="badge s-offline">expired</span>{% endif %}</td>
+      </tr>
+    {% else %}<tr><td colspan="5" class="muted">None. <a href="/keys?customer={{ customer.id }}">Create one</a>.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <div class="toolbar danger-zone">
+    {{ post_button("/customers/" ~ customer.id ~ "/delete", "Delete customer", "danger", "Delete this customer? Its enrollment keys are revoked. Firewalls must be moved or deleted first.") }}
+  </div>
+</section>
+{% endif %}
+{% endblock %}
