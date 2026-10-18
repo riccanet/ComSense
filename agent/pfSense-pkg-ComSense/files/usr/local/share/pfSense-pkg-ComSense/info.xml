@@ -3,7 +3,7 @@
 <package>
 	<name>comsense</name>
 	<descr><![CDATA[ComSense Firewall Manager agent: connects this firewall to a ComSense Firewall Manager server for monitoring, configuration backups, policy management and updates. All communication is outbound HTTPS initiated by the firewall.]]></descr>
-	<pkginfolink>https://github.com/riccanet/PfManager</pkginfolink>
+	<pkginfolink>https://github.com/riccanet/ComSense</pkginfolink>
 	<version>%%PKGVERSION%%</version>
 	<configurationfile>comsense.xml</configurationfile>
 	<include_file>/usr/local/pkg/comsense.inc</include_file>

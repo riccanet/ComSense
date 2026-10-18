@@ -7,7 +7,7 @@ EXTRACT_ONLY=	# empty
 
 MAINTAINER=	https://github.com/riccanet/ComSense/issues
 COMMENT=	ComSense Firewall Manager agent for pfSense
-WWW=		https://github.com/riccanet/PfManager
+WWW=		https://github.com/riccanet/ComSense
 
 LICENSE=	APACHE20
 
