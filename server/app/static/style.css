@@ -296,3 +296,5 @@ h2 a.plain:hover { color: var(--accent); text-decoration: none; }
 .inline-dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; margin: 0 0 1rem; }
 .inline-dl dt { color: var(--muted); }
 .inline-dl dd { margin: 0; }
+.center { text-align: center; }
+table.users td { vertical-align: middle; }

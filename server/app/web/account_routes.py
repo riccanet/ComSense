@@ -417,7 +417,7 @@ def users_send_reset(
         db.commit()
         background.add_task(_send_reset_in_background, settings, target.id, token, True)
         flash(request, f"Password reset link sent to {target.email}.", "success")
-    return redirect("/users")
+    return redirect(f"/users/{user_id}")
 
 
 @router.post("/account/profile")

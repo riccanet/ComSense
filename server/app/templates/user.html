@@ -1,0 +1,55 @@
+{% extends "settings_layout.html" %}
+{% from "macros.html" import csrf, post_button with context %}
+{% block title %}{{ target.username }} · Users{% endblock %}
+{% block settings %}
+<p class="small"><a href="/users">&larr; Users</a></p>
+<h2>{{ target.username }}{% if not target.active %} <span class="badge s-disabled">inactive</span>{% endif %}</h2>
+<dl class="inline-dl">
+  <dt>Last sign-in</dt><dd>{{ target.last_login_at|dt if target.last_login_at else "never" }}</dd>
+  <dt>Two-factor</dt><dd>{% if target.totp_enabled %}Authenticator app{% if target.mfa_email_enabled %}, email codes{% endif %}{% elif target.mfa_email_enabled %}Email codes{% else %}Off{% endif %}
+    {%- if target.totp_enabled %} <span class="muted">({{ target.recovery_codes|length }} recovery codes left)</span>{% endif %}</dd>
+  {% if target.must_change_password %}<dt>Password</dt><dd>Temporary: must be changed at the next sign-in</dd>{% endif %}
+</dl>
+
+<section class="card">
+  <h2>Account</h2>
+  <form method="post" action="/users/{{ target.id }}" class="grid-form">
+    {{ csrf() }}
+    <label>Role
+      <select name="role"{% if target.id == user.id %} disabled{% endif %}>{% for r in Role %}<option value="{{ r.value }}"{% if target.role == r %} selected{% endif %}>{{ r.value }}</option>{% endfor %}</select>
+      {% if target.id == user.id %}<input type="hidden" name="role" value="{{ target.role.value }}">{% endif %}
+    </label>
+    <label>Email <input type="email" name="email" value="{{ target.email }}" placeholder="none"></label>
+    <label class="check"><input type="checkbox" name="active" value="true"{% if target.active %} checked{% endif %}{% if target.id == user.id %} disabled{% endif %}> Active (can sign in)</label>
+    {% if target.id == user.id %}<input type="hidden" name="active" value="true">{% endif %}
+    <label class="check"><input type="checkbox" name="email_alerts" value="true"{% if target.email_alerts %} checked{% endif %}> Email firewall alerts</label>
+    <div class="wide"><button class="primary">Save</button></div>
+  </form>
+  {% if target.id == user.id %}<p class="small muted">You cannot change your own role or deactivate yourself.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Password</h2>
+  <form method="post" action="/users/{{ target.id }}/password" class="grid-form">
+    {{ csrf() }}
+    <label>Temporary password (12+ characters)
+      <input type="password" name="password" minlength="12" autocomplete="new-password" required>
+    </label>
+    <div class="wide"><button>Set temporary password</button></div>
+  </form>
+  <p class="small muted">{{ target.username }} must choose a new password at the next sign-in.</p>
+  {% if target.email and email_ready %}
+  {{ post_button("/users/" ~ target.id ~ "/send-reset", "Email a reset link", "", "Email a password reset link to " ~ target.email ~ "?") }}
+  {% elif not target.email %}<p class="small muted">Add an email address to send a reset link instead.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Two-factor sign-in</h2>
+  {% if target.totp_enabled or target.mfa_email_enabled %}
+  <p>Reset it if {{ target.username }} lost their phone or recovery codes. They can set it up again after signing in.</p>
+  {{ post_button("/users/" ~ target.id ~ "/mfa-reset", "Reset two-factor sign-in", "danger", "Remove two-factor sign-in for " ~ target.username ~ "? They can set it up again.") }}
+  {% else %}
+  <p class="muted">Not set up. {{ target.username }} turns it on from their Account page.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -58,6 +58,11 @@
 
   document.addEventListener("change", function (ev) {
     var el = ev.target;
+    // Lists with a checkbox per row that saves as soon as it is ticked (Settings > Users).
+    if (el.form && el.form.hasAttribute("data-autosubmit")) {
+      el.form.submit();
+      return;
+    }
     var name = el.getAttribute("data-select-all");
     if (name) {
       document.querySelectorAll("input[name=" + name + "]").forEach(function (cb) { cb.checked = el.checked; });

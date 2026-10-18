@@ -1202,6 +1202,65 @@ def users_create(
     return redirect("/users")
 
 
+def _target_user(db: Session, user_id: int) -> User:
+    target = db.get(User, user_id)
+    if target is None:
+        raise HTTPException(404, "User not found")
+    return target
+
+
+@router.get("/users/{user_id}", response_class=HTMLResponse)
+def user_page(user_id: int, request: Request, user: User = Depends(admin), db: Session = Depends(get_db)):
+    target = _target_user(db, user_id)
+    return render(request, "user.html", section="/users", target=target, email_ready=get_email_settings(db).configured)
+
+
+@router.post("/users/{user_id}/flags")
+def users_flags(
+    user_id: int,
+    request: Request,
+    active: bool = Form(False),
+    email_alerts: bool = Form(False),
+    user: User = Depends(admin),
+    db: Session = Depends(get_db),
+):
+    """The Active and Alerts checkboxes on the user list."""
+    target = _target_user(db, user_id)
+    if target.id == user.id and not active:
+        flash(request, "You cannot deactivate your own account.", "error")
+        return redirect("/users")
+    if email_alerts and not target.email:
+        flash(request, f"{target.username} has no email address for alerts.", "error")
+        email_alerts = False
+    target.active = active
+    target.email_alerts = email_alerts
+    audit(db, user.username, "user.updated", target=target.username,
+          detail=f"active={active} alerts={email_alerts}", ip=_ip(request))
+    db.commit()
+    return redirect("/users")
+
+
+@router.post("/users/{user_id}/password")
+def users_set_password(
+    user_id: int,
+    request: Request,
+    password: str = Form(""),
+    user: User = Depends(admin),
+    db: Session = Depends(get_db),
+):
+    target = _target_user(db, user_id)
+    back = f"/users/{user_id}"
+    if len(password) < 12:
+        flash(request, "Passwords need at least 12 characters.", "error")
+        return redirect(back)
+    target.password_hash = hash_password(password)
+    target.must_change_password = True
+    audit(db, user.username, "user.password_set", target=target.username, ip=_ip(request))
+    db.commit()
+    flash(request, f"Temporary password set. {target.username} must choose a new one at the next sign-in.", "success")
+    return redirect(back)
+
+
 @router.post("/users/{user_id}")
 def users_update(
     user_id: int,
@@ -1214,16 +1273,15 @@ def users_update(
     user: User = Depends(admin),
     db: Session = Depends(get_db),
 ):
-    target = db.get(User, user_id)
-    if target is None:
-        raise HTTPException(404, "User not found")
+    target = _target_user(db, user_id)
+    back = f"/users/{user_id}"
     if target.id == user.id and (Role(role) != Role.admin or not active):
         flash(request, "You cannot demote or deactivate your own account.", "error")
-        return redirect("/users")
+        return redirect(back)
     email = email.strip()
     if email and not valid_email(email):
         flash(request, "That is not a valid email address.", "error")
-        return redirect("/users")
+        return redirect(back)
     target.role = Role(role)
     target.active = active
     target.email = email
@@ -1231,13 +1289,13 @@ def users_update(
     if password:
         if len(password) < 12:
             flash(request, "Passwords need at least 12 characters.", "error")
-            return redirect("/users")
+            return redirect(back)
         target.password_hash = hash_password(password)
         target.must_change_password = True
     audit(db, user.username, "user.updated", target=target.username, detail=f"role={role} active={active}", ip=_ip(request))
     db.commit()
     flash(request, "User updated.", "success")
-    return redirect("/users")
+    return redirect(back)
 
 
 # -------------------------------------------------------------------------- audit

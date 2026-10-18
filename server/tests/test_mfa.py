@@ -153,7 +153,7 @@ def test_admin_can_reset_a_users_mfa(client, db):
                  totp_enabled=True, totp_secret="x", recovery_codes=["a"])
     db.add(other)
     db.commit()
-    assert "Reset 2FA" in client.get("/users").text
+    assert "Reset two-factor sign-in" in client.get(f"/users/{other.id}").text
     client.post(f"/users/{other.id}/mfa-reset", data={"csrf_token": csrf})
     db.expire_all()
     other = db.get(User, other.id)

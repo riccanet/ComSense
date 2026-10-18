@@ -374,4 +374,4 @@ def users_mfa_reset(user_id: int, request: Request, user: User = Depends(admin),
     audit(db, user.username, "mfa.reset", target=target.username, ip=_ip(request))
     db.commit()
     flash(request, f"Two-factor sign-in reset for {target.username}. They can set it up again after signing in.", "success")
-    return redirect("/users")
+    return redirect(f"/users/{user_id}")
