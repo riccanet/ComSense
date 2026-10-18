@@ -13,8 +13,6 @@
   --accent-hover: #b81f26;
   --accent-text: #ffffff;
   --link: #b81f26;
-  --brick: #1d2430;
-  --brand-tag: #d7262e;
   --ok: #1b7f4a;
   --warn: #a86500;
   --bad: #b42318;
@@ -36,8 +34,6 @@
   --accent-hover: #f2555a;
   --accent-text: #ffffff;
   --link: #ff6b66;
-  --brick: #c9d0da;
-  --brand-tag: #ff5a52;
   --ok: #4cc38a;
   --warn: #f0b44c;
   --bad: #f97066;
@@ -60,8 +56,6 @@
     --accent-hover: #f2555a;
     --accent-text: #ffffff;
     --link: #ff6b66;
-    --brick: #c9d0da;
-    --brand-tag: #ff5a52;
     --ok: #4cc38a;
     --warn: #f0b44c;
     --bad: #f97066;
@@ -90,7 +84,7 @@ main { padding: 1.25rem 1.5rem; max-width: 1500px; margin: 0 auto; }
 footer { text-align: center; padding: 1rem; font-size: 12px; }
 
 .topbar {
-  display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap;
   padding: .5rem 1.5rem; background: var(--panel);
   border-top: 3px solid var(--accent); border-bottom: 1px solid var(--line);
 }
@@ -104,17 +98,17 @@ footer { text-align: center; padding: 1rem; font-size: 12px; }
 /* Brand */
 .brand-lockup { display: inline-flex; align-items: center; gap: .6rem; }
 .brand-mark { display: block; flex: none; }
-.brand-mark .bricks { fill: var(--brick); }
-.brand-text { display: flex; flex-direction: column; line-height: 1; }
-.brand-name { font-weight: 800; font-size: 1.3rem; letter-spacing: -0.02em; color: var(--text); }
-.brand-tag {
-  margin-top: .3rem; font-size: .62rem; font-weight: 700; letter-spacing: .2em;
-  text-transform: uppercase; color: var(--brand-tag);
-}
+.brand-text { display: inline-flex; align-items: baseline; gap: .4rem; white-space: nowrap; }
+.brand-name { font-weight: 800; font-size: 1.15rem; letter-spacing: -0.02em; color: var(--text); }
+.brand-tag { font-weight: 400; font-size: .95rem; color: var(--muted); }
 .login .login-brand { display: flex; justify-content: center; margin: .5rem 0 .25rem; }
-.login .login-brand .brand-name { font-size: 2.1rem; }
-.login .login-brand .brand-tag { font-size: .8rem; }
+.login .login-brand .brand-name { font-size: 1.5rem; }
+.login .login-brand .brand-tag { font-size: 1.2rem; }
 .login > p { text-align: center; margin-top: .25rem; }
+/* Keep the menu on one line: drop "Firewall Manager" from the header when space is short. */
+@media (max-width: 1360px) {
+  .topbar .brand-tag { display: none; }
+}
 
 /* Theme switch */
 .theme-switch {

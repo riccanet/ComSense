@@ -3,7 +3,7 @@
 {% block title %}Sign in{% endblock %}
 {% block content %}
 <section class="card narrow login">
-  <div class="login-brand">{{ brand_lockup(60) }}</div>
+  <div class="login-brand">{{ brand_lockup(44, "login") }}</div>
   <p class="muted">pfSense fleet management</p>
   <form method="post" action="/login" class="stack">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

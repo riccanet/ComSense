@@ -16,7 +16,7 @@
 {% if user %}
 {% set path = request.url.path %}
 <header class="topbar">
-  <a class="brand" href="/" aria-label="ComSense Firewall Manager home">{{ brand_lockup(34) }}</a>
+  <a class="brand" href="/" aria-label="ComSense Firewall Manager home">{{ brand_lockup(32, "hdr") }}</a>
   <nav>
     {% for href, label, admin_only in [
       ("/", "Dashboard", False), ("/devices", "Firewalls", False), ("/policies", "Policies", False),
