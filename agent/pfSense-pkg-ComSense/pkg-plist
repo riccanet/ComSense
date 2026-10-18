@@ -1,0 +1,13 @@
+pkg/comsense.xml
+pkg/comsense.inc
+pkg/comsense/agent.php
+pkg/comsense/lib/agent.inc
+pkg/comsense/lib/client.inc
+pkg/comsense/lib/collect.inc
+pkg/comsense/lib/common.inc
+pkg/comsense/lib/policies.inc
+pkg/comsense/lib/tasks.inc
+sbin/comsense-agentd
+www/comsense_status.php
+/etc/inc/priv/comsense.priv.inc
+%%DATADIR%%/info.xml

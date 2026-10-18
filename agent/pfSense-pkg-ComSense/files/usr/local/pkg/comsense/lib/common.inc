@@ -1,25 +1,25 @@
 <?php
 /*
- * PfManager agent - shared helpers.
+ * ComSense agent - shared helpers.
  *
  * This file must not depend on pfSense runtime functions other than the
  * config accessors wrapped below, so it can be exercised outside a firewall.
  */
 
-define('PFM_AGENT_VERSION', '0.1.0');
-if (!defined('PFM_DB_DIR')) {
+define('CSFM_AGENT_VERSION', '0.1.0');
+if (!defined('CSFM_DB_DIR')) {
 	/* Overridable so the agent can be exercised outside a firewall. */
-	define('PFM_DB_DIR', '/var/db/pfmanager');
+	define('CSFM_DB_DIR', '/var/db/comsense');
 }
-define('PFM_CREDENTIALS_FILE', PFM_DB_DIR . '/credentials.json');
-define('PFM_STATE_FILE', PFM_DB_DIR . '/state.json');
-define('PFM_INTERVAL_FILE', PFM_DB_DIR . '/interval');
-define('PFM_CA_FILE', PFM_DB_DIR . '/server-ca.pem');
-define('PFM_CONFIG_PATH', 'installedpackages/pfmanager/config/0');
-define('PFM_SYSTEM_CA_BUNDLE', '/etc/ssl/cert.pem');
+define('CSFM_CREDENTIALS_FILE', CSFM_DB_DIR . '/credentials.json');
+define('CSFM_STATE_FILE', CSFM_DB_DIR . '/state.json');
+define('CSFM_INTERVAL_FILE', CSFM_DB_DIR . '/interval');
+define('CSFM_CA_FILE', CSFM_DB_DIR . '/server-ca.pem');
+define('CSFM_CONFIG_PATH', 'installedpackages/comsense/config/0');
+define('CSFM_SYSTEM_CA_BUNDLE', '/etc/ssl/cert.pem');
 
 /* Actions the firewall owner can allow in the package settings. */
-$pfm_capability_fields = array(
+$csfm_capability_fields = array(
 	'backup' => 'allow_backup',
 	'policy' => 'allow_policy',
 	'upgrade' => 'allow_upgrade',
@@ -29,21 +29,21 @@ $pfm_capability_fields = array(
 	'reboot' => 'allow_reboot',
 );
 
-function pfm_log($message, $priority = LOG_NOTICE) {
+function csfm_log($message, $priority = LOG_NOTICE) {
 	static $opened = false;
 	if (!$opened) {
-		openlog('pfmanager', LOG_PID, LOG_DAEMON);
+		openlog('comsense', LOG_PID, LOG_DAEMON);
 		$opened = true;
 	}
 	syslog($priority, $message);
-	if (defined('PFM_VERBOSE') && PFM_VERBOSE) {
+	if (defined('CSFM_VERBOSE') && CSFM_VERBOSE) {
 		fwrite(STDERR, $message . "\n");
 	}
 }
 
 /* ---------------------------------------------------------------- config access */
 
-function pfm_cfg_get($path, $default = null) {
+function csfm_cfg_get($path, $default = null) {
 	if (function_exists('config_get_path')) {
 		return config_get_path($path, $default);
 	}
@@ -58,7 +58,7 @@ function pfm_cfg_get($path, $default = null) {
 	return $node;
 }
 
-function pfm_cfg_set($path, $value) {
+function csfm_cfg_set($path, $value) {
 	if (function_exists('config_set_path')) {
 		config_set_path($path, $value);
 		return;
@@ -74,7 +74,7 @@ function pfm_cfg_set($path, $value) {
 	$node = $value;
 }
 
-function pfm_cfg_del($path) {
+function csfm_cfg_del($path) {
 	if (function_exists('config_del_path')) {
 		config_del_path($path);
 		return;
@@ -92,16 +92,16 @@ function pfm_cfg_del($path) {
 	unset($node[$last]);
 }
 
-function pfm_settings() {
-	$s = pfm_cfg_get(PFM_CONFIG_PATH, array());
+function csfm_settings() {
+	$s = csfm_cfg_get(CSFM_CONFIG_PATH, array());
 	return is_array($s) ? $s : array();
 }
 
-function pfm_capabilities($settings = null) {
-	global $pfm_capability_fields;
-	$settings = ($settings === null) ? pfm_settings() : $settings;
+function csfm_capabilities($settings = null) {
+	global $csfm_capability_fields;
+	$settings = ($settings === null) ? csfm_settings() : $settings;
 	$caps = array();
-	foreach ($pfm_capability_fields as $cap => $field) {
+	foreach ($csfm_capability_fields as $cap => $field) {
 		if (!empty($settings[$field])) {
 			$caps[] = $cap;
 		}
@@ -109,20 +109,20 @@ function pfm_capabilities($settings = null) {
 	return $caps;
 }
 
-function pfm_has_capability($cap) {
-	return in_array($cap, pfm_capabilities(), true);
+function csfm_has_capability($cap) {
+	return in_array($cap, csfm_capabilities(), true);
 }
 
 /* ----------------------------------------------------------------- local state */
 
-function pfm_ensure_db_dir() {
-	if (!is_dir(PFM_DB_DIR)) {
-		mkdir(PFM_DB_DIR, 0700, true);
+function csfm_ensure_db_dir() {
+	if (!is_dir(CSFM_DB_DIR)) {
+		mkdir(CSFM_DB_DIR, 0700, true);
 	}
-	chmod(PFM_DB_DIR, 0700);
+	chmod(CSFM_DB_DIR, 0700);
 }
 
-function pfm_read_json($file, $default = array()) {
+function csfm_read_json($file, $default = array()) {
 	if (!is_readable($file)) {
 		return $default;
 	}
@@ -130,56 +130,56 @@ function pfm_read_json($file, $default = array()) {
 	return is_array($data) ? $data : $default;
 }
 
-function pfm_write_json($file, $data) {
-	pfm_ensure_db_dir();
+function csfm_write_json($file, $data) {
+	csfm_ensure_db_dir();
 	$tmp = $file . '.tmp';
 	file_put_contents($tmp, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 	chmod($tmp, 0600);
 	rename($tmp, $file);
 }
 
-function pfm_credentials() {
-	return pfm_read_json(PFM_CREDENTIALS_FILE, array());
+function csfm_credentials() {
+	return csfm_read_json(CSFM_CREDENTIALS_FILE, array());
 }
 
-function pfm_save_credentials($creds) {
-	pfm_write_json(PFM_CREDENTIALS_FILE, $creds);
+function csfm_save_credentials($creds) {
+	csfm_write_json(CSFM_CREDENTIALS_FILE, $creds);
 }
 
-function pfm_forget_credentials() {
-	@unlink(PFM_CREDENTIALS_FILE);
-	$state = pfm_state();
+function csfm_forget_credentials() {
+	@unlink(CSFM_CREDENTIALS_FILE);
+	$state = csfm_state();
 	unset($state['last_checkin'], $state['device_status']);
 	$state['policies'] = array();
-	pfm_save_state($state);
+	csfm_save_state($state);
 }
 
-function pfm_is_enrolled() {
-	$c = pfm_credentials();
+function csfm_is_enrolled() {
+	$c = csfm_credentials();
 	return !empty($c['token']) && !empty($c['device_id']);
 }
 
-function pfm_state() {
-	$state = pfm_read_json(PFM_STATE_FILE, array());
+function csfm_state() {
+	$state = csfm_read_json(CSFM_STATE_FILE, array());
 	if (!isset($state['policies']) || !is_array($state['policies'])) {
 		$state['policies'] = array();
 	}
 	return $state;
 }
 
-function pfm_save_state($state) {
-	pfm_write_json(PFM_STATE_FILE, $state);
+function csfm_save_state($state) {
+	csfm_write_json(CSFM_STATE_FILE, $state);
 }
 
-function pfm_state_set($key, $value) {
-	$state = pfm_state();
+function csfm_state_set($key, $value) {
+	$state = csfm_state();
 	$state[$key] = $value;
-	pfm_save_state($state);
+	csfm_save_state($state);
 }
 
 /* ------------------------------------------------------------------- utilities */
 
-function pfm_normalize_url($url) {
+function csfm_normalize_url($url) {
 	$url = rtrim(trim((string)$url), '/');
 	$parts = parse_url($url);
 	if ($parts === false || ($parts['scheme'] ?? '') !== 'https' || empty($parts['host'])) {
@@ -192,7 +192,7 @@ function pfm_normalize_url($url) {
 }
 
 /* Run a command with a hard timeout; returns array(exit code, combined output). */
-function pfm_exec($cmd, $timeout = 600) {
+function csfm_exec($cmd, $timeout = 600) {
 	$full = '/usr/bin/timeout ' . (int)$timeout . ' ' . $cmd . ' 2>&1';
 	$out = array();
 	$rc = 0;
@@ -200,6 +200,6 @@ function pfm_exec($cmd, $timeout = 600) {
 	return array($rc, implode("\n", $out));
 }
 
-function pfm_truncate($text, $limit = 60000) {
+function csfm_truncate($text, $limit = 60000) {
 	return strlen($text) > $limit ? substr($text, -$limit) : $text;
 }

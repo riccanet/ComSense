@@ -10,7 +10,7 @@
 * Enrollment attempts are rate-limited per source address, and failures are audited.
 * On success the firewall receives its own 384-bit **device token**. The server stores only its hash.
   The enrollment key is removed from the firewall's `config.xml` immediately, so it never ends up in
-  backups. The token lives in `/var/db/pfmanager/credentials.json` (root, mode 0600), outside
+  backups. The token lives in `/var/db/comsense/credentials.json` (root, mode 0600), outside
   `config.xml`, so restoring a config onto other hardware does not clone the identity.
 * Tokens rotate automatically every 30 days. Disabling a firewall in the console rejects its token
   immediately; deleting it invalidates the token for good.
@@ -27,7 +27,7 @@
 
 The server can only send the fixed task types listed in [PROTOCOL.md](PROTOCOL.md). There is no
 "run a command" task. Each action that changes the firewall must also be **allowed locally** in
-*Services > PfManager Agent*; the agent refuses anything else regardless of what the server asks, so a
+*Services > ComSense Agent*; the agent refuses anything else regardless of what the server asks, so a
 compromised server cannot do more than the firewall owner permitted. By default only backups, policies
 and service restarts are allowed; upgrades, package changes, restores and reboots are opt-in.
 
@@ -38,7 +38,7 @@ afterwards and rolled back if the firewall loses contact with the server.
 ## Data at rest on the server
 
 * Configuration backups contain secrets (password hashes, VPN keys, certificates). They are stored
-  encrypted with Fernet (AES-128-CBC + HMAC-SHA256) using `PFM_BACKUP_ENCRYPTION_KEY`, in files
+  encrypted with Fernet (AES-128-CBC + HMAC-SHA256) using `CSFM_BACKUP_ENCRYPTION_KEY`, in files
   readable only by the service user. Downloads and restores require the operator/admin role and are
   audited.
 * Passwords are hashed with scrypt. Sessions are signed, HTTP-only, `SameSite=Strict`, `Secure`
@@ -50,5 +50,5 @@ afterwards and rolled back if the firewall loses contact with the server.
 * Restrict access to the web console (VPN or source-IP allow-list in the proxy) if only the agent
   API needs to be public; the agent only uses `/api/agent/v1/*` and `/downloads/*`.
 * Use short-lived, single-organization keys with approval for each rollout, and revoke them after.
-* Keep `PFM_BACKUP_ENCRYPTION_KEY` and `PFM_SECRET_KEY` in a secrets manager and back them up
+* Keep `CSFM_BACKUP_ENCRYPTION_KEY` and `CSFM_SECRET_KEY` in a secrets manager and back them up
   separately from the data.

@@ -17,9 +17,9 @@ reach the server within about 20 seconds, the previous configuration is restored
   "remove_unlisted": true,
   "adopt_existing": false,
   "aliases": [
-    {"name": "PFM_Mgmt_Hosts", "type": "host", "address": ["203.0.113.10", "203.0.113.11"],
+    {"name": "CSFM_Mgmt_Hosts", "type": "host", "address": ["203.0.113.10", "203.0.113.11"],
      "detail": ["NOC primary", "NOC secondary"], "descr": "Management hosts"},
-    {"name": "PFM_Blocklist", "type": "urltable", "address": ["https://example.com/list.txt"], "updatefreq": "1"}
+    {"name": "CSFM_Blocklist", "type": "urltable", "address": ["https://example.com/list.txt"], "updatefreq": "1"}
   ]
 }
 ```
@@ -38,10 +38,10 @@ reach the server within about 20 seconds, the previous configuration is restored
   "position": "top",
   "rules": [
     {"interface": "wan", "type": "block", "ipprotocol": "inet", "protocol": "any",
-     "source": {"address": "PFM_Blocklist"}, "destination": {"any": true},
+     "source": {"address": "CSFM_Blocklist"}, "destination": {"any": true},
      "descr": "Block known-bad networks", "log": true},
     {"interface": "wan", "type": "pass", "protocol": "tcp",
-     "source": {"address": "PFM_Mgmt_Hosts"}, "destination": {"network": "wanip", "port": "443"},
+     "source": {"address": "CSFM_Mgmt_Hosts"}, "destination": {"network": "wanip", "port": "443"},
      "descr": "NOC to WebGUI"},
     {"interface": "floating", "floating_interfaces": ["wan", "opt1"], "direction": "in",
      "type": "block", "source": {"address": "198.51.100.0/24"}, "descr": "Floating block"}
@@ -56,7 +56,7 @@ reach the server within about 20 seconds, the previous configuration is restored
   `{"network": "lan" | "wanip" | "(self)" …}`; optional `"port": "443" | "1000:2000" | "<alias>"`
   and `"not": true`.
 * `position`: `top` (before the interface's existing rules, default) or `bottom`.
-* Managed rules carry `[PFM] ` at the start of their description and are replaced as a block on every
+* Managed rules carry `[CSFM] ` at the start of their description and are replaced as a block on every
   revision. Edits made to them in the pfSense GUI are overwritten by the next revision.
 
 ## system
@@ -77,7 +77,7 @@ key is dropped from it.
 ```
 
 Requires *Packages* to be allowed on the firewall in addition to *Policies*. Removing the policy does
-not uninstall anything. The PfManager package itself can never be removed this way.
+not uninstall anything. The ComSense package itself can never be removed this way.
 
 ## config_set
 
@@ -95,6 +95,6 @@ For settings without a dedicated policy type. Paths are pfSense config paths (as
 ```
 
 * `reload`: any of `filter`, `dns`, `unbound`, `dnsmasq`, `ntp`, `hostname`, `routing`, `webgui`.
-* Users, groups, authentication servers, certificates, CAs and the PfManager package settings are
+* Users, groups, authentication servers, certificates, CAs and the ComSense package settings are
   protected and cannot be changed by policy.
 * Original values are restored when the policy is removed.

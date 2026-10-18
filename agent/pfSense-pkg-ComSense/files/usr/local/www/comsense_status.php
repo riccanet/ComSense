@@ -1,37 +1,37 @@
 <?php
 /*
- * pfmanager_status.php
+ * comsense_status.php
  *
- * Shows enrollment and connection status of the PfManager agent.
+ * Shows enrollment and connection status of the ComSense agent.
  */
 
 ##|+PRIV
-##|*IDENT=page-services-pfmanager
-##|*NAME=Services: PfManager Agent
-##|*DESCR=Allow access to the PfManager Agent pages.
-##|*MATCH=pfmanager_status.php*
+##|*IDENT=page-services-comsense
+##|*NAME=Services: ComSense Agent
+##|*DESCR=Allow access to the ComSense Agent pages.
+##|*MATCH=comsense_status.php*
 ##|-PRIV
 
 require_once('guiconfig.inc');
-require_once('/usr/local/pkg/pfmanager.inc');
+require_once('/usr/local/pkg/comsense.inc');
 
 if ($_POST['checkin_now']) {
-	mwexec_bg('/usr/bin/lockf -s -t 0 /var/run/pfmanager_agent.lock /usr/local/bin/php -f /usr/local/pkg/pfmanager/agent.php run');
+	mwexec_bg('/usr/bin/lockf -s -t 0 /var/run/comsense_agent.lock /usr/local/bin/php -f /usr/local/pkg/comsense/agent.php run');
 	$savemsg = gettext('A check-in has been started. Refresh this page in a few seconds.');
 } elseif ($_POST['unenroll']) {
-	pfm_forget_credentials();
+	csfm_forget_credentials();
 	$savemsg = gettext('This firewall has forgotten its credentials. Enter a new enrollment key on the Settings tab to reconnect.');
 } elseif ($_POST['restart']) {
-	pfmanager_resync();
+	comsense_resync();
 	$savemsg = gettext('Agent restarted.');
 }
 
-$settings = pfm_settings();
-$creds = pfm_credentials();
-$state = pfm_state();
+$settings = csfm_settings();
+$creds = csfm_credentials();
+$state = csfm_state();
 
-$pgtitle = array(gettext('Services'), gettext('PfManager Agent'), gettext('Status'));
-$pglinks = array('', '/pkg_edit.php?xml=pfmanager.xml', '@self');
+$pgtitle = array(gettext('Services'), gettext('ComSense Agent'), gettext('Status'));
+$pglinks = array('', '/pkg_edit.php?xml=comsense.xml', '@self');
 include('head.inc');
 
 if ($savemsg) {
@@ -42,12 +42,12 @@ if (!empty($state['last_error'])) {
 }
 
 $tab_array = array(
-	array(gettext('Settings'), false, '/pkg_edit.php?xml=pfmanager.xml'),
-	array(gettext('Status'), true, '/pfmanager_status.php'),
+	array(gettext('Settings'), false, '/pkg_edit.php?xml=comsense.xml'),
+	array(gettext('Status'), true, '/comsense_status.php'),
 );
 display_top_tabs($tab_array);
 
-function pfm_row($label, $value) {
+function csfm_row($label, $value) {
 	echo '<tr><th>' . htmlspecialchars($label) . '</th><td>' . $value . '</td></tr>';
 }
 ?>
@@ -57,17 +57,17 @@ function pfm_row($label, $value) {
 		<table class="table table-striped table-condensed">
 			<tbody>
 <?php
-pfm_row(gettext('Agent'), empty($settings['enable']) ? gettext('Disabled') : (pfmanager_running() ? gettext('Running') : gettext('Stopped')));
-pfm_row(gettext('Agent version'), htmlspecialchars(PFM_AGENT_VERSION));
-pfm_row(gettext('Server'), htmlspecialchars($settings['server_url'] ?? ''));
-pfm_row(gettext('Enrolled'), pfm_is_enrolled()
+csfm_row(gettext('Agent'), empty($settings['enable']) ? gettext('Disabled') : (comsense_running() ? gettext('Running') : gettext('Stopped')));
+csfm_row(gettext('Agent version'), htmlspecialchars(CSFM_AGENT_VERSION));
+csfm_row(gettext('Server'), htmlspecialchars($settings['server_url'] ?? ''));
+csfm_row(gettext('Enrolled'), csfm_is_enrolled()
     ? sprintf(gettext('Yes, since %s'), htmlspecialchars($creds['enrolled_at'] ?? ''))
     : gettext('No'));
-pfm_row(gettext('Device ID'), htmlspecialchars($creds['device_id'] ?? ''));
-pfm_row(gettext('Server status'), htmlspecialchars($state['device_status'] ?? ''));
-pfm_row(gettext('Last check-in'), htmlspecialchars($state['last_checkin'] ?? gettext('never')));
-pfm_row(gettext('Last backup'), htmlspecialchars($state['last_backup']['at'] ?? gettext('never')));
-pfm_row(gettext('Allowed actions'), htmlspecialchars(implode(', ', pfm_capabilities()) ?: gettext('monitoring only')));
+csfm_row(gettext('Device ID'), htmlspecialchars($creds['device_id'] ?? ''));
+csfm_row(gettext('Server status'), htmlspecialchars($state['device_status'] ?? ''));
+csfm_row(gettext('Last check-in'), htmlspecialchars($state['last_checkin'] ?? gettext('never')));
+csfm_row(gettext('Last backup'), htmlspecialchars($state['last_backup']['at'] ?? gettext('never')));
+csfm_row(gettext('Allowed actions'), htmlspecialchars(implode(', ', csfm_capabilities()) ?: gettext('monitoring only')));
 ?>
 			</tbody>
 		</table>

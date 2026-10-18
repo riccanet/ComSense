@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-AGENT_DIR = ROOT / "agent/pfSense-pkg-PfManager/files/usr/local/pkg/pfmanager"
+AGENT_DIR = ROOT / "agent/pfSense-pkg-ComSense/files/usr/local/pkg/comsense"
 HARNESS = Path(__file__).with_name("harness.php")
 sys.path.insert(0, str(ROOT / "server"))
 
@@ -39,7 +39,7 @@ def _free_port() -> int:
 def _make_certs(d: Path) -> None:
     run = lambda *a: subprocess.run(a, check=True, capture_output=True)  # noqa: E731
     run("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2",
-        "-subj", "/CN=PfManager Test CA", "-keyout", d / "ca.key", "-out", d / "ca.pem")
+        "-subj", "/CN=ComSense Test CA", "-keyout", d / "ca.key", "-out", d / "ca.pem")
     run("openssl", "req", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=localhost",
         "-keyout", d / "server.key", "-out", d / "server.csr")
     (d / "ext.cnf").write_text("subjectAltName=DNS:localhost,IP:127.0.0.1\n")
@@ -56,12 +56,12 @@ def env(tmp_path_factory):
     port = _free_port()
     server_env = {
         **os.environ,
-        "PFM_DATABASE_URL": f"sqlite:///{d / 'server.db'}",
-        "PFM_SECRET_KEY": "s" * 48,
-        "PFM_BACKUP_ENCRYPTION_KEY": generate_fernet_key(),
-        "PFM_DATA_DIR": str(d / "data"),
-        "PFM_RUN_SCHEDULER": "false",
-        "PFM_INITIAL_ADMIN_PASSWORD": "e2e-admin-password",
+        "CSFM_DATABASE_URL": f"sqlite:///{d / 'server.db'}",
+        "CSFM_SECRET_KEY": "s" * 48,
+        "CSFM_BACKUP_ENCRYPTION_KEY": generate_fernet_key(),
+        "CSFM_DATA_DIR": str(d / "data"),
+        "CSFM_RUN_SCHEDULER": "false",
+        "CSFM_INITIAL_ADMIN_PASSWORD": "e2e-admin-password",
     }
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "app.main:app_factory", "--factory",
@@ -81,7 +81,7 @@ def env(tmp_path_factory):
 
     from app.db import init_engine, session_factory
 
-    init_engine(server_env["PFM_DATABASE_URL"])
+    init_engine(server_env["CSFM_DATABASE_URL"])
     fw = d / "firewall"
     (fw / "db").mkdir(parents=True)
     yield {"dir": d, "fw": fw, "port": port, "db": session_factory()}
@@ -92,7 +92,7 @@ def env(tmp_path_factory):
 def agent(env, *args: str) -> str:
     result = subprocess.run(
         ["php", str(HARNESS), *args],
-        env={**os.environ, "PFM_TEST_DIR": str(env["fw"]), "PFM_AGENT_DIR": str(AGENT_DIR)},
+        env={**os.environ, "CSFM_TEST_DIR": str(env["fw"]), "CSFM_AGENT_DIR": str(AGENT_DIR)},
         capture_output=True, text=True, timeout=120,
     )
     assert result.returncode == 0, result.stdout + result.stderr
@@ -107,7 +107,7 @@ def set_fw_settings(env, **changes) -> None:
     cfg = fw_config(env) if (env["fw"] / "config.json").exists() else {
         "system": {"hostname": "fw-e2e", "domain": "example.net"}
     }
-    pkg = cfg.setdefault("installedpackages", {}).setdefault("pfmanager", {}).setdefault("config", [{}])
+    pkg = cfg.setdefault("installedpackages", {}).setdefault("comsense", {}).setdefault("config", [{}])
     pkg[0].update(changes)
     (env["fw"] / "config.json").write_text(json.dumps(cfg))
 
@@ -126,12 +126,12 @@ def test_full_lifecycle(env):
         db.add(EnrollmentKey(name="e2e", prefix=key_display_prefix(key), key_hash=hash_secret(key)))
         db.commit()
 
-    # pfmanager_resync() writes the CA; emulate it.
+    # comsense_resync() writes the CA; emulate it.
     shutil.copy(env["dir"] / "ca.pem", env["fw"] / "db" / "server-ca.pem")
     url = f"https://localhost:{env['port']}"
 
     # 1. A wrong key is refused and nothing is stored.
-    set_fw_settings(env, enable="on", server_url=url, enrollment_key="pfm_enr_wrong",
+    set_fw_settings(env, enable="on", server_url=url, enrollment_key="csfm_enr_wrong",
                     allow_backup="on", allow_policy="on", allow_services="on", allow_restore="on")
     assert agent(env, "run") == "Enrollment failed"
     assert "403" in json.loads(agent(env, "state"))["state"]["last_error"]["message"]
@@ -145,7 +145,7 @@ def test_full_lifecycle(env):
 
     # 3. The right key enrolls, the key is wiped from config, and a backup is uploaded.
     assert agent(env, "run") == "Checked in; ran 0 task(s)"
-    assert fw_config(env)["installedpackages"]["pfmanager"]["config"][0]["enrollment_key"] == ""
+    assert fw_config(env)["installedpackages"]["comsense"]["config"][0]["enrollment_key"] == ""
     creds = json.loads(agent(env, "state"))["credentials"]
     with env["db"]() as db:
         device = db.get(Device, creds["device_id"])
@@ -159,10 +159,10 @@ def test_full_lifecycle(env):
         device = db.get(Device, creds["device_id"])
         rules = Policy(name="rules", type=PolicyType.firewall_rules, content={"rules": [{
             "interface": "wan", "type": "pass", "protocol": "tcp",
-            "source": {"address": "PFM_E2E"}, "destination": {"network": "wanip", "port": "443"},
+            "source": {"address": "CSFM_E2E"}, "destination": {"network": "wanip", "port": "443"},
             "descr": "NOC to GUI"}]})
         aliases = Policy(name="aliases", type=PolicyType.aliases, content={"aliases": [
-            {"name": "PFM_E2E", "type": "host", "address": ["203.0.113.5"]}]})
+            {"name": "CSFM_E2E", "type": "host", "address": ["203.0.113.5"]}]})
         system = Policy(name="system", type=PolicyType.system, content={"timezone": "Etc/UTC", "dnsservers": ["9.9.9.9"]})
         # Rules policy is created first on purpose: the agent must still apply aliases first.
         db.add_all([rules, aliases, system])
@@ -176,8 +176,8 @@ def test_full_lifecycle(env):
 
     assert agent(env, "run").startswith("Checked in; ran 5 task(s)")
     cfg = fw_config(env)
-    assert [a["name"] for a in cfg["aliases"]["alias"]] == ["PFM_E2E"]
-    assert cfg["filter"]["rule"][0]["descr"] == "[PFM] NOC to GUI"
+    assert [a["name"] for a in cfg["aliases"]["alias"]] == ["CSFM_E2E"]
+    assert cfg["filter"]["rule"][0]["descr"] == "[CSFM] NOC to GUI"
     assert cfg["system"]["timezone"] == "Etc/UTC" and cfg["system"]["dnsserver"] == ["9.9.9.9"]
     actions = (env["fw"] / "actions.log").read_text()
     assert actions.index("applied alias policy") < actions.index("applied firewall rule policy")

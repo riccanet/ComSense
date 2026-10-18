@@ -24,7 +24,7 @@ def test_examples_are_valid(ptype):
         (PolicyType.system, {"shell": "x"}),
         (PolicyType.packages, {"install": ["curl"]}),
         (PolicyType.config_set, {"items": [{"path": "system/user/0/password", "value": "x"}]}),
-        (PolicyType.config_set, {"items": [{"path": "installedpackages/pfmanager/config", "delete": True}]}),
+        (PolicyType.config_set, {"items": [{"path": "installedpackages/comsense/config", "delete": True}]}),
         (PolicyType.config_set, {"items": [{"path": "../etc", "value": "x"}]}),
     ],
 )

@@ -20,7 +20,7 @@ CONFIG_XML = b"""<?xml version="1.0"?>
 
 
 def test_enroll_requires_valid_key(client, db):
-    for body in ({}, {"enrollment_key": ""}, {"enrollment_key": "pfm_enr_wrong"}):
+    for body in ({}, {"enrollment_key": ""}, {"enrollment_key": "csfm_enr_wrong"}):
         resp = client.post("/api/agent/v1/enroll", json=body)
         assert resp.status_code == 403
     assert db.scalar(select(Device)) is None
@@ -42,12 +42,12 @@ def test_revoked_expired_and_used_up_keys_are_rejected(client, db):
 
 def test_checkin_requires_token(client, db):
     assert client.post("/api/agent/v1/checkin", json={}).status_code == 401
-    assert client.post("/api/agent/v1/checkin", json={}, headers=auth("pfm_dev_nope")).status_code == 401
+    assert client.post("/api/agent/v1/checkin", json={}, headers=auth("csfm_dev_nope")).status_code == 401
 
 
 def test_enroll_and_checkin_records_inventory(client, db):
     creds = enroll(client, make_key(db))
-    assert creds["token"].startswith("pfm_dev_")
+    assert creds["token"].startswith("csfm_dev_")
     report = {
         "agent_version": "0.1.0",
         "capabilities": ["backup"],
@@ -145,7 +145,7 @@ def test_backup_upload_dedup_and_encryption(client, db, settings):
     creds = enroll(client, make_key(db))
     digest = hashlib.sha256(CONFIG_XML).hexdigest()
     gz = gzip.compress(CONFIG_XML)
-    headers = {**auth(creds["token"]), "X-PFM-SHA256": digest, "X-PFM-Reason": "config_change"}
+    headers = {**auth(creds["token"]), "X-CSFM-SHA256": digest, "X-CSFM-Reason": "config_change"}
 
     first = client.post("/api/agent/v1/backups", content=gz, headers=headers)
     assert first.status_code == 200, first.text
@@ -160,7 +160,7 @@ def test_backup_upload_dedup_and_encryption(client, db, settings):
     assert b"pfsense" not in stored
 
     bad = client.post(
-        "/api/agent/v1/backups", content=gz, headers={**headers, "X-PFM-SHA256": "0" * 64}
+        "/api/agent/v1/backups", content=gz, headers={**headers, "X-CSFM-SHA256": "0" * 64}
     )
     assert bad.status_code == 400
     junk = client.post("/api/agent/v1/backups", content=gzip.compress(b"hello"), headers=headers)

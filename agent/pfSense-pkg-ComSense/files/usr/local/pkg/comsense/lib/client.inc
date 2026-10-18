@@ -1,6 +1,6 @@
 <?php
 /*
- * PfManager agent - HTTPS client for the management server.
+ * ComSense agent - HTTPS client for the management server.
  *
  * Every request goes over HTTPS with full certificate and hostname
  * verification. Plain HTTP URLs are refused. Optionally the server's CA can be
@@ -9,7 +9,7 @@
 
 require_once(__DIR__ . '/common.inc');
 
-class PfmHttpError extends Exception {
+class CsfmHttpError extends Exception {
 	public $status;
 	public $body;
 
@@ -20,15 +20,15 @@ class PfmHttpError extends Exception {
 	}
 }
 
-class PfmClient {
+class CsfmClient {
 	private $base;
 	private $token;
 	private $settings;
 
 	public function __construct($settings, $token = null) {
-		$base = pfm_normalize_url($settings['server_url'] ?? '');
+		$base = csfm_normalize_url($settings['server_url'] ?? '');
 		if ($base === false) {
-			throw new PfmHttpError('Server URL must be an https:// URL');
+			throw new CsfmHttpError('Server URL must be an https:// URL');
 		}
 		$this->base = $base . '/api/agent/v1';
 		$this->token = $token;
@@ -72,10 +72,10 @@ class PfmClient {
 			if (is_array($detail)) {
 				$detail = json_encode($detail);
 			}
-			throw new PfmHttpError("Server returned HTTP {$status}: {$detail}", $status, $data);
+			throw new CsfmHttpError("Server returned HTTP {$status}: {$detail}", $status, $data);
 		}
 		if (!is_array($data)) {
-			throw new PfmHttpError('Server returned a response that is not JSON', $status);
+			throw new CsfmHttpError('Server returned a response that is not JSON', $status);
 		}
 		return $data;
 	}
@@ -83,7 +83,7 @@ class PfmClient {
 	private function request($method, $path, $body, $headers, $timeout, &$respHeaders = null) {
 		$ch = curl_init($this->base . $path);
 		$headers[] = 'Accept: application/json';
-		$headers[] = 'User-Agent: pfmanager-agent/' . PFM_AGENT_VERSION;
+		$headers[] = 'User-Agent: comsense-agent/' . CSFM_AGENT_VERSION;
 		if ($this->token) {
 			$headers[] = 'Authorization: Bearer ' . $this->token;
 		}
@@ -98,7 +98,7 @@ class PfmClient {
 			CURLOPT_SSL_VERIFYPEER => true,
 			CURLOPT_SSL_VERIFYHOST => 2,
 			CURLOPT_SSLVERSION => CURL_SSLVERSION_TLSv1_2,
-			CURLOPT_CAINFO => is_readable(PFM_CA_FILE) ? PFM_CA_FILE : PFM_SYSTEM_CA_BUNDLE,
+			CURLOPT_CAINFO => is_readable(CSFM_CA_FILE) ? CSFM_CA_FILE : CSFM_SYSTEM_CA_BUNDLE,
 		);
 		if (!empty($this->settings['pin_sha256'])) {
 			$pins = array();
@@ -126,7 +126,7 @@ class PfmClient {
 		if ($resp === false) {
 			$err = curl_error($ch);
 			curl_close($ch);
-			throw new PfmHttpError("Could not reach the management server: {$err}");
+			throw new CsfmHttpError("Could not reach the management server: {$err}");
 		}
 		$status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
 		curl_close($ch);
@@ -136,25 +136,25 @@ class PfmClient {
 
 	/* Honour the proxy configured under System > Advanced > Miscellaneous. */
 	private function applyProxy(&$opts) {
-		$url = pfm_cfg_get('system/proxyurl', '');
+		$url = csfm_cfg_get('system/proxyurl', '');
 		if (empty($url)) {
 			/* Ignore *_proxy environment variables; only the pfSense setting counts. */
 			$opts[CURLOPT_PROXY] = '';
 			return;
 		}
 		$opts[CURLOPT_PROXY] = $url;
-		$port = pfm_cfg_get('system/proxyport', '');
+		$port = csfm_cfg_get('system/proxyport', '');
 		if (!empty($port)) {
 			$opts[CURLOPT_PROXYPORT] = (int)$port;
 		}
-		$user = pfm_cfg_get('system/proxyuser', '');
+		$user = csfm_cfg_get('system/proxyuser', '');
 		if (!empty($user)) {
-			$opts[CURLOPT_PROXYUSERPWD] = $user . ':' . pfm_cfg_get('system/proxypass', '');
+			$opts[CURLOPT_PROXYUSERPWD] = $user . ':' . csfm_cfg_get('system/proxypass', '');
 		}
 	}
 }
 
-function pfm_client() {
-	$creds = pfm_credentials();
-	return new PfmClient(pfm_settings(), $creds['token'] ?? null);
+function csfm_client() {
+	$creds = csfm_credentials();
+	return new CsfmClient(csfm_settings(), $creds['token'] ?? null);
 }

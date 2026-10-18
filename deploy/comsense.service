@@ -1,15 +1,15 @@
 [Unit]
-Description=PfManager pfSense management server
+Description=ComSense pfSense management server
 After=network-online.target postgresql.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=pfmanager
-Group=pfmanager
-WorkingDirectory=/opt/pfmanager/server
-EnvironmentFile=/etc/pfmanager/pfmanager.env
-ExecStart=/opt/pfmanager/venv/bin/uvicorn app.main:app_factory --factory --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1
+User=comsense
+Group=comsense
+WorkingDirectory=/opt/comsense/server
+EnvironmentFile=/etc/comsense/comsense.env
+ExecStart=/opt/comsense/venv/bin/uvicorn app.main:app_factory --factory --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1
 Restart=on-failure
 RestartSec=5
 
@@ -18,7 +18,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/pfmanager
+ReadWritePaths=/var/lib/comsense
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

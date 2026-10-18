@@ -10,8 +10,8 @@ from collections import defaultdict, deque
 
 from cryptography.fernet import Fernet
 
-ENROLLMENT_KEY_PREFIX = "pfm_enr_"
-DEVICE_TOKEN_PREFIX = "pfm_dev_"
+ENROLLMENT_KEY_PREFIX = "csfm_enr_"
+DEVICE_TOKEN_PREFIX = "csfm_dev_"
 
 _SCRYPT_N = 2**15
 _SCRYPT_R = 8

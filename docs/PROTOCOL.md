@@ -8,13 +8,13 @@ is disabled or still awaiting approval.
 ## POST /enroll
 
 ```json
-{"enrollment_key": "pfm_enr_…", "agent_version": "0.1.0",
+{"enrollment_key": "csfm_enr_…", "agent_version": "0.1.0",
  "system": {"hostname": "fw1.example.com", "edition": "ce", "version": "2.7.2-RELEASE",
             "platform": "…", "serial": "…", "unique_id": "…"},
  "capabilities": ["backup", "policy"]}
 ```
 
-Response: `{"device_id": "<uuid>", "token": "pfm_dev_…", "status": "online"|"pending",
+Response: `{"device_id": "<uuid>", "token": "csfm_dev_…", "status": "online"|"pending",
 "checkin_interval": 60}`.
 
 The key must exist, not be revoked or expired, and have uses left. A firewall that enrolls again
@@ -75,12 +75,12 @@ first for long tasks (system upgrades) and followed by a final status later.
 ## POST /backups
 
 Body: gzip-compressed `config.xml`. Headers: `Content-Type: application/gzip`,
-`X-PFM-SHA256` (of the uncompressed file), `X-PFM-Reason`, optional `X-PFM-Task-ID`.
+`X-CSFM-SHA256` (of the uncompressed file), `X-CSFM-Reason`, optional `X-CSFM-Task-ID`.
 Response: `{"backup_id", "sha256", "created"}`; `created` is false when an identical backup exists.
 
 ## GET /backups/{id}
 
-Returns the gzip-compressed backup with an `X-PFM-SHA256` header, only while a `restore_backup` task
+Returns the gzip-compressed backup with an `X-CSFM-SHA256` header, only while a `restore_backup` task
 for that backup is in flight for the calling device.
 
 ## GET /ping
@@ -89,4 +89,4 @@ for that backup is in flight for the calling device.
 
 ## POST /token/rotate
 
-Returns `{"token": "pfm_dev_…"}` and invalidates the old token.
+Returns `{"token": "csfm_dev_…"}` and invalidates the old token.

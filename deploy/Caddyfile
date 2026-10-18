@@ -2,9 +2,9 @@
 	email {$ACME_EMAIL}
 }
 
-{$PFM_DOMAIN} {
+{$CSFM_DOMAIN} {
 	encode gzip
-	# Backups can be up to PFM_MAX_BACKUP_BYTES (32 MiB by default).
+	# Backups can be up to CSFM_MAX_BACKUP_BYTES (32 MiB by default).
 	request_body {
 		max_size 40MB
 	}

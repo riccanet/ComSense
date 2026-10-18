@@ -1,8 +1,8 @@
 <?php
 /*
- * pfmanager.inc
+ * comsense.inc
  *
- * pfSense package hooks for the PfManager agent: install/deinstall, settings
+ * pfSense package hooks for the ComSense agent: install/deinstall, settings
  * validation (which performs enrollment) and resync (which restarts the agent).
  */
 
@@ -10,67 +10,67 @@ require_once('config.inc');
 require_once('globals.inc');
 require_once('util.inc');
 require_once('service-utils.inc');
-require_once('/usr/local/pkg/pfmanager/lib/agent.inc');
+require_once('/usr/local/pkg/comsense/lib/agent.inc');
 
-define('PFM_PIDFILE', '/var/run/pfmanager_agent.pid');
+define('CSFM_PIDFILE', '/var/run/comsense_agent.pid');
 
-function pfmanager_install() {
-	pfm_ensure_db_dir();
-	pfmanager_write_rcfile();
+function comsense_install() {
+	csfm_ensure_db_dir();
+	comsense_write_rcfile();
 }
 
-function pfmanager_deinstall() {
-	pfmanager_stop();
-	unlink_if_exists('/usr/local/etc/rc.d/pfmanager.sh');
-	/* Keep /var/db/pfmanager so a reinstall keeps its identity; remove it by hand to fully reset. */
+function comsense_deinstall() {
+	comsense_stop();
+	unlink_if_exists('/usr/local/etc/rc.d/comsense.sh');
+	/* Keep /var/db/comsense so a reinstall keeps its identity; remove it by hand to fully reset. */
 }
 
-function pfmanager_write_rcfile() {
-	$start = "/usr/sbin/daemon -f -P " . PFM_PIDFILE . " /usr/local/sbin/pfmanager-agentd";
-	$stop = "if [ -f " . PFM_PIDFILE . " ]; then\n"
-	    . "\t\t/bin/pkill -F " . PFM_PIDFILE . "\n"
-	    . "\t\t/bin/rm -f " . PFM_PIDFILE . "\n"
+function comsense_write_rcfile() {
+	$start = "/usr/sbin/daemon -f -P " . CSFM_PIDFILE . " /usr/local/sbin/comsense-agentd";
+	$stop = "if [ -f " . CSFM_PIDFILE . " ]; then\n"
+	    . "\t\t/bin/pkill -F " . CSFM_PIDFILE . "\n"
+	    . "\t\t/bin/rm -f " . CSFM_PIDFILE . "\n"
 	    . "\tfi";
 	write_rcfile(array(
-		'file' => 'pfmanager.sh',
+		'file' => 'comsense.sh',
 		'start' => $start,
 		'stop' => $stop,
 	));
 }
 
-function pfmanager_running() {
-	return isvalidpid(PFM_PIDFILE);
+function comsense_running() {
+	return isvalidpid(CSFM_PIDFILE);
 }
 
-function pfmanager_stop() {
-	if (file_exists('/usr/local/etc/rc.d/pfmanager.sh')) {
-		mwexec('/usr/local/etc/rc.d/pfmanager.sh stop');
+function comsense_stop() {
+	if (file_exists('/usr/local/etc/rc.d/comsense.sh')) {
+		mwexec('/usr/local/etc/rc.d/comsense.sh stop');
 	}
 }
 
-function pfmanager_start() {
-	if (!pfmanager_running()) {
-		mwexec('/usr/local/etc/rc.d/pfmanager.sh start');
+function comsense_start() {
+	if (!comsense_running()) {
+		mwexec('/usr/local/etc/rc.d/comsense.sh start');
 	}
 }
 
 /* Write the optional private CA bundle used to verify the server. */
-function pfmanager_write_ca($settings) {
-	pfm_ensure_db_dir();
+function comsense_write_ca($settings) {
+	csfm_ensure_db_dir();
 	$pem = isset($settings['ca_cert']) ? base64_decode($settings['ca_cert'], true) : '';
 	if ($pem !== false && trim($pem) !== '') {
-		file_put_contents(PFM_CA_FILE, $pem);
-		chmod(PFM_CA_FILE, 0600);
+		file_put_contents(CSFM_CA_FILE, $pem);
+		chmod(CSFM_CA_FILE, 0600);
 	} else {
-		@unlink(PFM_CA_FILE);
+		@unlink(CSFM_CA_FILE);
 	}
 }
 
-function pfmanager_validate_input(&$post, &$input_errors) {
+function comsense_validate_input(&$post, &$input_errors) {
 	if (empty($post['enable'])) {
 		return;
 	}
-	$url = pfm_normalize_url($post['server_url'] ?? '');
+	$url = csfm_normalize_url($post['server_url'] ?? '');
 	if ($url === false) {
 		$input_errors[] = gettext('The server URL must start with https:// and contain only a host, optional port and path.');
 		return;
@@ -96,7 +96,7 @@ function pfmanager_validate_input(&$post, &$input_errors) {
 
 	$key = trim($post['enrollment_key'] ?? '');
 	if ($key === '') {
-		if (!pfm_is_enrolled()) {
+		if (!csfm_is_enrolled()) {
 			$input_errors[] = gettext('Enter the enrollment key from the management server to connect this firewall.');
 		}
 		return;
@@ -105,9 +105,9 @@ function pfmanager_validate_input(&$post, &$input_errors) {
 	/* Enroll now so a wrong URL, certificate or key is reported on this page. */
 	$settings = $post;
 	$settings['ca_cert'] = !empty($post['ca_cert']) ? base64_encode($post['ca_cert']) : '';
-	pfmanager_write_ca($settings);
+	comsense_write_ca($settings);
 	try {
-		pfm_enroll($settings, $key);
+		csfm_enroll($settings, $key);
 		/* Never persist the enrollment key in config.xml (or in its backups). */
 		$post['enrollment_key'] = '';
 	} catch (Exception $e) {
@@ -115,12 +115,12 @@ function pfmanager_validate_input(&$post, &$input_errors) {
 	}
 }
 
-function pfmanager_resync() {
-	$settings = pfm_settings();
-	pfmanager_write_ca($settings);
-	pfmanager_write_rcfile();
-	pfmanager_stop();
+function comsense_resync() {
+	$settings = csfm_settings();
+	comsense_write_ca($settings);
+	comsense_write_rcfile();
+	comsense_stop();
 	if (!empty($settings['enable'])) {
-		pfmanager_start();
+		comsense_start();
 	}
 }

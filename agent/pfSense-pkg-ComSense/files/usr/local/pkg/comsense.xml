@@ -5,38 +5,38 @@
 	<copyright>
 	<![CDATA[
 /*
- * pfmanager.xml
+ * comsense.xml
  *
  * Licensed under the Apache License, Version 2.0.
  */
 	]]>
 	</copyright>
-	<name>pfmanager</name>
-	<title>Services/PfManager Agent</title>
+	<name>comsense</name>
+	<title>Services/ComSense Agent</title>
 	<category>Services</category>
 	<version>%%PKGVERSION%%</version>
-	<include_file>/usr/local/pkg/pfmanager.inc</include_file>
-	<aftersaveredirect>/pkg_edit.php?xml=pfmanager.xml</aftersaveredirect>
+	<include_file>/usr/local/pkg/comsense.inc</include_file>
+	<aftersaveredirect>/pkg_edit.php?xml=comsense.xml</aftersaveredirect>
 	<menu>
-		<name>PfManager Agent</name>
+		<name>ComSense Agent</name>
 		<section>Services</section>
-		<url>/pkg_edit.php?xml=pfmanager.xml</url>
+		<url>/pkg_edit.php?xml=comsense.xml</url>
 	</menu>
 	<service>
-		<name>pfmanager</name>
-		<rcfile>pfmanager.sh</rcfile>
-		<description>PfManager management agent</description>
-		<custom_php_service_status_command>pfmanager_running();</custom_php_service_status_command>
+		<name>comsense</name>
+		<rcfile>comsense.sh</rcfile>
+		<description>ComSense Firewall Manager agent</description>
+		<custom_php_service_status_command>comsense_running();</custom_php_service_status_command>
 	</service>
 	<tabs>
 		<tab>
 			<text>Settings</text>
-			<url>/pkg_edit.php?xml=pfmanager.xml</url>
+			<url>/pkg_edit.php?xml=comsense.xml</url>
 			<active/>
 		</tab>
 		<tab>
 			<text>Status</text>
-			<url>/pfmanager_status.php</url>
+			<url>/comsense_status.php</url>
 		</tab>
 	</tabs>
 	<fields>
@@ -48,14 +48,14 @@
 			<fielddescr>Enable</fielddescr>
 			<fieldname>enable</fieldname>
 			<type>checkbox</type>
-			<description>Run the PfManager agent</description>
+			<description>Run the ComSense agent</description>
 		</field>
 		<field>
 			<fielddescr>Server URL</fielddescr>
 			<fieldname>server_url</fieldname>
 			<type>input</type>
 			<size>60</size>
-			<description>HTTPS address of the management server, e.g. https://pfmanager.example.com (add :port if it is not 443). Plain HTTP is not accepted.</description>
+			<description>HTTPS address of the management server, e.g. https://comsense.example.com (add :port if it is not 443). Plain HTTP is not accepted.</description>
 		</field>
 		<field>
 			<fielddescr>Enrollment key</fielddescr>
@@ -136,8 +136,8 @@
 			<description>Reboot the firewall</description>
 		</field>
 	</fields>
-	<custom_php_install_command>pfmanager_install();</custom_php_install_command>
-	<custom_php_deinstall_command>pfmanager_deinstall();</custom_php_deinstall_command>
-	<custom_php_validation_command>pfmanager_validate_input($_POST, $input_errors);</custom_php_validation_command>
-	<custom_php_resync_config_command>pfmanager_resync();</custom_php_resync_config_command>
+	<custom_php_install_command>comsense_install();</custom_php_install_command>
+	<custom_php_deinstall_command>comsense_deinstall();</custom_php_deinstall_command>
+	<custom_php_validation_command>comsense_validate_input($_POST, $input_errors);</custom_php_validation_command>
+	<custom_php_resync_config_command>comsense_resync();</custom_php_resync_config_command>
 </packagegui>

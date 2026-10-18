@@ -32,7 +32,7 @@ jobs:
         run: find agent -name '*.php' -o -name '*.inc' | xargs -n1 php -l
       - name: Lint shell
         run: |
-          sh -n agent/pfSense-pkg-PfManager/files/usr/local/sbin/pfmanager-agentd
+          sh -n agent/pfSense-pkg-ComSense/files/usr/local/sbin/comsense-agentd
           sh -n agent/build-pkg.sh
           bash -n deploy/install-debian.sh
       - name: Agent end-to-end test (real agent code against real server over TLS)
@@ -53,5 +53,5 @@ jobs:
             sh agent/build-pkg.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: pfSense-pkg-PfManager
+          name: pfSense-pkg-ComSense
           path: agent/dist/*.pkg

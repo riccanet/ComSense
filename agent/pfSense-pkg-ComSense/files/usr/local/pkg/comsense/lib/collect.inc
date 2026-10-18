@@ -1,6 +1,6 @@
 <?php
 /*
- * PfManager agent - inventory and health collection.
+ * ComSense agent - inventory and health collection.
  *
  * Uses pfSense's own library functions where they exist, so the numbers match
  * what the WebGUI dashboard shows.
@@ -8,20 +8,20 @@
 
 require_once(__DIR__ . '/common.inc');
 
-define('PFM_UPDATE_CHECK_INTERVAL', 6 * 3600);
+define('CSFM_UPDATE_CHECK_INTERVAL', 6 * 3600);
 
-function pfm_sysctl($name) {
+function csfm_sysctl($name) {
 	$out = array();
 	exec('/sbin/sysctl -n ' . escapeshellarg($name) . ' 2>/dev/null', $out);
 	return trim(implode("\n", $out));
 }
 
-function pfm_product_version() {
+function csfm_product_version() {
 	$v = @file_get_contents('/etc/version');
 	return $v === false ? '' : trim($v);
 }
 
-function pfm_edition() {
+function csfm_edition() {
 	$label = function_exists('g_get') ? (string)g_get('product_label') : '';
 	if ($label === '' && isset($GLOBALS['g']['product_label'])) {
 		$label = (string)$GLOBALS['g']['product_label'];
@@ -30,21 +30,21 @@ function pfm_edition() {
 		return 'plus';
 	}
 	/* pfSense Plus uses YY.MM versions (21.02 onward); CE stays on 2.x. */
-	$major = (int)pfm_product_version();
+	$major = (int)csfm_product_version();
 	return $major >= 21 ? 'plus' : 'ce';
 }
 
-function pfm_collect_system() {
+function csfm_collect_system() {
 	$platform = '';
 	if (function_exists('system_identify_specific_platform')) {
 		$p = system_identify_specific_platform();
 		$platform = is_array($p) ? ($p['descr'] ?? '') : '';
 	}
-	$hostname = pfm_cfg_get('system/hostname', '') . '.' . pfm_cfg_get('system/domain', '');
+	$hostname = csfm_cfg_get('system/hostname', '') . '.' . csfm_cfg_get('system/domain', '');
 	return array(
 		'hostname' => trim($hostname, '.'),
-		'edition' => pfm_edition(),
-		'version' => pfm_product_version(),
+		'edition' => csfm_edition(),
+		'version' => csfm_product_version(),
 		'platform' => $platform,
 		'serial' => function_exists('system_get_serial') ? (string)system_get_serial() : '',
 		'unique_id' => function_exists('system_get_uniqueid') ? (string)system_get_uniqueid() : '',
@@ -53,10 +53,10 @@ function pfm_collect_system() {
 	);
 }
 
-function pfm_cpu_usage() {
-	$a = preg_split('/\s+/', pfm_sysctl('kern.cp_time'));
+function csfm_cpu_usage() {
+	$a = preg_split('/\s+/', csfm_sysctl('kern.cp_time'));
 	sleep(1);
-	$b = preg_split('/\s+/', pfm_sysctl('kern.cp_time'));
+	$b = preg_split('/\s+/', csfm_sysctl('kern.cp_time'));
 	if (count($a) < 5 || count($b) < 5) {
 		return null;
 	}
@@ -68,18 +68,18 @@ function pfm_cpu_usage() {
 	return $total > 0 ? round(100 * ($total - $idle) / $total, 1) : null;
 }
 
-function pfm_memory_usage() {
-	$total = (int)pfm_sysctl('vm.stats.vm.v_page_count');
+function csfm_memory_usage() {
+	$total = (int)csfm_sysctl('vm.stats.vm.v_page_count');
 	if ($total <= 0) {
 		return null;
 	}
-	$free = (int)pfm_sysctl('vm.stats.vm.v_inactive_count')
-	    + (int)pfm_sysctl('vm.stats.vm.v_cache_count')
-	    + (int)pfm_sysctl('vm.stats.vm.v_free_count');
+	$free = (int)csfm_sysctl('vm.stats.vm.v_inactive_count')
+	    + (int)csfm_sysctl('vm.stats.vm.v_cache_count')
+	    + (int)csfm_sysctl('vm.stats.vm.v_free_count');
 	return round(100 * ($total - $free) / $total, 1);
 }
 
-function pfm_states() {
+function csfm_states() {
 	$current = null;
 	$max = null;
 	exec('/sbin/pfctl -si 2>/dev/null', $out);
@@ -98,26 +98,26 @@ function pfm_states() {
 	return array($current, $max);
 }
 
-function pfm_collect_metrics() {
-	$boottime = pfm_sysctl('kern.boottime');
+function csfm_collect_metrics() {
+	$boottime = csfm_sysctl('kern.boottime');
 	$uptime = preg_match('/sec = (\d+)/', $boottime, $m) ? time() - (int)$m[1] : null;
 	$total = @disk_total_space('/');
 	$free = @disk_free_space('/');
-	list($states, $states_max) = pfm_states();
+	list($states, $states_max) = csfm_states();
 	$load = sys_getloadavg();
 	return array(
-		'cpu_pct' => pfm_cpu_usage(),
-		'mem_pct' => pfm_memory_usage(),
+		'cpu_pct' => csfm_cpu_usage(),
+		'mem_pct' => csfm_memory_usage(),
 		'disk_pct' => ($total > 0) ? round(100 * ($total - $free) / $total, 1) : null,
 		'load' => is_array($load) ? array_map(function ($v) { return round($v, 2); }, $load) : array(),
 		'states' => $states,
 		'states_max' => $states_max,
 		'uptime' => $uptime,
-		'mbuf' => pfm_sysctl('kern.ipc.nmbclusters'),
+		'mbuf' => csfm_sysctl('kern.ipc.nmbclusters'),
 	);
 }
 
-function pfm_collect_interfaces() {
+function csfm_collect_interfaces() {
 	$out = array();
 	if (!function_exists('get_configured_interface_with_descr') || !function_exists('get_interface_info')) {
 		return $out;
@@ -149,7 +149,7 @@ function pfm_collect_interfaces() {
 	return $out;
 }
 
-function pfm_collect_gateways() {
+function csfm_collect_gateways() {
 	$out = array();
 	if (!function_exists('return_gateways_status')) {
 		return $out;
@@ -171,7 +171,7 @@ function pfm_collect_gateways() {
 	return $out;
 }
 
-function pfm_collect_services() {
+function csfm_collect_services() {
 	$out = array();
 	if (!function_exists('get_services') || !function_exists('get_service_status')) {
 		return $out;
@@ -190,9 +190,9 @@ function pfm_collect_services() {
 	return $out;
 }
 
-function pfm_collect_carp() {
+function csfm_collect_carp() {
 	$out = array();
-	foreach ((array)pfm_cfg_get('virtualip/vip', array()) as $vip) {
+	foreach ((array)csfm_cfg_get('virtualip/vip', array()) as $vip) {
 		if (($vip['mode'] ?? '') !== 'carp') {
 			continue;
 		}
@@ -208,7 +208,7 @@ function pfm_collect_carp() {
 	return $out;
 }
 
-function pfm_collect_packages() {
+function csfm_collect_packages() {
 	$out = array();
 	exec("/usr/sbin/pkg-static query -x '%n\t%v' '^pfSense-pkg-' 2>/dev/null", $lines);
 	foreach ($lines as $line) {
@@ -221,7 +221,7 @@ function pfm_collect_packages() {
 }
 
 /* Package upgrades available from the configured repository. */
-function pfm_outdated_packages() {
+function csfm_outdated_packages() {
 	$out = array();
 	exec("/usr/sbin/pkg-static version -vRl '<' 2>/dev/null", $lines);
 	foreach ($lines as $line) {
@@ -234,14 +234,14 @@ function pfm_outdated_packages() {
 	return $out;
 }
 
-function pfm_check_updates($force = false) {
-	$state = pfm_state();
+function csfm_check_updates($force = false) {
+	$state = csfm_state();
 	$cached = $state['updates'] ?? null;
-	if (!$force && is_array($cached) && (time() - (int)($cached['checked_ts'] ?? 0)) < PFM_UPDATE_CHECK_INTERVAL) {
+	if (!$force && is_array($cached) && (time() - (int)($cached['checked_ts'] ?? 0)) < CSFM_UPDATE_CHECK_INTERVAL) {
 		return $cached;
 	}
 	$info = array(
-		'installed_version' => pfm_product_version(),
+		'installed_version' => csfm_product_version(),
 		'version' => '',
 		'update_available' => false,
 		'packages' => array(),
@@ -258,41 +258,41 @@ function pfm_check_updates($force = false) {
 			$info['error'] = 'Unable to query the update repository';
 		}
 	}
-	$info['packages'] = pfm_outdated_packages();
+	$info['packages'] = csfm_outdated_packages();
 	$state['updates'] = $info;
-	pfm_save_state($state);
+	csfm_save_state($state);
 	return $info;
 }
 
-function pfm_config_file() {
+function csfm_config_file() {
 	$dir = function_exists('g_get') ? g_get('conf_path') : ($GLOBALS['g']['conf_path'] ?? '/cf/conf');
 	return ($dir ?: '/cf/conf') . '/config.xml';
 }
 
-function pfm_collect_report() {
-	$state = pfm_state();
+function csfm_collect_report() {
+	$state = csfm_state();
 	$applied = array();
 	foreach ($state['policies'] as $pid => $p) {
 		$applied[(string)$pid] = $p['hash'] ?? '';
 	}
 	$report = array(
-		'agent_version' => PFM_AGENT_VERSION,
-		'capabilities' => pfm_capabilities(),
-		'system' => pfm_collect_system(),
-		'metrics' => pfm_collect_metrics(),
-		'interfaces' => pfm_collect_interfaces(),
-		'gateways' => pfm_collect_gateways(),
-		'services' => pfm_collect_services(),
-		'carp' => pfm_collect_carp(),
-		'packages' => pfm_collect_packages(),
+		'agent_version' => CSFM_AGENT_VERSION,
+		'capabilities' => csfm_capabilities(),
+		'system' => csfm_collect_system(),
+		'metrics' => csfm_collect_metrics(),
+		'interfaces' => csfm_collect_interfaces(),
+		'gateways' => csfm_collect_gateways(),
+		'services' => csfm_collect_services(),
+		'carp' => csfm_collect_carp(),
+		'packages' => csfm_collect_packages(),
 		'config' => array(
-			'sha256' => (string)@hash_file('sha256', pfm_config_file()),
-			'revision' => (string)pfm_cfg_get('revision/description', ''),
-			'time' => (int)pfm_cfg_get('revision/time', 0),
+			'sha256' => (string)@hash_file('sha256', csfm_config_file()),
+			'revision' => (string)csfm_cfg_get('revision/description', ''),
+			'time' => (int)csfm_cfg_get('revision/time', 0),
 		),
 		'applied_policies' => (object)$applied,
 	);
-	$updates = pfm_check_updates(false);
+	$updates = csfm_check_updates(false);
 	if (is_array($updates)) {
 		$report['updates'] = $updates;
 	}

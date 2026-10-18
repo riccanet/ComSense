@@ -1,21 +1,21 @@
-# PfManager server: PostgreSQL + application + Caddy (automatic HTTPS).
+# ComSense server: PostgreSQL + application + Caddy (automatic HTTPS).
 #
 #   cp .env.example .env && edit .env
 #   docker compose up -d
 #
-# Only Caddy is published. Firewalls connect to https://$PFM_DOMAIN (port 443).
+# Only Caddy is published. Firewalls connect to https://$CSFM_DOMAIN (port 443).
 services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: pfmanager
-      POSTGRES_USER: pfmanager
+      POSTGRES_DB: comsense
+      POSTGRES_USER: comsense
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pfmanager -d pfmanager"]
+      test: ["CMD-SHELL", "pg_isready -U comsense -d comsense"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -28,10 +28,10 @@ services:
         condition: service_healthy
     env_file: .env
     environment:
-      PFM_DATABASE_URL: postgresql+psycopg://pfmanager:${POSTGRES_PASSWORD}@db:5432/pfmanager
-      PFM_PUBLIC_URL: https://${PFM_DOMAIN:?set PFM_DOMAIN in .env}
+      CSFM_DATABASE_URL: postgresql+psycopg://comsense:${POSTGRES_PASSWORD}@db:5432/comsense
+      CSFM_PUBLIC_URL: https://${CSFM_DOMAIN:?set CSFM_DOMAIN in .env}
     volumes:
-      - app-data:/var/lib/pfmanager
+      - app-data:/var/lib/comsense
 
   caddy:
     image: caddy:2-alpine
@@ -42,7 +42,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      PFM_DOMAIN: ${PFM_DOMAIN}
+      CSFM_DOMAIN: ${CSFM_DOMAIN}
       ACME_EMAIL: ${ACME_EMAIL:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro

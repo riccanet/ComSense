@@ -23,7 +23,7 @@ from .security import hash_password
 from .web import routes as web_routes
 from .web.auth import LoginRequired
 
-log = logging.getLogger("pfmanager")
+log = logging.getLogger("comsense")
 
 
 def bootstrap_admin(settings: Settings) -> None:
@@ -31,7 +31,7 @@ def bootstrap_admin(settings: Settings) -> None:
         if db.scalar(select(func.count()).select_from(User)):
             return
         if not settings.initial_admin_password:
-            log.warning("No users exist. Set PFM_INITIAL_ADMIN_PASSWORD to create the first admin.")
+            log.warning("No users exist. Set CSFM_INITIAL_ADMIN_PASSWORD to create the first admin.")
             return
         db.add(
             User(
@@ -60,7 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             task.cancel()
 
     app = FastAPI(
-        title="PfManager",
+        title="ComSense Firewall Manager",
         version=__version__,
         lifespan=lifespan,
         docs_url=None,
@@ -71,7 +71,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,
-        session_cookie="pfm_session",
+        session_cookie="csfm_session",
         max_age=settings.session_max_age,
         same_site="strict",
         https_only=settings.secure_cookies,

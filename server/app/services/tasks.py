@@ -62,7 +62,7 @@ def queue_task(
     if needed and needed not in (device.capabilities or []):
         raise TaskError(
             f"The firewall does not allow '{needed}' actions. Enable it in "
-            "Services > PfManager Agent on the firewall."
+            "Services > ComSense Agent on the firewall."
         )
     task = Task(
         device_id=device.id,

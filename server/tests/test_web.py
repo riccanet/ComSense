@@ -75,7 +75,7 @@ def test_create_enrollment_key_shows_once_and_stores_hash(client, db):
         data={"name": "rollout", "expires_days": "7", "max_uses": "", "require_approval": "true", "csrf_token": csrf},
     )
     assert resp.status_code == 200
-    key = re.search(r'value="(pfm_enr_[^"]+)"', resp.text).group(1)
+    key = re.search(r'value="(csfm_enr_[^"]+)"', resp.text).group(1)
     assert key not in client.get("/keys").text
     stored = db.scalar(select(EnrollmentKey))
     assert stored.key_hash != key and key not in stored.key_hash

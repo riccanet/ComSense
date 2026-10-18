@@ -4,7 +4,7 @@
 {% block content %}
 <h1>Enrollment keys</h1>
 <p class="muted">A firewall can only join this server by presenting a valid enrollment key. Paste the key into
-<strong>Services &gt; PfManager Agent</strong> on the firewall after installing the package. Once enrolled, the firewall
+<strong>Services &gt; ComSense Agent</strong> on the firewall after installing the package. Once enrolled, the firewall
 receives its own device token and the key is erased from the firewall.</p>
 
 {% if new_key %}
@@ -25,11 +25,11 @@ receives its own device token and the key is erased from the firewall.</p>
       {% if agent_packages %}
       <pre>pkg-static add {{ public_url }}/downloads/{{ agent_packages[-1] }}</pre>
       {% else %}
-      <pre>pkg-static add https://&lt;where you host it&gt;/pfSense-pkg-PfManager-&lt;version&gt;.pkg</pre>
+      <pre>pkg-static add https://&lt;where you host it&gt;/pfSense-pkg-ComSense-&lt;version&gt;.pkg</pre>
       <span class="small muted">Copy a built package into the server's <code>downloads</code> data folder to have it served from here. See docs/AGENT.md.</span>
       {% endif %}
     </li>
-    <li>Open <strong>Services &gt; PfManager Agent</strong>, tick <em>Enable</em>, enter the server URL <code>{{ public_url }}</code> and the enrollment key, choose which remote actions to allow, and save.</li>
+    <li>Open <strong>Services &gt; ComSense Agent</strong>, tick <em>Enable</em>, enter the server URL <code>{{ public_url }}</code> and the enrollment key, choose which remote actions to allow, and save.</li>
     <li>The firewall appears under Firewalls (after approval, if the key requires it).</li>
   </ol>
 </section>

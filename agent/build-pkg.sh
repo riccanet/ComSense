@@ -1,21 +1,21 @@
 #!/bin/sh
 #
-# Build pfSense-pkg-PfManager-<version>.pkg without a ports tree.
+# Build pfSense-pkg-ComSense-<version>.pkg without a ports tree.
 #
 # Run on FreeBSD (matching the target's major version) or directly on a
 # pfSense box, both of which ship pkg(8):
 #
-#   sh build-pkg.sh                 # writes ./dist/pfSense-pkg-PfManager-<ver>.pkg
+#   sh build-pkg.sh                 # writes ./dist/pfSense-pkg-ComSense-<ver>.pkg
 #   sh build-pkg.sh -a FreeBSD:15:amd64   # e.g. for pfSense Plus 24.x
 #
-# For official repositories, build the port in pfSense-pkg-PfManager/ with
+# For official repositories, build the port in pfSense-pkg-ComSense/ with
 # poudriere instead.
 set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-PORT="${HERE}/pfSense-pkg-PfManager"
+PORT="${HERE}/pfSense-pkg-ComSense"
 FILES="${PORT}/files"
-NAME=pfSense-pkg-PfManager
+NAME=pfSense-pkg-ComSense
 VERSION=$(awk '/^PORTVERSION=/ {print $2}' "${PORT}/Makefile")
 ABI=""
 
@@ -36,16 +36,16 @@ STAGE="${WORK}/stage"
 PREFIX=/usr/local
 DATADIR="${PREFIX}/share/${NAME}"
 
-install -d -m 0755 "${STAGE}${PREFIX}/pkg/pfmanager/lib" "${STAGE}${PREFIX}/sbin" \
+install -d -m 0755 "${STAGE}${PREFIX}/pkg/comsense/lib" "${STAGE}${PREFIX}/sbin" \
 	"${STAGE}${PREFIX}/www" "${STAGE}/etc/inc/priv" "${STAGE}${DATADIR}"
-install -m 0644 "${FILES}${PREFIX}/pkg/pfmanager.xml" "${FILES}${PREFIX}/pkg/pfmanager.inc" "${STAGE}${PREFIX}/pkg/"
-install -m 0644 "${FILES}${PREFIX}/pkg/pfmanager/agent.php" "${STAGE}${PREFIX}/pkg/pfmanager/"
-install -m 0644 "${FILES}${PREFIX}"/pkg/pfmanager/lib/*.inc "${STAGE}${PREFIX}/pkg/pfmanager/lib/"
-install -m 0755 "${FILES}${PREFIX}/sbin/pfmanager-agentd" "${STAGE}${PREFIX}/sbin/"
-install -m 0644 "${FILES}${PREFIX}/www/pfmanager_status.php" "${STAGE}${PREFIX}/www/"
-install -m 0644 "${FILES}/etc/inc/priv/pfmanager.priv.inc" "${STAGE}/etc/inc/priv/"
+install -m 0644 "${FILES}${PREFIX}/pkg/comsense.xml" "${FILES}${PREFIX}/pkg/comsense.inc" "${STAGE}${PREFIX}/pkg/"
+install -m 0644 "${FILES}${PREFIX}/pkg/comsense/agent.php" "${STAGE}${PREFIX}/pkg/comsense/"
+install -m 0644 "${FILES}${PREFIX}"/pkg/comsense/lib/*.inc "${STAGE}${PREFIX}/pkg/comsense/lib/"
+install -m 0755 "${FILES}${PREFIX}/sbin/comsense-agentd" "${STAGE}${PREFIX}/sbin/"
+install -m 0644 "${FILES}${PREFIX}/www/comsense_status.php" "${STAGE}${PREFIX}/www/"
+install -m 0644 "${FILES}/etc/inc/priv/comsense.priv.inc" "${STAGE}/etc/inc/priv/"
 install -m 0644 "${FILES}${DATADIR}/info.xml" "${STAGE}${DATADIR}/"
-sed -i '' -e "s|%%PKGVERSION%%|${VERSION}|" "${STAGE}${DATADIR}/info.xml" "${STAGE}${PREFIX}/pkg/pfmanager.xml"
+sed -i '' -e "s|%%PKGVERSION%%|${VERSION}|" "${STAGE}${DATADIR}/info.xml" "${STAGE}${PREFIX}/pkg/comsense.xml"
 
 sed -e "s|%%PORTNAME%%|${NAME}|g" "${FILES}/pkg-install.in" > "${WORK}/post-install"
 sed -e "s|%%PORTNAME%%|${NAME}|g" "${FILES}/pkg-deinstall.in" > "${WORK}/pre-deinstall"
@@ -57,7 +57,7 @@ PLIST="${WORK}/plist"
 	echo "name: \"${NAME}\""
 	echo "version: \"${VERSION}\""
 	echo "origin: \"sysutils/${NAME}\""
-	echo "comment: \"PfManager management and monitoring agent for pfSense\""
+	echo "comment: \"ComSense Firewall Manager agent for pfSense\""
 	echo "desc: <<EOD"
 	cat "${PORT}/pkg-descr"
 	echo "EOD"

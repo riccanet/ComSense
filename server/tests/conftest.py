@@ -32,7 +32,7 @@ def settings(tmp_path: Path) -> Settings:
         secret_key="x" * 48,
         backup_encryption_key=generate_fernet_key(),
         data_dir=tmp_path / "data",
-        public_url="https://pfm.test",
+        public_url="https://comsense.test",
         secure_cookies=False,
         run_scheduler=False,
         initial_admin_user="admin",

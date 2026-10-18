@@ -312,22 +312,22 @@ async def upload_backup(
     device: Device = Depends(current_device),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
-    x_pfm_sha256: str = Header(default=""),
-    x_pfm_reason: str = Header(default="manual"),
-    x_pfm_task_id: str = Header(default=""),
+    x_csfm_sha256: str = Header(default=""),
+    x_csfm_reason: str = Header(default="manual"),
+    x_csfm_task_id: str = Header(default=""),
 ) -> dict[str, Any]:
     require_approved(device)
     length = request.headers.get("content-length")
     if length and int(length) > settings.max_backup_bytes:
         raise HTTPException(413, "Backup too large")
     body = await request.body()
-    task_id = int(x_pfm_task_id) if x_pfm_task_id.isdigit() else None
+    task_id = int(x_csfm_task_id) if x_csfm_task_id.isdigit() else None
     if task_id is not None:
         task = db.get(Task, task_id)
         if task is None or task.device_id != device.id:
             task_id = None
     try:
-        backup, created = store_backup(db, settings, device, body, x_pfm_sha256, x_pfm_reason, task_id)
+        backup, created = store_backup(db, settings, device, body, x_csfm_sha256, x_csfm_reason, task_id)
     except BackupError as exc:
         raise HTTPException(400, str(exc)) from exc
     db.flush()
@@ -364,7 +364,7 @@ def download_backup_for_restore(
     return Response(
         content=data,
         media_type="application/gzip",
-        headers={"X-PFM-SHA256": backup.sha256},
+        headers={"X-CSFM-SHA256": backup.sha256},
     )
 
 

@@ -1,6 +1,6 @@
-PfManager agent for pfSense CE and pfSense Plus.
+ComSense Firewall Manager agent for pfSense CE and pfSense Plus.
 
-Connects the firewall to a self-hosted PfManager server over outbound HTTPS
+Connects the firewall to a self-hosted ComSense server over outbound HTTPS
 for health monitoring, inventory, configuration backups, policy management
 (aliases, firewall rules, system settings, packages) and updates. The firewall
 joins the server only after an administrator enters a one-time enrollment key,

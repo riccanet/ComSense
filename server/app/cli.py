@@ -15,8 +15,8 @@ from .security import generate_fernet_key, hash_password
 
 
 def cmd_keygen(_: argparse.Namespace) -> int:
-    print(f"PFM_SECRET_KEY={secrets.token_urlsafe(48)}")
-    print(f"PFM_BACKUP_ENCRYPTION_KEY={generate_fernet_key()}")
+    print(f"CSFM_SECRET_KEY={secrets.token_urlsafe(48)}")
+    print(f"CSFM_BACKUP_ENCRYPTION_KEY={generate_fernet_key()}")
     return 0
 
 
@@ -42,9 +42,9 @@ def cmd_create_user(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="pfmanager")
+    parser = argparse.ArgumentParser(prog="comsense")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("keygen", help="print fresh PFM_SECRET_KEY and PFM_BACKUP_ENCRYPTION_KEY values")
+    sub.add_parser("keygen", help="print fresh CSFM_SECRET_KEY and CSFM_BACKUP_ENCRYPTION_KEY values")
     cu = sub.add_parser("create-user", help="create a user or reset an existing user's password")
     cu.add_argument("username")
     cu.add_argument("--role", choices=[r.value for r in Role], default="admin")

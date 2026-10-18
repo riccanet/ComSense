@@ -649,7 +649,7 @@ def keys_page(
         new_key=request.session.pop("new_key", None),
         public_url=settings.public_url,
         agent_packages=sorted(
-            p.name for p in (settings.data_dir / "downloads").glob("pfSense-pkg-PfManager-*.pkg")
+            p.name for p in (settings.data_dir / "downloads").glob("pfSense-pkg-ComSense-*.pkg")
         ),
         now=utcnow(),
     )

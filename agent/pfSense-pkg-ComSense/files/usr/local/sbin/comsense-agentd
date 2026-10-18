@@ -1,14 +1,14 @@
 #!/bin/sh
 #
-# PfManager agent loop. Started by /usr/local/etc/rc.d/pfmanager.sh under
+# ComSense agent loop. Started by /usr/local/etc/rc.d/comsense.sh under
 # daemon(8). Each cycle runs in a fresh PHP process so it always sees the
 # current config.xml, and lockf(1) stops a manual "check in now" from
 # overlapping with a scheduled cycle.
 
 PHP=/usr/local/bin/php
-AGENT=/usr/local/pkg/pfmanager/agent.php
-INTERVAL_FILE=/var/db/pfmanager/interval
-LOCK=/var/run/pfmanager_agent.lock
+AGENT=/usr/local/pkg/comsense/agent.php
+INTERVAL_FILE=/var/db/comsense/interval
+LOCK=/var/run/comsense_agent.lock
 
 # Spread check-ins from many firewalls that boot at the same time.
 sleep $(( $(/usr/bin/jot -r 1 0 20) ))

@@ -44,7 +44,7 @@ CONFIG_SET_DENY_PREFIXES = (
     "system/authserver",
     "cert",
     "ca",
-    "installedpackages/pfmanager",
+    "installedpackages/comsense",
 )
 
 

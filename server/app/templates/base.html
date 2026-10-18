@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}PfManager{% endblock %} · PfManager</title>
+  <title>{% block title %}ComSense{% endblock %} · ComSense Firewall Manager</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/app.js" defer></script>
 </head>
 <body>
 {% if user %}
 <header class="topbar">
-  <a class="brand" href="/">PfManager</a>
+  <a class="brand" href="/">ComSense Firewall Manager</a>
   <nav>
     <a href="/">Dashboard</a>
     <a href="/devices">Firewalls</a>
@@ -38,6 +38,6 @@
   {% endfor %}
   {% block content %}{% endblock %}
 </main>
-<footer class="muted">PfManager {{ version }}</footer>
+<footer class="muted">ComSense Firewall Manager {{ version }}</footer>
 </body>
 </html>

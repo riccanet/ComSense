@@ -13,7 +13,7 @@ from .models import Backup, Device, DeviceStatus, Metric, TaskType, aware, utcno
 from .services import alerts as alert_svc
 from .services.tasks import TaskError, expire_stale_tasks, has_open_task, queue_task
 
-log = logging.getLogger("pfmanager.scheduler")
+log = logging.getLogger("comsense.scheduler")
 
 
 def run_once(settings: Settings) -> None:

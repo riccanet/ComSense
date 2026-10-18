@@ -1,6 +1,6 @@
-# PfManager
+# ComSense Firewall Manager
 
-Self-hosted management and monitoring for fleets of **pfSense CE** and **pfSense Plus** firewalls.
+ComSense Firewall Manager (ComSense for short) is self-hosted management and monitoring for fleets of **pfSense CE** and **pfSense Plus** firewalls.
 
 A small agent, installed on each firewall as a native pfSense package, calls out over HTTPS to a
 Linux-hosted management server. From the web console you can monitor health, push policies and
@@ -11,11 +11,11 @@ connections for management. A firewall can join the server only after someone en
 ```
  ┌────────────────────┐   outbound HTTPS (443)    ┌──────────────────────────────────────┐
  │ pfSense CE / Plus  │ ────────────────────────▶ │ Caddy (TLS, Let's Encrypt)           │
- │                    │   enroll · check-in ·     │   └─ PfManager app (FastAPI)         │
+ │                    │   enroll · check-in ·     │   └─ ComSense app (FastAPI)          │
  │ pfSense-pkg-       │   task results · backups  │        ├─ web console (operators)    │
- │ PfManager agent    │ ◀──────────────────────── │        ├─ agent API  /api/agent/v1   │
+ │ ComSense agent     │ ◀──────────────────────── │        ├─ agent API  /api/agent/v1   │
  │  (PHP, rc service) │   tasks in the response   │        └─ scheduler                  │
- └────────────────────┘                           │   PostgreSQL · encrypted backup store │
+ └────────────────────┘                           │  PostgreSQL · encrypted backup store │
                                                   └──────────────────────────────────────┘
 ```
 
@@ -39,7 +39,7 @@ server/                      Management server (Python 3.11+, FastAPI, SQLAlchem
   app/services/              Policies, tasks, backups, alerts
   tests/                     pytest suite
 agent/
-  pfSense-pkg-PfManager/     FreeBSD port for the pfSense package (Makefile, plist, files/)
+  pfSense-pkg-ComSense/     FreeBSD port for the pfSense package (Makefile, plist, files/)
   build-pkg.sh               Builds the .pkg on FreeBSD or on a pfSense box without a ports tree
   tests/                     End-to-end test: the real agent code against a real server over TLS
 deploy/                      docker-compose + Caddy, or a bare-metal Debian/Ubuntu installer
@@ -54,24 +54,24 @@ docs/                        Server, agent, protocol, policy and security docume
    cd deploy
    cp .env.example .env
    docker compose run --rm app python -m app.cli keygen   # paste both values into .env
-   $EDITOR .env                                            # set PFM_DOMAIN, passwords, etc.
+   $EDITOR .env                                            # set CSFM_DOMAIN, passwords, etc.
    docker compose up -d
    ```
 
-   Or without Docker: `sudo ./deploy/install-debian.sh pfmanager.example.com you@example.com`.
+   Or without Docker: `sudo ./deploy/install-debian.sh comsense.example.com you@example.com`.
    Details in [docs/SERVER.md](docs/SERVER.md).
 
-2. **Package**: build `pfSense-pkg-PfManager-<version>.pkg` (`sh agent/build-pkg.sh` on FreeBSD or
+2. **Package**: build `pfSense-pkg-ComSense-<version>.pkg` (`sh agent/build-pkg.sh` on FreeBSD or
    pfSense, or download it from the CI artifacts) and copy it into the server's `downloads` data
    folder so firewalls can fetch it.
 
 3. **Enroll a firewall**: in the console, go to **Enrollment keys** and create a key. On the firewall:
 
    ```sh
-   pkg-static add https://pfmanager.example.com/downloads/pfSense-pkg-PfManager-0.1.0.pkg
+   pkg-static add https://comsense.example.com/downloads/pfSense-pkg-ComSense-0.1.0.pkg
    ```
 
-   Then open **Services > PfManager Agent**, tick *Enable*, enter the server URL and the key, choose
+   Then open **Services > ComSense Agent**, tick *Enable*, enter the server URL and the key, choose
    which remote actions to allow, and save. The firewall enrolls immediately (errors are shown on
    the page) and the key is erased from its configuration. Details in [docs/AGENT.md](docs/AGENT.md).
 
@@ -87,8 +87,8 @@ Run the server locally against SQLite:
 
 ```sh
 cd server
-export PFM_DATABASE_URL=sqlite:///./dev.db PFM_DATA_DIR=./data PFM_SECURE_COOKIES=false \
-       PFM_INITIAL_ADMIN_PASSWORD=change-me-please $(python -m app.cli keygen | xargs)
+export CSFM_DATABASE_URL=sqlite:///./dev.db CSFM_DATA_DIR=./data CSFM_SECURE_COOKIES=false \
+       CSFM_INITIAL_ADMIN_PASSWORD=change-me-please $(python -m app.cli keygen | xargs)
 uvicorn app.main:app_factory --factory --reload
 ```
 
