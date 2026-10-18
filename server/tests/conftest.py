@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import re
 import sys
 from pathlib import Path
@@ -31,11 +33,28 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "changes: run with CSFM_ENABLE_FIREWALL_CHANGES on")
 
 
+# Run the suite against PostgreSQL (as in production) with e.g.
+#   CSFM_TEST_DATABASE_URL=postgresql+psycopg://postgres@/csfm_test?host=/tmp&port=55432
+# Every test starts from empty tables.
+TEST_DATABASE_URL = os.environ.get("CSFM_TEST_DATABASE_URL", "")
+
+
+def _fresh_database(url: str) -> str:
+    from sqlalchemy import create_engine
+
+    from app.models import Base
+
+    engine = create_engine(url)
+    Base.metadata.drop_all(engine)
+    engine.dispose()
+    return url
+
+
 @pytest.fixture
 def settings(tmp_path: Path, request) -> Settings:
     return Settings(
         enable_firewall_changes=request.node.get_closest_marker("changes") is not None,
-        database_url=f"sqlite:///{tmp_path / 'test.db'}",
+        database_url=_fresh_database(TEST_DATABASE_URL) if TEST_DATABASE_URL else f"sqlite:///{tmp_path / 'test.db'}",
         secret_key="x" * 48,
         backup_encryption_key=generate_fernet_key(),
         data_dir=tmp_path / "data",

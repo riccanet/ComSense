@@ -224,13 +224,9 @@ def desired_policies(db: Session, device: Device) -> list[Policy]:
     conds = [PolicyAssignment.device_id == device.id, PolicyAssignment.all_devices.is_(True)]
     if device.organization_id is not None:
         conds.append(PolicyAssignment.organization_id == device.organization_id)
-    stmt = (
-        select(Policy)
-        .join(PolicyAssignment)
-        .where(Policy.enabled.is_(True), or_(*conds))
-        .distinct()
-        .order_by(Policy.id)
-    )
+    # A subquery rather than JOIN + DISTINCT: PostgreSQL cannot compare the JSON content column.
+    assigned = select(PolicyAssignment.policy_id).where(or_(*conds))
+    stmt = select(Policy).where(Policy.enabled.is_(True), Policy.id.in_(assigned)).order_by(Policy.id)
     return list(db.scalars(stmt))
 
 
