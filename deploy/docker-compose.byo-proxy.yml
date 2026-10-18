@@ -2,12 +2,12 @@
 #
 #   docker compose -f docker-compose.byo-proxy.yml up -d
 #
-# For hosts that already run a proxy (Nginx Proxy Manager, Traefik, HAProxy,
-# NetBird reverse proxy, a WAF, ...). Two listeners are published:
+# For hosts that already run a reverse proxy of any kind (Nginx Proxy Manager,
+# Traefik, HAProxy, a VPN/overlay proxy, a WAF, ...). Two listeners are published:
 #   Web console  CSFM_WEB_BIND:CSFM_WEB_PORT_PUBLIC (default 127.0.0.1:8000), plain
 #                HTTP. Point your proxy at it, terminate HTTPS there and protect it
 #                as you like. Bind it to an address only the proxy can reach, e.g.
-#                127.0.0.1, a private LAN IP or a NetBird/WireGuard IP.
+#                127.0.0.1, a private LAN IP or a VPN/overlay IP.
 #   Agents       CSFM_AGENT_BIND:CSFM_AGENT_PORT_PUBLIC (default 0.0.0.0:10443), TLS
 #                terminated by the app with a pinned certificate. Do not proxy it;
 #                forward it straight to this host.

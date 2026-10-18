@@ -47,13 +47,13 @@ def test_agent_address_from_settings_page_goes_into_enrollment_codes(client, db,
 
     r = client.post(
         "/settings/agent-network",
-        data={"agent_url": "agents.example.com:9443", "trusted_proxies": "100.64.0.0/10", "csrf_token": csrf},
+        data={"agent_url": "agents.example.com:9443", "trusted_proxies": "10.20.0.0/16", "csrf_token": csrf},
         follow_redirects=False,
     )
     assert r.status_code == 303
     db.expire_all()
     cfg = get_agent_network_settings(db)
-    assert cfg.agent_url == "https://agents.example.com:9443" and cfg.trusted_proxies == ["100.64.0.0/10"]
+    assert cfg.agent_url == "https://agents.example.com:9443" and cfg.trusted_proxies == ["10.20.0.0/16"]
     assert "https://agents.example.com:9443" in client.get("/keys").text
     assert parse_code(_new_code(client, csrf))["url"] == "https://agents.example.com:9443"
 

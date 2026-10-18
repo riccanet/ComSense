@@ -32,7 +32,7 @@ The server has two separate listeners, so it needs only two ports forwarded thro
  │  (PHP, rc service) │   tasks in the response   │  PostgreSQL · encrypted backups  │   │
  └────────────────────┘                           └──────────────────────────────────┼───┘
                                       admins ──▶ HTTPS :443 reverse proxy (Caddy, ─┘
-                                                 NPM, NetBird, WAF, allow-list…)
+                                                 NPM, Traefik, WAF, allow-list…)
 ```
 
 ## Features
@@ -70,7 +70,7 @@ docs/                        Server, agent, protocol, policy and security docume
 ## Quick start
 
 1. **Server**: choose **bundled Caddy** (it gets the console a Let's Encrypt certificate) or
-   **bring your own proxy** (Nginx Proxy Manager, Traefik, NetBird, a WAF…). With Docker:
+   **bring your own proxy** (any reverse proxy: Nginx Proxy Manager, Traefik, HAProxy, a WAF…). With Docker:
 
    ```sh
    cd deploy && cp .env.example .env     # set CSFM_DOMAIN, POSTGRES_PASSWORD and the two keys

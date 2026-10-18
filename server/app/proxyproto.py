@@ -1,8 +1,10 @@
 """PROXY protocol (v1 and v2) support for the agent port.
 
-When firewalls reach the agent port through a TCP/TLS pass-through proxy (for
-example NetBird's reverse proxy in TCP mode), the proxy can prepend a PROXY
-protocol header carrying the real client address. A small front listener on the
+Normally firewalls connect to the agent port directly (a port forward), and
+none of this is used. When they reach it through a TCP/TLS pass-through proxy
+or load balancer instead (HAProxy, nginx stream, Traefik TCP, a cloud load
+balancer, an overlay network's TCP proxy...), the proxy can prepend a standard
+PROXY protocol header carrying the real client address. A small front listener on the
 agent port reads that header, then relays the untouched TLS stream to the app's
 TLS listener on a loopback socket. The real address is remembered by the
 loopback connection's source port and put back into the request by

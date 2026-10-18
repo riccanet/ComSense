@@ -4,7 +4,7 @@ The server is a single Python process (FastAPI) backed by PostgreSQL, with two l
 
 | Listener | Default | Protocol | Expose to |
 | --- | --- | --- | --- |
-| Web console | `:8000` | plain HTTP | Your HTTPS reverse proxy only (Caddy, Nginx Proxy Manager, NetBird, a WAF…), published on 443 |
+| Web console | `:8000` | plain HTTP | Your HTTPS reverse proxy only (Caddy, Nginx Proxy Manager, Traefik, a VPN/overlay proxy, a WAF…), published on 443 |
 | Agent API | `:10443` | TLS, terminated by the app | The internet, or forwarded through NAT; serves nothing but `/api/agent/v1/*` and `/downloads/*` |
 
 So a deployment needs exactly two inbound ports: **443** for admins and **10443** (or any port you choose)
@@ -46,7 +46,7 @@ Pick one of two options. Both run the same app; they differ only in what serves 
 
 | | Option 1: bundled Caddy | Option 2: bring your own proxy |
 | --- | --- | --- |
-| Web console | Caddy on 80/443 with a free Let's Encrypt certificate | Plain HTTP on `CSFM_WEB_BIND:8000` for your proxy (Nginx Proxy Manager, Traefik, HAProxy, NetBird, a WAF…) |
+| Web console | Caddy on 80/443 with a free Let's Encrypt certificate | Plain HTTP on `CSFM_WEB_BIND:8000` for your proxy (Nginx Proxy Manager, Traefik, HAProxy, a VPN/overlay proxy, a WAF…) |
 | Agent port | 10443, TLS by the app, published directly | Same |
 | Ports to forward | 80, 443, 10443 | 10443 (plus whatever your proxy already uses) |
 | Docker / Portainer | `deploy/docker-compose.caddy.yml` | `deploy/docker-compose.byo-proxy.yml` |
@@ -97,13 +97,14 @@ Do **not** route the agent port through the proxy: forward it straight to the se
 pinned certificate reaches the firewalls and their real addresses are seen. If `CSFM_DOMAIN` points at
 the proxy or a CDN, give the agent port its own DNS name and enter it under **Settings → Agent port**.
 
-If the agent port has to go through a proxy anyway (for example NetBird's reverse proxy), use a TCP
-pass-through service, never TLS termination, so the pinned certificate still reaches the firewalls.
-To keep the firewalls' real addresses, turn on PROXY protocol for that service (NetBird: target option
-`proxy_protocol: true`; HAProxy: `send-proxy-v2`) and list the proxy's addresses under **Settings →
-Agent port → Trusted proxy addresses** (NetBird: `100.64.0.0/10`). The agent port accepts PROXY
-protocol v1 and v2 only from those networks; a header from anywhere else closes the connection, and
-connections without a header keep working as before.
+If the agent port has to go through a proxy or load balancer anyway, use TCP pass-through, never TLS
+termination, so the pinned certificate still reaches the firewalls. To keep the firewalls' real
+addresses, have it send a standard PROXY protocol header (v1 or v2) and list its addresses under
+**Settings → Addresses → Trusted proxy addresses**. For example: HAProxy `send-proxy-v2`; nginx `stream`
+with `proxy_protocol on`; Traefik TCP with `proxyProtocol`; most cloud load balancers have a PROXY
+protocol option, as do overlay/VPN proxies with a TCP mode. The agent port accepts the header only
+from those addresses; a header from anywhere else closes the connection, and connections without a
+header (direct port forwards) keep working as before.
 
 ## First sign-in
 

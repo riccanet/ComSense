@@ -27,12 +27,14 @@
     <label>Address firewalls connect to (host name, optionally with :port)
       <input name="agent_url" value="{{ agent_network.agent_url }}" placeholder="{{ default_agent_url }}">
     </label>
-    <p class="small muted">The agent port, as firewalls see it from the internet. Set it when the agent port has its own
-    host name (for example a separate proxy host) or a different outside port because of NAT.</p>
+    <p class="small muted">The agent port, as firewalls see it from the internet. Forward this port straight to the
+    server (it does its own TLS); it does not go through the reverse proxy in front of the console. Set it when the
+    agent port has its own host name, for example because the console's name points at a proxy or CDN, or a
+    different outside port because of NAT.</p>
     <details{% if agent_network.trusted_proxies %} open{% endif %}>
-      <summary>The agent port is behind a TCP pass-through proxy (for example NetBird)</summary>
+      <summary>Advanced: the agent port is behind a TCP pass-through proxy or load balancer</summary>
       <label>Trusted proxy addresses (IP or CIDR)
-        <textarea name="trusted_proxies" rows="2" placeholder="100.64.0.0/10">{{ agent_network.trusted_proxies|join(", ") }}</textarea>
+        <textarea name="trusted_proxies" rows="2" placeholder="e.g. 10.0.0.5 or 192.168.10.0/24">{{ agent_network.trusted_proxies|join(", ") }}</textarea>
       </label>
       <p class="small muted">Have the proxy send a PROXY protocol header so ComSense sees each firewall's real address.
       Headers are accepted only from these addresses. Leave empty when firewalls connect directly.</p>

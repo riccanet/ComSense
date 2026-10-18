@@ -59,7 +59,7 @@ class AlertEmailSettings:
 @dataclass
 class AgentNetworkSettings:
     # Networks allowed to send a PROXY protocol header on the agent port (CIDRs),
-    # e.g. a NetBird or HAProxy pass-through proxy. Empty: headers are refused.
+    # e.g. an HAProxy or load balancer in TCP mode. Empty (direct connections): headers are refused.
     trusted_proxies: list[str] = field(default_factory=list)
     # Address firewalls connect to (https://host:port), put into new enrollment codes.
     # Empty: the default from CSFM_AGENT_URL / the console's host name.
