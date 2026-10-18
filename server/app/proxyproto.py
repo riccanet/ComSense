@@ -200,5 +200,6 @@ class ClientAddressMiddleware:
             if client and client[0] in ("127.0.0.1", "::1"):
                 real = CLIENT_BY_PORT.get(client[1])
                 if real:
-                    scope = dict(scope, client=(real, client[1]))
+                    # In place, so the server's access log shows it too.
+                    scope["client"] = (real, client[1])
         await self.app(scope, receive, send)

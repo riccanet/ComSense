@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <pfsensepkgs>
 <package>
-	<name>comsense</name>
+	<!-- Must equal the package name minus "pfSense-pkg-": pfSense looks the package up by it. -->
+	<name>ComSense</name>
+	<internal_name>comsense</internal_name>
 	<descr><![CDATA[ComSense Firewall Manager agent: connects this firewall to a ComSense Firewall Manager server for monitoring, configuration backups, policy management and updates. All communication is outbound HTTPS initiated by the firewall.]]></descr>
 	<pkginfolink>https://github.com/riccanet/ComSense</pkginfolink>
 	<version>%%PKGVERSION%%</version>

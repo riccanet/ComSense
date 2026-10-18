@@ -21,7 +21,7 @@ from .config import get_settings
 from .db import session_factory
 from .main import create_agent_app, create_web_app, init_backend
 from .proxyproto import TrustedNetworks, make_front_handler
-from .services.appsettings import get_agent_network_settings
+from .services.appsettings import agent_tls_names, effective_agent_url, get_agent_network_settings
 from .tls import ensure_agent_tls
 
 log = logging.getLogger("comsense")
@@ -37,13 +37,16 @@ class _Server(uvicorn.Server):
 async def serve() -> None:
     settings = get_settings()
     init_backend(settings)
-    tls = ensure_agent_tls(settings)
+    with session_factory()() as db:
+        tls_names = agent_tls_names(db)
+        agent_url = effective_agent_url(db, settings)
+    tls = ensure_agent_tls(settings, extra_names=tls_names)
     log.info(
         "Agent listener on port %d (%s certificate, pin sha256//%s); firewalls use %s",
         settings.agent_port,
         "self-issued" if tls.self_signed else "provided",
         tls.pin,
-        settings.agent_url,
+        agent_url,
     )
 
     web = _Server(

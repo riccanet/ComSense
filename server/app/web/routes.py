@@ -48,7 +48,7 @@ from ..security import (
 )
 from ..enrollment import make_code
 from ..services.agentpkg import latest_package
-from ..services.appsettings import effective_agent_url, get_email_settings, setup_pending
+from ..services.appsettings import agent_tls_names, effective_agent_url, get_email_settings, setup_pending
 from ..services.backups import delete_backup_file, load_backup
 from ..services.policy_examples import EXAMPLES
 from ..services.policies import PolicyError, desired_policies, policy_hash, validate_policy
@@ -720,7 +720,7 @@ def keys_page(
     user: User = Depends(admin),
     db: Session = Depends(get_db),
 ):
-    tls = ensure_agent_tls(settings)
+    tls = ensure_agent_tls(settings, extra_names=agent_tls_names(db))
     pin = tls.pin if tls.self_signed else None
     new_key = request.session.pop("new_key", None)
     agent_url = effective_agent_url(db, settings)

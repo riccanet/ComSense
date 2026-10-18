@@ -144,6 +144,12 @@ def normalize_agent_url(value: str, default_port: int) -> str:
     return f"https://{host}:{port or default_port}"
 
 
+def agent_tls_names(db: Session) -> list[str]:
+    """Host names set on the Settings page, for the agent port's self-issued certificate."""
+    urls = [get_agent_network_settings(db).agent_url, get_site_settings(db).console_url]
+    return [h for h in (urlsplit(u).hostname for u in urls if u) if h]
+
+
 def effective_agent_url(db: Session, settings: Settings) -> str:
     """Address firewalls use: the Settings page value, else the environment default."""
     return get_agent_network_settings(db).agent_url or settings.agent_url

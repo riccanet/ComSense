@@ -29,6 +29,8 @@ download link. That package is marked `FreeBSD:*`, so the same file installs on 
 on x86-64 (`amd64`) and ARM (`aarch64` Netgate appliances such as the 1100, 2100, 4200 and 6100, and
 32-bit `armv7` such as the SG-3100). The agent is PHP and shell only, with nothing CPU-specific.
 A package you copy into `downloads` under the same name yourself is kept as it is.
+Once installed it is listed under **System > Package Manager > Installed Packages**, where it can be
+removed like any other package.
 
 To build it the classic way instead (anywhere `pkg(8)` exists):
 
@@ -51,13 +53,14 @@ From **Diagnostics > Command Prompt** or an SSH shell:
 Copy the install command from the server's *Enrollment keys* page. It looks like:
 
 ```sh
-fetch -o /tmp/comsense.pkg --no-verify-peer https://comsense.example.com:10443/downloads/pfSense-pkg-ComSense-0.1.0.pkg \
+fetch -o /tmp/comsense.pkg --no-verify-peer --no-verify-hostname https://comsense.example.com:10443/downloads/pfSense-pkg-ComSense-0.1.1.pkg \
   && [ "$(sha256 -q /tmp/comsense.pkg)" = "<sha256 shown on the page>" ] \
   && pkg-static add /tmp/comsense.pkg
 ```
 
-`--no-verify-peer` is there because the agent port uses the server's own certificate; the SHA-256 check
-is what guarantees you install the genuine package.
+`--no-verify-peer --no-verify-hostname` are there because the agent port uses the server's own
+certificate (FreeBSD's `fetch` checks the name even with `--no-verify-peer`); the SHA-256 check is what
+guarantees you install the genuine package. The agent itself pins the server's key instead.
 
 If pkg refuses because of an OS version mismatch, the package was built for another FreeBSD
 major version: rebuild it with the right `-a` value rather than forcing it.

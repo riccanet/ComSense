@@ -20,6 +20,7 @@ from ..models import Organization, Role, User, utcnow
 from ..services.agentpkg import latest_package
 from ..services.appsettings import (
     SMTP_SECURITY,
+    agent_tls_names,
     effective_agent_url,
     effective_console_url,
     get_agent_network_settings,
@@ -70,7 +71,7 @@ def setup_agent(
     user: User = Depends(admin),
     db: Session = Depends(get_db),
 ):
-    tls = ensure_agent_tls(settings)
+    tls = ensure_agent_tls(settings, extra_names=agent_tls_names(db))
     pin = tls.pin if tls.self_signed else None
     agent_url = effective_agent_url(db, settings)
     new_key = request.session.pop("new_key", None)

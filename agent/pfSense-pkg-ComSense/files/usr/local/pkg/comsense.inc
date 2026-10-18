@@ -17,7 +17,26 @@ define('CSFM_WATCHDOG_PIDFILE', '/var/run/comsense_watchdog.pid');
 
 function comsense_install() {
 	csfm_ensure_db_dir();
+	comsense_remove_stale_registration();
 	comsense_write_rcfile();
+}
+
+/*
+ * 0.1.0 registered itself as "comsense" while pfSense looks it up as "ComSense",
+ * so its install aborted and left that entry behind in config.xml. Drop it.
+ */
+function comsense_remove_stale_registration() {
+	$removed = false;
+	foreach (config_get_path('installedpackages/package', array()) as $idx => $p) {
+		if (is_array($p) && ($p['name'] ?? '') === 'comsense' && empty($p['internal_name'])) {
+			/* By key and without renumbering, like pfSense does: the installer still holds our entry's key. */
+			config_del_path("installedpackages/package/{$idx}");
+			$removed = true;
+		}
+	}
+	if ($removed) {
+		write_config('ComSense: removed a stale package entry left by version 0.1.0');
+	}
 }
 
 function comsense_deinstall() {

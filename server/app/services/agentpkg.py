@@ -99,6 +99,11 @@ def build_package(port: Path) -> tuple[str, bytes]:
         "licenses": ["APACHE20"],
         "desc": (port / "pkg-descr").read_text().strip(),
         "categories": ["sysutils"],
+        # pfSense's Installed Packages page only lists packages whose repository (pkg query %R) is
+        # "pfSense"; a file added with pkg add would otherwise show as "unknown-repository" and stay
+        # hidden. pkg keeps this annotation for local installs, so the package appears there and can
+        # be removed from the GUI like any other.
+        "annotations": {"repository": "pfSense"},
     }
     compact = json.dumps(manifest, separators=(",", ":")).encode()
     full = dict(

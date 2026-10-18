@@ -12,6 +12,7 @@ import base64
 import hashlib
 import ipaddress
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -48,8 +49,9 @@ def spki_pin(cert: x509.Certificate) -> str:
     return base64.b64encode(hashlib.sha256(der).digest()).decode()
 
 
-def agent_hostnames(settings: Settings) -> list[str]:
+def agent_hostnames(settings: Settings, extra: Iterable[str] = ()) -> list[str]:
     names = [urlsplit(settings.agent_url).hostname or "", urlsplit(settings.public_url).hostname or ""]
+    names += list(extra)
     names += [n.strip() for n in settings.agent_tls_names.split(",")]
     out: list[str] = []
     for name in names:
@@ -106,7 +108,10 @@ def _issue(key: ec.EllipticCurvePrivateKey, names: list[str], now: datetime) -> 
     )
 
 
-def ensure_agent_tls(settings: Settings, now: datetime | None = None) -> AgentTLS:
+def ensure_agent_tls(
+    settings: Settings, now: datetime | None = None, extra_names: Iterable[str] = ()
+) -> AgentTLS:
+    """extra_names: host names from the Settings page (see appsettings.agent_tls_names)."""
     now = now or datetime.now(timezone.utc)
     if settings.agent_tls_cert and settings.agent_tls_key:
         cert_file, key_file = Path(settings.agent_tls_cert), Path(settings.agent_tls_key)
@@ -117,7 +122,7 @@ def ensure_agent_tls(settings: Settings, now: datetime | None = None) -> AgentTL
     tls_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     key_file, cert_file = tls_dir / "agent.key", tls_dir / "agent.pem"
     key = _load_or_create_key(key_file)
-    names = agent_hostnames(settings)
+    names = agent_hostnames(settings, extra_names)
 
     cert = x509.load_pem_x509_certificate(cert_file.read_bytes()) if cert_file.exists() else None
     stale = (

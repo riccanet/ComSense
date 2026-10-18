@@ -65,3 +65,21 @@ def test_agent_address_from_settings_page_goes_into_enrollment_codes(client, db,
     # Clearing it goes back to the default.
     client.post("/settings/agent-network", data={"agent_url": "", "csrf_token": csrf})
     assert parse_code(_new_code(client, csrf))["url"] == settings.agent_url
+
+
+def test_settings_addresses_are_in_the_agent_certificate_and_install_command(client, db, settings):
+    from cryptography import x509
+
+
+    csrf = login(client)
+    client.post(
+        "/settings/agent-network",
+        data={"agent_url": "fw-agents.example.net", "console_url": "console.example.net", "csrf_token": csrf},
+    )
+    page = client.get("/keys").text
+    # fetch checks the certificate name even with --no-verify-peer; the hash check secures the download.
+    assert "--no-verify-peer --no-verify-hostname https://fw-agents.example.net:" in page
+    # Rendering the page refreshed the certificate with the Settings page names.
+    cert = x509.load_pem_x509_certificate((settings.data_dir / "tls" / "agent.pem").read_bytes())
+    names = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value.get_values_for_type(x509.DNSName)
+    assert {"fw-agents.example.net", "console.example.net"} <= set(names)

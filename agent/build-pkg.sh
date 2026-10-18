@@ -68,6 +68,8 @@ PLIST="${WORK}/plist"
 	echo "licenselogic: \"single\""
 	echo "licenses: [\"APACHE20\"]"
 	echo "categories: [\"sysutils\"]"
+	# Listed under System > Package Manager > Installed Packages (only shown for repository "pfSense").
+	echo "annotations: { repository: \"pfSense\" }"
 	echo "scripts: {"
 	echo "  post-install: <<EOS"
 	sed -e '1d' -e 's/\${2}/POST-INSTALL/' "${WORK}/post-install"

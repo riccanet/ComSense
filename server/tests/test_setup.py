@@ -128,7 +128,7 @@ def test_wizard_steps_save_settings_and_create_first_code(client, db, settings):
 def test_agent_package_is_a_valid_pkg_archive(tmp_path):
     port = find_port_dir()
     name, data = build_package(port)
-    assert name == "pfSense-pkg-ComSense-0.1.0.pkg"
+    assert re.fullmatch(r"pfSense-pkg-ComSense-\d+\.\d+\.\d+\.pkg", name)
     assert build_package(port)[1] == data  # reproducible
 
     with tarfile.open(fileobj=io.BytesIO(lzma.decompress(data))) as tar:
@@ -142,6 +142,8 @@ def test_agent_package_is_a_valid_pkg_archive(tmp_path):
 
     assert manifest["name"] == compact["name"] == "pfSense-pkg-ComSense"
     assert manifest["abi"] == "FreeBSD:*" and manifest["prefix"] == "/"
+    # Shown (and removable) in pfSense's Installed Packages page, which filters on pkg query %R.
+    assert manifest["annotations"]["repository"] == "pfSense"
     assert "files" not in compact
     assert set(manifest["files"]) == set(files)
     for path, (member, content) in files.items():
@@ -151,6 +153,17 @@ def test_agent_package_is_a_valid_pkg_archive(tmp_path):
         assert b"%%" not in content, path
     assert files["/usr/local/sbin/comsense-agentd"][0].mode == 0o755
     assert manifest["flatsize"] == sum(len(c) for _, c in files.values())
+    # /etc/rc.packages strips "pfSense-pkg-" from the package name, reads
+    # /usr/local/share/<package>/info.xml and then looks the package up by that name
+    # (case-sensitive) among the registered ones. A mismatch aborts the install.
+    import xml.etree.ElementTree as ET
+
+    short = manifest["name"].removeprefix("pfSense-pkg-")
+    info_path = f"/usr/local/share/{manifest['name']}/info.xml"
+    info = ET.fromstring(files[info_path][1]).find("package")
+    assert info.findtext("name") == short
+    assert info.findtext("internal_name") == "comsense"  # the service name pfSense stops on removal
+    assert info.findtext("version") == manifest["version"]
     post = manifest["scripts"]["post-install"]
     assert "/etc/rc.packages pfSense-pkg-ComSense POST-INSTALL" in post and not post.startswith("#!")
 
