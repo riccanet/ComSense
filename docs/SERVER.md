@@ -45,13 +45,31 @@ cp .env.example .env
 docker compose run --rm app python -m app.cli keygen
 ```
 
-Copy the two printed lines into `.env`, then set `CSFM_DOMAIN`, `ACME_EMAIL`, `POSTGRES_PASSWORD` and
-`CSFM_INITIAL_ADMIN_PASSWORD`, and start it:
+Copy the two printed lines into `.env`, then set `CSFM_DOMAIN`, `ACME_EMAIL` and `POSTGRES_PASSWORD`,
+and start it:
 
 ```sh
 docker compose up -d
-docker compose logs -f app
+docker compose logs app | grep -A1 'username:'   # the first admin's one-time password
 ```
+
+### First sign-in
+
+On its first start the server creates the admin account (`CSFM_INITIAL_ADMIN_USER`, default `admin`)
+with a random one-time password unique to that install, and writes it to the log once, in a banner:
+
+```
+================================================================
+  ComSense first start: initial administrator created
+    username: admin
+    password: <one-time password shown here>
+  This one-time password must be changed at first sign-in.
+================================================================
+```
+
+Signing in with it leads straight to *Choose a new password*; nothing else is reachable until it is
+changed. Passwords that admins set for other users, or reset, are one-time in the same way.
+Lost the admin password? `python -m app.cli create-user admin` sets a new one-time password.
 
 Volumes: `db-data` (PostgreSQL), `app-data` (encrypted backups and the `downloads` folder),
 `caddy-data` (certificates).
@@ -93,7 +111,7 @@ All settings are environment variables:
 | `CSFM_AGENT_TLS_CERT` / `_KEY` | self-issued | Use your own certificate for the agent listener |
 | `CSFM_AGENT_TLS_NAMES` | | Extra DNS names / IPs for the self-issued certificate, comma separated |
 | `CSFM_DATA_DIR` | `/var/lib/comsense` | Backups (`backups/`) and agent packages (`downloads/`) |
-| `CSFM_INITIAL_ADMIN_USER` / `_PASSWORD` | `admin` / empty | First admin, created only when there are no users |
+| `CSFM_INITIAL_ADMIN_USER` | `admin` | Username of the first admin, created on first start with a random one-time password |
 | `CSFM_CHECKIN_INTERVAL` | 60 | Seconds between agent check-ins (sent to agents) |
 | `CSFM_OFFLINE_AFTER` | 300 | Seconds without a check-in before a firewall is marked offline |
 | `CSFM_SCHEDULED_BACKUP_HOURS` | 24 | Queue a backup when the newest is older than this (0 disables) |

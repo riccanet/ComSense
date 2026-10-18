@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -13,8 +14,9 @@ from app.api import agent as agent_api  # noqa: E402
 from app.config import Settings  # noqa: E402
 from app.db import session_factory  # noqa: E402
 from app.main import create_agent_app, create_app  # noqa: E402
-from app.models import EnrollmentKey  # noqa: E402
+from app.models import EnrollmentKey, User  # noqa: E402
 from app.security import (  # noqa: E402
+    hash_password,
     generate_enrollment_key,
     generate_fernet_key,
     hash_secret,
@@ -36,7 +38,6 @@ def settings(tmp_path: Path) -> Settings:
         secure_cookies=False,
         run_scheduler=False,
         initial_admin_user="admin",
-        initial_admin_password=ADMIN_PASSWORD,
     )
 
 
@@ -46,6 +47,13 @@ def client(settings: Settings):
     web_routes.login_limiter.reset()
     agent_api.auth_failure_limiter.reset()
     app = create_app(settings)
+    # First start created "admin" with a random one-time password; give it a known
+    # permanent one so tests can sign in. test_first_boot.py covers the real flow.
+    with session_factory()() as db:
+        admin = db.scalar(select(User).where(User.username == "admin"))
+        admin.password_hash = hash_password(ADMIN_PASSWORD)
+        admin.must_change_password = False
+        db.commit()
     with TestClient(app, base_url="https://testserver") as c:
         yield c
 

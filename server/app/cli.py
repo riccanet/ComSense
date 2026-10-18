@@ -9,7 +9,7 @@ import sys
 from sqlalchemy import select
 
 from .config import get_settings
-from .db import Base, init_engine, session_factory
+from .db import init_engine, session_factory, upgrade_schema
 from .models import Role, User
 from .security import generate_fernet_key, hash_password
 
@@ -23,7 +23,7 @@ def cmd_keygen(_: argparse.Namespace) -> int:
 def cmd_create_user(args: argparse.Namespace) -> int:
     settings = get_settings()
     engine = init_engine(settings.database_url)
-    Base.metadata.create_all(engine)
+    upgrade_schema(engine)
     password = args.password or getpass.getpass("Password: ")
     if len(password) < 12:
         print("Password must be at least 12 characters", file=sys.stderr)
@@ -36,8 +36,9 @@ def cmd_create_user(args: argparse.Namespace) -> int:
         user.password_hash = hash_password(password)
         user.role = Role(args.role)
         user.active = True
+        user.must_change_password = True
         db.commit()
-    print(f"User '{args.username}' saved with role {args.role}")
+    print(f"User '{args.username}' saved with role {args.role}; the password must be changed at first sign-in")
     return 0
 
 

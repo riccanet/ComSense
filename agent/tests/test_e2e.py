@@ -59,7 +59,6 @@ def env(tmp_path_factory):
         "CSFM_BACKUP_ENCRYPTION_KEY": generate_fernet_key(),
         "CSFM_DATA_DIR": str(d / "data"),
         "CSFM_RUN_SCHEDULER": "false",
-        "CSFM_INITIAL_ADMIN_PASSWORD": "e2e-admin-password",
         "CSFM_PUBLIC_URL": "https://localhost",
         "CSFM_WEB_HOST": "127.0.0.1",
         "CSFM_WEB_PORT": str(web_port),

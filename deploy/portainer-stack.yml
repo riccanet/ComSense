@@ -13,7 +13,9 @@
 #                internet (or forward it through NAT); it serves only the agent API.
 #
 # Required: CSFM_DOMAIN, CSFM_BIND_ADDRESS, POSTGRES_PASSWORD, CSFM_SECRET_KEY,
-#           CSFM_BACKUP_ENCRYPTION_KEY, CSFM_INITIAL_ADMIN_PASSWORD (first start only)
+#           CSFM_BACKUP_ENCRYPTION_KEY
+# The first admin's one-time password is generated on first start and written to
+# the comsense-app container log; it must be changed at first sign-in.
 # Generate keys with: python -m app.cli keygen
 
 services:
@@ -60,7 +62,6 @@ services:
       CSFM_SECRET_KEY: ${CSFM_SECRET_KEY:?CSFM_SECRET_KEY is required}
       CSFM_BACKUP_ENCRYPTION_KEY: ${CSFM_BACKUP_ENCRYPTION_KEY:?CSFM_BACKUP_ENCRYPTION_KEY is required}
       CSFM_INITIAL_ADMIN_USER: ${CSFM_INITIAL_ADMIN_USER:-admin}
-      CSFM_INITIAL_ADMIN_PASSWORD: ${CSFM_INITIAL_ADMIN_PASSWORD:-}
       CSFM_CHECKIN_INTERVAL: ${CSFM_CHECKIN_INTERVAL:-60}
       CSFM_BACKUP_RETENTION_COUNT: ${CSFM_BACKUP_RETENTION_COUNT:-5}
       CSFM_METRICS_RETENTION_DAYS: ${CSFM_METRICS_RETENTION_DAYS:-30}

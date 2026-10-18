@@ -59,6 +59,12 @@ def hash_secret(secret: str) -> str:
     return hashlib.sha256(secret.encode()).hexdigest()
 
 
+def generate_temporary_password() -> str:
+    """A one-time password that is easy to type: 20 characters from an unambiguous alphabet."""
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(20))
+
+
 def generate_enrollment_key() -> str:
     return ENROLLMENT_KEY_PREFIX + secrets.token_urlsafe(32)
 

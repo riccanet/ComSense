@@ -70,8 +70,9 @@ docs/                        Server, agent, protocol, policy and security docume
    cd deploy
    cp .env.example .env
    docker compose run --rm app python -m app.cli keygen   # paste both values into .env
-   $EDITOR .env                                            # set CSFM_DOMAIN, passwords, etc.
+   $EDITOR .env                                            # set CSFM_DOMAIN, POSTGRES_PASSWORD, etc.
    docker compose up -d
+   docker compose logs app | grep -A1 'username:'          # first admin's one-time password
    ```
 
    Or without Docker: `sudo ./deploy/install-debian.sh comsense.example.com you@example.com`.
@@ -101,7 +102,7 @@ Run the server locally against SQLite:
 ```sh
 cd server
 export CSFM_DATABASE_URL=sqlite:///./dev.db CSFM_DATA_DIR=./data CSFM_SECURE_COOKIES=false \
-       CSFM_INITIAL_ADMIN_PASSWORD=change-me-please $(python -m app.cli keygen | xargs)
+       $(python -m app.cli keygen | xargs)   # the admin's one-time password is printed in the log
 python -m app.serve        # web console on :8000, agent listener on :8443
 ```
 

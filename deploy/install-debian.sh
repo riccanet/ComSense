@@ -35,7 +35,6 @@ python3 -m venv "$APP_DIR/venv"
 
 if [[ ! -f "$ENV_FILE" ]]; then
 	DB_PASS="$(openssl rand -hex 24)"
-	ADMIN_PASS="$(openssl rand -base64 18)"
 	sudo -u postgres psql -v ON_ERROR_STOP=1 <<SQL
 CREATE ROLE comsense LOGIN PASSWORD '${DB_PASS}';
 CREATE DATABASE comsense OWNER comsense;
@@ -46,12 +45,10 @@ SQL
 		echo "CSFM_DATA_DIR=/var/lib/comsense"
 		(cd "$APP_DIR/server" && "$APP_DIR/venv/bin/python" -m app.cli keygen)
 		echo "CSFM_INITIAL_ADMIN_USER=admin"
-		echo "CSFM_INITIAL_ADMIN_PASSWORD=${ADMIN_PASS}"
 	} > "$ENV_FILE"
 	chmod 0640 "$ENV_FILE"
 	chgrp comsense "$ENV_FILE"
 	echo
-	echo "Initial login: admin / ${ADMIN_PASS}"
 	echo "Back up ${ENV_FILE}: without CSFM_BACKUP_ENCRYPTION_KEY stored backups cannot be decrypted."
 	echo
 fi
@@ -81,5 +78,6 @@ systemctl enable --now comsense.service
 systemctl restart comsense.service
 systemctl reload caddy || systemctl restart caddy
 
+echo "First sign-in: user admin, one-time password from: journalctl -u comsense | grep -A1 'username:'"
 echo "ComSense is starting. Web console: https://${DOMAIN}  Agents: https://${DOMAIN}:8443"
 echo "Forward/open TCP 443 (console) and 8443 (agents). Restrict 443 to admins if you like."

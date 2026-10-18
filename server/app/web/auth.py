@@ -15,6 +15,14 @@ class LoginRequired(Exception):
     pass
 
 
+class PasswordChangeRequired(Exception):
+    """The signed-in user still has a temporary password."""
+
+
+# Pages a user with a temporary password may still use.
+PASSWORD_CHANGE_PATHS = {"/account", "/account/password", "/logout"}
+
+
 def csrf_token(request: Request) -> str:
     token = request.session.get("csrf")
     if not token:
@@ -39,6 +47,8 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> User:
         request.session.clear()
         raise LoginRequired()
     request.state.user = user
+    if user.must_change_password and request.url.path not in PASSWORD_CHANGE_PATHS:
+        raise PasswordChangeRequired()
     return user
 
 

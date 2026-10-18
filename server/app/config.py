@@ -90,12 +90,9 @@ class Settings:
     )
     run_scheduler: bool = field(default_factory=lambda: _bool("CSFM_RUN_SCHEDULER", True))
 
-    # Bootstrap admin, created on first start when no users exist.
+    # Username of the first admin, created on first start with a random one-time password.
     initial_admin_user: str = field(
         default_factory=lambda: os.environ.get("CSFM_INITIAL_ADMIN_USER", "admin")
-    )
-    initial_admin_password: str = field(
-        default_factory=lambda: os.environ.get("CSFM_INITIAL_ADMIN_PASSWORD", "")
     )
 
     @property

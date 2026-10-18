@@ -181,6 +181,9 @@ def login(
     user.last_login_at = utcnow()
     audit(db, user.username, "login", ip=ip)
     db.commit()
+    if user.must_change_password:
+        flash(request, "You signed in with a temporary password. Choose a new one to continue.", "warn")
+        return redirect("/account")
     return redirect("/")
 
 
@@ -210,12 +213,18 @@ def change_password(
         flash(request, "New passwords do not match.", "error")
     elif len(new) < 12:
         flash(request, "Use at least 12 characters.", "error")
+    elif new == current:
+        flash(request, "Choose a password different from the current one.", "error")
     else:
+        was_temporary = user.must_change_password
         user.password_hash = hash_password(new)
+        user.must_change_password = False
         request.session["pwv"] = user.password_hash[-16:]
         audit(db, user.username, "user.password_changed", target=user.username, ip=_ip(request))
         db.commit()
         flash(request, "Password changed.", "success")
+        if was_temporary:
+            return redirect("/")
     return redirect("/account")
 
 
@@ -988,7 +997,15 @@ def users_create(
     if len(password) < 12:
         flash(request, "Passwords need at least 12 characters.", "error")
         return redirect("/users")
-    db.add(User(username=username.strip()[:64], password_hash=hash_password(password), role=Role(role)))
+    # Passwords set by an admin are temporary: the user picks their own at first sign-in.
+    db.add(
+        User(
+            username=username.strip()[:64],
+            password_hash=hash_password(password),
+            role=Role(role),
+            must_change_password=True,
+        )
+    )
     try:
         audit(db, user.username, "user.created", target=username, detail=role, ip=_ip(request))
         db.commit()
@@ -1022,6 +1039,7 @@ def users_update(
             flash(request, "Passwords need at least 12 characters.", "error")
             return redirect("/users")
         target.password_hash = hash_password(password)
+        target.must_change_password = True
     audit(db, user.username, "user.updated", target=target.username, detail=f"role={role} active={active}", ip=_ip(request))
     db.commit()
     flash(request, "User updated.", "success")

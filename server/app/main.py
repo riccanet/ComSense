@@ -16,32 +16,44 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import __version__
 from .api import agent as agent_api
 from .config import Settings, get_settings
-from .db import Base, init_engine, session_factory
+from .db import init_engine, session_factory, upgrade_schema
 from .models import Role, User
 from .scheduler import scheduler_loop
-from .security import hash_password
+from .security import generate_temporary_password, hash_password
 from .web import routes as web_routes
-from .web.auth import LoginRequired
+from .web.auth import LoginRequired, PasswordChangeRequired
 
 log = logging.getLogger("comsense")
 
 
-def bootstrap_admin(settings: Settings) -> None:
+def bootstrap_admin(settings: Settings) -> str | None:
+    """Create the first admin with a random one-time password and log it.
+
+    Every install gets its own password, written once to the log (docker logs /
+    journalctl). It must be changed at first sign-in. Returns the password if
+    an admin was created.
+    """
     with session_factory()() as db:
         if db.scalar(select(func.count()).select_from(User)):
-            return
-        if not settings.initial_admin_password:
-            log.warning("No users exist. Set CSFM_INITIAL_ADMIN_PASSWORD to create the first admin.")
-            return
+            return None
+        password = generate_temporary_password()
         db.add(
             User(
                 username=settings.initial_admin_user,
-                password_hash=hash_password(settings.initial_admin_password),
+                password_hash=hash_password(password),
                 role=Role.admin,
+                must_change_password=True,
             )
         )
         db.commit()
-        log.warning("Created initial admin user '%s'. Change its password.", settings.initial_admin_user)
+    banner = "=" * 64
+    log.warning(
+        "\n%s\n  ComSense first start: initial administrator created\n"
+        "    username: %s\n    password: %s\n"
+        "  This one-time password must be changed at first sign-in.\n%s",
+        banner, settings.initial_admin_user, password, banner,
+    )
+    return password
 
 
 def init_backend(settings: Settings) -> None:
@@ -50,7 +62,7 @@ def init_backend(settings: Settings) -> None:
     settings.backup_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     (settings.data_dir / "downloads").mkdir(parents=True, exist_ok=True)
     engine = init_engine(settings.database_url)
-    Base.metadata.create_all(engine)
+    upgrade_schema(engine)
     bootstrap_admin(settings)
 
 
@@ -104,6 +116,10 @@ def create_web_app(settings: Settings) -> FastAPI:
     @app.exception_handler(LoginRequired)
     async def login_required(request: Request, exc: LoginRequired):
         return RedirectResponse("/login", status_code=303)
+
+    @app.exception_handler(PasswordChangeRequired)
+    async def password_change_required(request: Request, exc: PasswordChangeRequired):
+        return RedirectResponse("/account", status_code=303)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(request: Request, exc: StarletteHTTPException):

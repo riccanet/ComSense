@@ -3,13 +3,16 @@
 {% block title %}Account{% endblock %}
 {% block content %}
 <section class="card narrow">
-  <h1>Change password</h1>
+  <h1>{{ "Choose a new password" if user.must_change_password else "Change password" }}</h1>
+  {% if user.must_change_password %}
+  <p class="muted">You are using a temporary password. Set your own to continue.</p>
+  {% endif %}
   <form method="post" action="/account/password" class="stack">
     {{ csrf() }}
-    <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
+    <label>{{ "Temporary password" if user.must_change_password else "Current password" }} <input type="password" name="current" autocomplete="current-password" required></label>
     <label>New password (12+ characters) <input type="password" name="new" minlength="12" autocomplete="new-password" required></label>
     <label>Confirm new password <input type="password" name="confirm" minlength="12" autocomplete="new-password" required></label>
-    <button class="primary">Change password</button>
+    <button class="primary">{{ "Set password" if user.must_change_password else "Change password" }}</button>
   </form>
 </section>
 {% endblock %}
