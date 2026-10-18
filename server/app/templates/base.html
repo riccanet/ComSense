@@ -21,14 +21,19 @@
     {% for href, label, admin_only in [
       ("/", "Dashboard", False), ("/customers", "Customers", False), ("/devices", "Firewalls", False),
       ("/policies", "Policies", False), ("/alerts", "Alerts", False),
-      ("/keys", "Enrollment keys", True), ("/users", "Users", True), ("/audit", "Audit log", True),
-      ("/settings", "Settings", True)] %}
+      ("/keys", "Enrollment keys", True), ("/users", "Users", True), ("/audit", "Audit log", True)] %}
       {% if not admin_only or user.role == Role.admin %}
       <a href="{{ href }}"{% if path == href or (href != "/" and path.startswith(href)) %} class="active" aria-current="page"{% endif %}>{{ label }}{% if href == "/policies" and not changes_enabled %} <span class="nav-soon">soon</span>{% endif %}</a>
       {% endif %}
     {% endfor %}
   </nav>
   <div class="who">
+    {% if user.role == Role.admin %}
+    {% set in_settings = path.startswith("/settings") or path.startswith("/setup") %}
+    <a href="/settings" class="icon-btn{% if in_settings %} active{% endif %}" title="Settings" aria-label="Settings"{% if in_settings %} aria-current="page"{% endif %}>
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </a>
+    {% endif %}
     {{ theme_switch(theme) }}
     <a href="/account">{{ user.username }}</a> <span class="muted">({{ user.role.value }})</span>
     <form method="post" action="/logout" class="inline">

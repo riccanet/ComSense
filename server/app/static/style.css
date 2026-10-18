@@ -94,6 +94,13 @@ footer { text-align: center; padding: 1rem; font-size: 12px; }
 .topbar nav a:hover { background: var(--neutral-bg); text-decoration: none; }
 .topbar nav a.active { color: var(--accent); background: var(--bad-bg); font-weight: 600; }
 .topbar .who { display: flex; gap: .6rem; align-items: center; }
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px;
+  border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--panel);
+}
+.icon-btn:hover { color: var(--text); border-color: var(--accent); text-decoration: none; }
+.icon-btn.active { color: var(--accent); border-color: var(--accent); background: var(--bad-bg); }
+.icon-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* Brand */
 .brand-lockup { display: inline-flex; align-items: center; gap: .6rem; }
