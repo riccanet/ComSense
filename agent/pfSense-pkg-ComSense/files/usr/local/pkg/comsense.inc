@@ -13,6 +13,7 @@ require_once('service-utils.inc');
 require_once('/usr/local/pkg/comsense/lib/agent.inc');
 
 define('CSFM_PIDFILE', '/var/run/comsense_agent.pid');
+define('CSFM_WATCHDOG_PIDFILE', '/var/run/comsense_watchdog.pid');
 
 function comsense_install() {
 	csfm_ensure_db_dir();
@@ -26,15 +27,20 @@ function comsense_deinstall() {
 }
 
 function comsense_write_rcfile() {
-	$start = "/usr/sbin/daemon -f -P " . CSFM_PIDFILE . " /usr/local/sbin/comsense-agentd";
-	$stop = "if [ -f " . CSFM_PIDFILE . " ]; then\n"
-	    . "\t\t/bin/pkill -F " . CSFM_PIDFILE . "\n"
-	    . "\t\t/bin/rm -f " . CSFM_PIDFILE . "\n"
-	    . "\tfi";
+	/* The agent loop, and the watchdog that rolls back changes that cut the firewall off (lib/guard.inc). */
+	$start = "/usr/sbin/daemon -f -P " . CSFM_PIDFILE . " /usr/local/sbin/comsense-agentd\n"
+	    . "\t/usr/sbin/daemon -f -P " . CSFM_WATCHDOG_PIDFILE . " /usr/local/sbin/comsense-watchdogd";
+	$stop = "";
+	foreach (array(CSFM_PIDFILE, CSFM_WATCHDOG_PIDFILE) as $pidfile) {
+		$stop .= "if [ -f {$pidfile} ]; then\n"
+		    . "\t\t/bin/pkill -F {$pidfile}\n"
+		    . "\t\t/bin/rm -f {$pidfile}\n"
+		    . "\tfi\n\t";
+	}
 	write_rcfile(array(
 		'file' => 'comsense.sh',
 		'start' => $start,
-		'stop' => $stop,
+		'stop' => rtrim($stop),
 	));
 }
 

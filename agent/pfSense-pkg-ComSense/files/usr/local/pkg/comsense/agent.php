@@ -6,6 +6,9 @@
  *   php /usr/local/pkg/comsense/agent.php status   print enrollment and last check-in
  *   php /usr/local/pkg/comsense/agent.php backup   upload config.xml now
  *   php /usr/local/pkg/comsense/agent.php unenroll forget this firewall's device token
+ *   php /usr/local/pkg/comsense/agent.php watchdog roll back an unconfirmed change whose time is up
+ *   php /usr/local/pkg/comsense/agent.php confirm  keep the change on probation (no rollback)
+ *   php /usr/local/pkg/comsense/agent.php rollback undo the change on probation now
  */
 
 if (php_sapi_name() !== 'cli') {
@@ -43,7 +46,20 @@ switch ($cmd) {
 			'last_error' => $state['last_error'] ?? null,
 			'capabilities' => csfm_capabilities(),
 			'managed_policies' => array_keys($state['policies']),
+			'change_on_probation' => csfm_guard(),
+			'last_rollback' => $state['last_rollback'] ?? null,
 		), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+		break;
+	case 'watchdog':
+		echo csfm_guard_watchdog() . "\n";
+		break;
+	case 'confirm':
+		csfm_guard_confirm('confirmed by hand on the firewall');
+		echo "Change confirmed; it will not be rolled back.\n";
+		break;
+	case 'rollback':
+		$rec = csfm_guard_rollback('rolled back by hand on the firewall');
+		echo $rec ? "Rolled back: {$rec['changes']}\n" : "No change on probation.\n";
 		break;
 	case 'backup':
 		if (!csfm_is_enrolled()) {
@@ -58,6 +74,6 @@ switch ($cmd) {
 		echo "Credentials removed. Enter a new enrollment key to reconnect.\n";
 		break;
 	default:
-		fwrite(STDERR, "Usage: agent.php run|status|backup|unenroll [-v]\n");
+		fwrite(STDERR, "Usage: agent.php run|status|backup|unenroll|watchdog|confirm|rollback [-v]\n");
 		exit(2);
 }

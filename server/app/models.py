@@ -175,6 +175,9 @@ class Device(Base):
     updates: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     # Policy hashes the agent reports as applied: {"<policy id>": "<sha256>"}
     applied_policies: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # Policy changes the agent rolled back because the firewall lost contact afterwards:
+    # {"<policy id>": "<sha256 of the rolled-back revision>" or "remove"}. Not re-sent until cleared.
+    rolled_back_policies: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=dict)
     # Actions the firewall owner allowed locally in the package settings.
     capabilities: Mapped[list[str]] = mapped_column(JSON, default=list)
     config_sha256: Mapped[str] = mapped_column(String(64), default="")

@@ -39,6 +39,7 @@ _FILES = [
     ("usr/local/pkg/comsense/agent.php", 0o644),
     ("usr/local/pkg/comsense/lib/*.inc", 0o644),
     ("usr/local/sbin/comsense-agentd", 0o755),
+    ("usr/local/sbin/comsense-watchdogd", 0o755),
     ("usr/local/www/comsense_status.php", 0o644),
     ("etc/inc/priv/comsense.priv.inc", 0o644),
     (f"usr/local/share/{NAME}/info.xml", 0o644),

@@ -301,7 +301,14 @@ function csfm_collect_report() {
 			'time' => (int)csfm_cfg_get('revision/time', 0),
 		),
 		'applied_policies' => (object)$applied,
+		'rollbacks' => array_values($state['rollbacks'] ?? array()),
 	);
+	if (function_exists('csfm_guard') && ($guard = csfm_guard()) !== null) {
+		$report['change_guard'] = array(
+			'tasks' => array_map(function ($t) { return $t['id']; }, $guard['tasks']),
+			'deadline' => gmdate('c', (int)$guard['deadline']),
+		);
+	}
 	$updates = csfm_check_updates(false);
 	if (is_array($updates)) {
 		$report['updates'] = $updates;

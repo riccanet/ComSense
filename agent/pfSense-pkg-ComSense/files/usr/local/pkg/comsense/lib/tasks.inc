@@ -11,6 +11,7 @@ require_once(__DIR__ . '/common.inc');
 require_once(__DIR__ . '/client.inc');
 require_once(__DIR__ . '/collect.inc');
 require_once(__DIR__ . '/policies.inc');
+require_once(__DIR__ . '/guard.inc');
 
 define('CSFM_UPGRADE_LOG', '/var/log/comsense-upgrade.log');
 
@@ -28,6 +29,9 @@ $csfm_task_capability = array(
 	'restore_backup' => 'restore',
 	'reboot' => 'reboot',
 );
+
+/* Tasks that change the configuration and run under the change guard (guard.inc). */
+$csfm_guarded_tasks = array('apply_policy', 'remove_policy');
 
 class CsfmTaskDeferred extends Exception {
 	/* Thrown by tasks that already reported their own result. */
@@ -82,17 +86,54 @@ function csfm_run_task($client, $task) {
 		return;
 	}
 
+	global $csfm_guarded_tasks, $csfm_rolled_back;
+	$guarded = in_array($type, $csfm_guarded_tasks, true);
+	if ($guarded && !empty($csfm_rolled_back)) {
+		csfm_report_result($client, $id, 'failed', 'Not run: an earlier change in this check-in was rolled back.');
+		return;
+	}
+
 	csfm_log("Running task {$id} ({$type})");
 	try {
+		if ($guarded) {
+			csfm_guard_begin($id, csfm_task_label($type, $payload));
+		}
 		$fn = 'csfm_task_' . $type;
 		$res = $fn($client, $id, $payload);
+		if ($guarded && !csfm_verify_connectivity()) {
+			$csfm_rolled_back = csfm_guard_rollback('the management server was unreachable right after the change');
+			csfm_report_result($client, $id, 'failed', 'Rolled back: the firewall could not reach the management '
+			    . 'server after this change, so the previous configuration was restored.');
+			return;
+		}
 		csfm_report_result($client, $id, 'success', $res['output'] ?? '', $res['result'] ?? null);
 	} catch (CsfmTaskDeferred $e) {
 		return;
 	} catch (Exception $e) {
 		csfm_log("Task {$id} ({$type}) failed: " . $e->getMessage(), LOG_ERR);
-		csfm_report_result($client, $id, 'failed', $e->getMessage());
+		$msg = $e->getMessage();
+		/* A half-applied change can still cut the firewall off. */
+		if ($guarded && !csfm_server_reachable(2)) {
+			$csfm_rolled_back = csfm_guard_rollback('the management server was unreachable after a failed change');
+			$msg .= "\nRolled back: the previous configuration was restored.";
+		}
+		csfm_report_result($client, $id, 'failed', $msg);
 	}
+}
+
+function csfm_task_label($type, $payload) {
+	if ($type === 'apply_policy') {
+		$p = $payload['policy'] ?? array();
+		$rev = isset($p['revision']) ? " revision {$p['revision']}" : '';
+		return "apply policy '" . ($p['name'] ?? ($p['id'] ?? '?')) . "'{$rev}";
+	}
+	if ($type === 'remove_policy') {
+		return 'remove policy #' . (int)($payload['policy_id'] ?? 0);
+	}
+	if ($type === 'restore_backup') {
+		return 'restore backup #' . (int)($payload['backup_id'] ?? 0);
+	}
+	return $type;
 }
 
 /* ----------------------------------------------------------------- handlers */
@@ -275,11 +316,16 @@ function csfm_task_restore_backup($client, $id, $payload) {
 	if ($doc === false || $doc->getName() !== 'pfsense') {
 		throw new Exception('Backup is not a valid pfSense configuration');
 	}
+	if (!isset($doc->installedpackages->comsense)) {
+		throw new Exception('This backup does not contain the ComSense agent settings; restoring it would '
+		    . 'disconnect the firewall from ComSense, so it was not restored.');
+	}
 	$tmp = CSFM_DB_DIR . '/restore-config.xml';
 	file_put_contents($tmp, $xml);
 	chmod($tmp, 0600);
 
-	csfm_snapshot_config();
+	/* If the firewall cannot reach the server after the reboot, the watchdog restores the current config. */
+	csfm_guard_begin($id, csfm_task_label('restore_backup', $payload), 'reboot');
 	if (function_exists('config_install')) {
 		$rc = config_install($tmp);
 		if ($rc !== 0) {

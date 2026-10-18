@@ -21,6 +21,12 @@ if ($_POST['checkin_now']) {
 } elseif ($_POST['unenroll']) {
 	csfm_forget_credentials();
 	$savemsg = gettext('This firewall has forgotten its credentials. Enter a new enrollment key on the Settings tab to reconnect.');
+} elseif ($_POST['guard_confirm']) {
+	csfm_guard_confirm('confirmed by an administrator on the firewall');
+	$savemsg = gettext('The change was kept; it will not be rolled back.');
+} elseif ($_POST['guard_rollback']) {
+	$rec = csfm_guard_rollback('rolled back by an administrator on the firewall');
+	$savemsg = $rec ? gettext('The previous configuration was restored.') : gettext('There was no change to roll back.');
 } elseif ($_POST['restart']) {
 	comsense_resync();
 	$savemsg = gettext('Agent restarted.');
@@ -39,6 +45,19 @@ if ($savemsg) {
 }
 if (!empty($state['last_error'])) {
 	print_info_box(htmlspecialchars($state['last_error']['message']) . ' (' . htmlspecialchars($state['last_error']['at']) . ')', 'danger');
+}
+
+$guard = csfm_guard();
+if ($guard !== null) {
+	$labels = implode('; ', array_map(function ($t) { return $t['label']; }, $guard['tasks']));
+	print_info_box(sprintf(gettext('A change from the management server is on probation until %s: %s. If the firewall '
+	    . 'cannot reach the server by then, the previous configuration is restored automatically.'),
+	    htmlspecialchars(date('Y-m-d H:i:s', (int)$guard['deadline'])), htmlspecialchars($labels)), 'warning');
+}
+if (!empty($state['last_rollback'])) {
+	$rb = $state['last_rollback'];
+	print_info_box(sprintf(gettext('Last automatic rollback: %s, on %s (%s).'), htmlspecialchars($rb['changes']),
+	    htmlspecialchars($rb['rolled_back_at']), htmlspecialchars($rb['reason'])), 'info');
 }
 
 $tab_array = array(
@@ -94,6 +113,12 @@ csfm_row(gettext('Allowed actions'), htmlspecialchars(implode(', ', csfm_capabil
 
 <form method="post">
 	<button type="submit" name="checkin_now" value="1" class="btn btn-primary"><i class="fa-solid fa-rotate"></i> <?=gettext('Check in now')?></button>
+<?php if ($guard !== null): ?>
+	<button type="submit" name="guard_confirm" value="1" class="btn btn-success"><i class="fa-solid fa-check"></i> <?=gettext('Keep the change')?></button>
+	<button type="submit" name="guard_rollback" value="1" class="btn btn-warning"
+		onclick="return confirm('<?=gettext('Restore the configuration from before the change now?')?>');">
+		<i class="fa-solid fa-rotate-left"></i> <?=gettext('Roll back now')?></button>
+<?php endif; ?>
 	<button type="submit" name="restart" value="1" class="btn btn-default"><i class="fa-solid fa-play-circle"></i> <?=gettext('Restart agent')?></button>
 	<button type="submit" name="unenroll" value="1" class="btn btn-danger"
 		onclick="return confirm('<?=gettext('Forget this firewall\'s credentials? You will need a new enrollment key to reconnect.')?>');">

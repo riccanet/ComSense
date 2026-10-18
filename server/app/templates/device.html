@@ -23,6 +23,27 @@
 <div class="flash warn">This firewall enrolled with a key that requires approval. It receives no tasks until an admin approves it.</div>
 {% endif %}
 
+{% set guard = inv.get("change_guard") %}
+{% if guard %}
+<div class="flash warn">A change is on probation on this firewall (task{{ "s" if guard.tasks|length != 1 else "" }}
+{% for t in guard.tasks %}#{{ t }}{{ ", " if not loop.last }}{% endfor %}) until {{ guard.deadline }}. If the firewall cannot
+reach ComSense by then, it restores its previous configuration automatically.</div>
+{% endif %}
+{% if device.rolled_back_policies %}
+<section class="card highlight">
+  <h2>Rolled back changes</h2>
+  <p>The firewall lost contact with ComSense after these policy changes and restored its previous configuration.
+  They are not sent again until you clear them here, or until the policy gets a new revision.</p>
+  <ul>
+    {% for pid, what in device.rolled_back_policies.items() %}
+    <li>{% if policy_names.get(pid) %}<a href="/policies/{{ pid }}">{{ policy_names[pid] }}</a>{% else %}Policy #{{ pid }}{% endif %}:
+      {{ "removal" if what == "remove" else "revision " ~ what[:12] }}</li>
+    {% endfor %}
+  </ul>
+  {% if can_operate %}{{ post_button("/devices/" ~ device.id ~ "/rollbacks/clear", "Clear and allow again", "", "Send these changes to the firewall again at its next check-in?") }}{% endif %}
+</section>
+{% endif %}
+
 <div class="grid3">
   <section class="card">
     <h2>System</h2>

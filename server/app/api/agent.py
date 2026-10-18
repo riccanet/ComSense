@@ -208,7 +208,7 @@ async def checkin(
 
     inventory = {
         k: data[k]
-        for k in ("system", "interfaces", "gateways", "services", "carp", "metrics", "packages")
+        for k in ("system", "interfaces", "gateways", "services", "carp", "metrics", "packages", "change_guard")
         if k in data
     }
     if inventory:
@@ -240,6 +240,7 @@ async def checkin(
             )
         )
     alert_svc.evaluate_report(db, device, data)
+    alert_svc.record_rollbacks(db, device, data.get("rollbacks"))
 
     config = data.get("config") or {}
     if config.get("sha256") and config["sha256"] != device.config_sha256:

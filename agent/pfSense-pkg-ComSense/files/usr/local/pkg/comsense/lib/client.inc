@@ -152,6 +152,8 @@ class CsfmClient {
 			return;
 		}
 		$opts[CURLOPT_PROXY] = $url;
+		/* ...including any no_proxy list in the environment. */
+		$opts[CURLOPT_NOPROXY] = '';
 		$port = csfm_cfg_get('system/proxyport', '');
 		if (!empty($port)) {
 			$opts[CURLOPT_PROXYPORT] = (int)$port;

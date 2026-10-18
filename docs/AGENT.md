@@ -11,9 +11,11 @@ pfSense Plus 23.01+.
 | `/usr/local/pkg/comsense.xml`, `comsense.inc` | Package definition (Services > ComSense Agent) and hooks |
 | `/usr/local/pkg/comsense/agent.php`, `lib/*.inc` | Agent: HTTPS client, collectors, task runner, policy engine |
 | `/usr/local/sbin/comsense-agentd` | Check-in loop, run by `/usr/local/etc/rc.d/comsense.sh` under daemon(8) |
+| `/usr/local/sbin/comsense-watchdogd` | Change watchdog (automatic rollback), started next to the agent loop |
 | `/usr/local/www/comsense_status.php` | Status tab: enrollment, last check-in, managed policies, *Check in now* |
 | `/etc/inc/priv/comsense.priv.inc` | GUI privilege so access can be delegated |
 | `/var/db/comsense/` (0700) | Device credential, state, optional server CA (created at runtime) |
+| `/cf/conf/comsense/` (0700) | Known-good copy of `config.xml` while a change is on probation (next to `config.xml`, so it survives a reboot even with RAM disks) |
 
 The service appears under **Status > Services** as `comsense`. Logs go to the system log
 (**Status > System Logs > General**, program `comsense`).
@@ -97,6 +99,36 @@ Every check-in interval (60 s by default, set by the server) the agent:
 Each cycle runs in a new PHP process so it always sees the current configuration, under a lock so a
 manual *Check in now* cannot overlap a scheduled one.
 
+## Automatic rollback (failback)
+
+A change made from ComSense must not leave a firewall that ComSense can no longer reach. Every task
+that changes the configuration (applying or removing a policy, restoring a backup) runs under a
+**change guard**, the same idea as "commit confirmed" on routers:
+
+1. **Before the change** the agent copies `config.xml` and its own policy records to
+   `/cf/conf/comsense/`.
+2. **Right after the change** it checks that the server still answers. If not, it puts the copy back
+   at once, reapplies it (`/etc/rc.reload_all`), and the task fails with *Rolled back*. Other changes
+   queued in the same check-in are not run.
+3. **The change then stays on probation** for 5 minutes (15 minutes for a restore, which reboots).
+   A check-in at least a minute after the change confirms it. Otherwise the watchdog
+   (`comsense-watchdogd`, its own process, checking every 30 seconds) tests the connection when the
+   window ends: if the server answers, the change is kept; if not, the copy is put back and reloaded,
+   or for a restore, put back and the firewall rebooted.
+4. **The rollback is reported** at the next check-in. The console raises a critical alert, marks the
+   tasks as rolled back, and stops sending that policy revision to that firewall, so a bad change
+   cannot loop. It goes out again when the policy gets a new revision, or after *Clear and allow
+   again* on the firewall's page.
+
+Any HTTP answer from the server counts as reachable; only connection failures (DNS, routing,
+filtering, proxy, TLS) cause a rollback. Changes made within one probation window share a single
+copy, so a rollback returns to the configuration from before the first of them. A restore is
+refused if the backup does not contain the ComSense agent settings, because the firewall could not
+reconnect afterwards. System and package upgrades cannot be undone this way.
+
+On the firewall, **Services > ComSense Agent > Status** shows a change on probation, with *Keep the
+change* and *Roll back now*, and the last automatic rollback.
+
 ## Command line
 
 ```sh
@@ -104,4 +136,7 @@ php /usr/local/pkg/comsense/agent.php status     # enrollment state, last check-
 php /usr/local/pkg/comsense/agent.php run -v     # one cycle, verbose
 php /usr/local/pkg/comsense/agent.php backup     # upload config.xml now
 php /usr/local/pkg/comsense/agent.php unenroll   # forget the device token
+php /usr/local/pkg/comsense/agent.php watchdog   # roll back a change whose probation ended without contact
+php /usr/local/pkg/comsense/agent.php confirm    # keep the change on probation
+php /usr/local/pkg/comsense/agent.php rollback   # undo the change on probation now
 ```

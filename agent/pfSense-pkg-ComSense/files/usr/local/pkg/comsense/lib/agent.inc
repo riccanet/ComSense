@@ -7,6 +7,7 @@ require_once(__DIR__ . '/common.inc');
 require_once(__DIR__ . '/client.inc');
 require_once(__DIR__ . '/collect.inc');
 require_once(__DIR__ . '/tasks.inc');
+require_once(__DIR__ . '/guard.inc');
 
 /*
  * Exchange a one-time enrollment key for a device token. The key itself is
@@ -104,12 +105,19 @@ function csfm_cycle() {
 		}
 	}
 
+	/* Normally the watchdog does this; covers a watchdog that is not running. */
+	$guard = csfm_guard();
+	if ($guard !== null && time() > (int)$guard['deadline']) {
+		csfm_guard_watchdog();
+	}
+
 	$client = csfm_client();
 	csfm_flush_unsent_results($client);
 	csfm_finish_inflight_upgrade($client);
 
 	try {
-		$resp = $client->postJson('/checkin', csfm_collect_report());
+		$report = csfm_collect_report();
+		$resp = $client->postJson('/checkin', $report);
 	} catch (CsfmHttpError $e) {
 		if ($e->status === 401) {
 			csfm_state_set('auth_failed', true);
@@ -120,8 +128,14 @@ function csfm_cycle() {
 		return 'Check-in failed';
 	}
 
+	csfm_guard_checkin_ok();
 	$state = csfm_state();
 	$state['last_checkin'] = gmdate('c');
+	/* The server has the rollback reports now. */
+	$sent = array_map(function ($r) { return $r['id']; }, $report['rollbacks'] ?? array());
+	$state['rollbacks'] = array_values(array_filter($state['rollbacks'] ?? array(), function ($r) use ($sent) {
+		return !in_array($r['id'], $sent, true);
+	}));
 	$state['device_status'] = $resp['status'] ?? '';
 	unset($state['last_error'], $state['auth_failed']);
 	csfm_save_state($state);

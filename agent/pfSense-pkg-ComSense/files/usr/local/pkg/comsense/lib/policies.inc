@@ -4,9 +4,9 @@
  *
  * Each policy type is applied idempotently and records what it created in
  * /var/db/comsense/state.json, so a later revision or removal only touches
- * items this policy owns. Changes that could cut the firewall off from the
- * management server are verified afterwards and rolled back if the server
- * becomes unreachable.
+ * items this policy owns. Every apply and removal runs under the change
+ * guard (guard.inc), which rolls it back if the firewall loses contact with
+ * the management server.
  */
 
 require_once(__DIR__ . '/common.inc');
@@ -14,7 +14,6 @@ require_once(__DIR__ . '/client.inc');
 require_once(__DIR__ . '/collect.inc');
 
 define('CSFM_RULE_PREFIX', '[CSFM] ');
-define('CSFM_SNAPSHOT_FILE', CSFM_DB_DIR . '/pre-policy-config.xml');
 
 /* Paths a config_set policy may never modify (mirrors the server's deny list). */
 $csfm_protected_paths = array(
@@ -32,11 +31,6 @@ function csfm_apply_policy($policy) {
 	$content = $policy['content'];
 	$state = csfm_state();
 	$prev = $state['policies'][$pid] ?? array('type' => $type, 'items' => array(), 'saved' => array());
-
-	$needs_verify = in_array($type, array('firewall_rules', 'system', 'config_set'), true);
-	if ($needs_verify) {
-		csfm_snapshot_config();
-	}
 
 	switch ($type) {
 		case 'aliases':
@@ -56,12 +50,6 @@ function csfm_apply_policy($policy) {
 			break;
 		default:
 			throw new CsfmPolicyError("Unsupported policy type '{$type}'");
-	}
-
-	if ($needs_verify && !csfm_verify_connectivity()) {
-		csfm_rollback_config();
-		throw new CsfmPolicyError('The management server was unreachable after applying the policy; '
-		    . 'the previous configuration was restored.');
 	}
 
 	$record['type'] = $type;
@@ -102,41 +90,7 @@ function csfm_remove_policy($pid) {
 	return $summary;
 }
 
-/* ---------------------------------------------------------- safety net */
-
-function csfm_snapshot_config() {
-	csfm_ensure_db_dir();
-	copy(csfm_config_file(), CSFM_SNAPSHOT_FILE);
-	chmod(CSFM_SNAPSHOT_FILE, 0600);
-}
-
-function csfm_verify_connectivity() {
-	$client = csfm_client();
-	for ($i = 0; $i < 4; $i++) {
-		sleep($i === 0 ? 3 : 5);
-		try {
-			$client->getJson('/ping', 10);
-			return true;
-		} catch (Exception $e) {
-			csfm_log('Connectivity check failed: ' . $e->getMessage(), LOG_WARNING);
-		}
-	}
-	return false;
-}
-
-function csfm_rollback_config() {
-	if (!is_readable(CSFM_SNAPSHOT_FILE)) {
-		return;
-	}
-	csfm_log('Rolling back configuration after failed connectivity check', LOG_ERR);
-	copy(CSFM_SNAPSHOT_FILE, csfm_config_file());
-	@unlink('/tmp/config.cache');
-	if (function_exists('parse_config')) {
-		$GLOBALS['config'] = parse_config(true);
-	}
-	write_config('ComSense: rolled back policy after losing contact with the server');
-	csfm_reload(array('filter', 'dns', 'ntp', 'hostname'));
-}
+/* ------------------------------------------------------------- reloads */
 
 function csfm_reload($what) {
 	$what = array_unique($what);

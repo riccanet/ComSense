@@ -33,11 +33,13 @@ do-install:
 		${STAGEDIR}${PREFIX}/pkg
 	${INSTALL_DATA} ${FILESDIR}${PREFIX}/pkg/comsense/agent.php \
 		${STAGEDIR}${PREFIX}/pkg/comsense
-.for f in agent client collect common policies tasks
+.for f in agent client collect common guard policies tasks
 	${INSTALL_DATA} ${FILESDIR}${PREFIX}/pkg/comsense/lib/${f}.inc \
 		${STAGEDIR}${PREFIX}/pkg/comsense/lib
 .endfor
 	${INSTALL_SCRIPT} ${FILESDIR}${PREFIX}/sbin/comsense-agentd \
+		${STAGEDIR}${PREFIX}/sbin
+	${INSTALL_SCRIPT} ${FILESDIR}${PREFIX}/sbin/comsense-watchdogd \
 		${STAGEDIR}${PREFIX}/sbin
 	${INSTALL_DATA} ${FILESDIR}${PREFIX}/www/comsense_status.php \
 		${STAGEDIR}${PREFIX}/www

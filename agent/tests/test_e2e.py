@@ -89,10 +89,10 @@ def env(tmp_path_factory):
     proc.wait(timeout=10)
 
 
-def agent(env, *args: str) -> str:
+def agent(env, *args: str, extra_env: dict | None = None) -> str:
     result = subprocess.run(
         ["php", str(HARNESS), *args],
-        env={**os.environ, "CSFM_TEST_DIR": str(env["fw"]), "CSFM_AGENT_DIR": str(AGENT_DIR)},
+        env={**os.environ, "CSFM_TEST_DIR": str(env["fw"]), "CSFM_AGENT_DIR": str(AGENT_DIR), **(extra_env or {})},
         capture_output=True, text=True, timeout=120,
     )
     assert result.returncode == 0, result.stdout + result.stderr
@@ -223,6 +223,89 @@ def test_full_lifecycle(env):
     assert "timezone" not in cfg["system"] and "dnsserver" not in cfg["system"]
     assert json.loads(agent(env, "state"))["state"]["policies"] == []
 
+    # 5b. A change that cuts the firewall off is rolled back at once: this one points the
+    #     firewall's outbound proxy at a dead port, so the agent can no longer reach the server.
+    from app.models import Alert
+
+    guard_dir = env["fw"] / "guard"
+    with env["db"]() as db:
+        device = db.get(Device, creds["device_id"])
+        breaker = Policy(name="breaker", type=PolicyType.config_set, content={"items": [
+            {"path": "system/proxyurl", "value": "127.0.0.1"},
+            {"path": "system/proxyport", "value": str(_free_port())}]})
+        db.add(breaker)
+        db.flush()
+        db.add(PolicyAssignment(policy_id=breaker.id, device_id=device.id))
+        db.commit()
+        breaker_id = breaker.id
+    agent(env, "run")
+    cfg = fw_config(env)
+    assert "proxyurl" not in cfg["system"], "the breaking change must be undone"
+    assert "mwexec: /etc/rc.reload_all" in (env["fw"] / "actions.log").read_text()
+    assert not (guard_dir / "guard.json").exists()
+    with env["db"]() as db:
+        task = db.scalar(select(Task).where(Task.type == TaskType.apply_policy).order_by(Task.id.desc()))
+        assert task.status == TaskStatus.failed and "Rolled back" in task.output
+    # The next check-in reports the rollback: an alert, and the change is not sent again.
+    assert agent(env, "run") == "Checked in; ran 0 task(s)"
+    with env["db"]() as db:
+        device = db.get(Device, creds["device_id"])
+        assert str(breaker_id) in device.rolled_back_policies
+        assert db.scalar(select(Alert).where(Alert.device_id == device.id, Alert.key.like("rollback:%"),
+                                             Alert.resolved_at.is_(None))) is not None
+    assert agent(env, "run") == "Checked in; ran 0 task(s)"
+    assert json.loads(agent(env, "state"))["state"].get("rollbacks") == []
+    with env["db"]() as db:
+        db.query(PolicyAssignment).delete()
+        db.get(Device, creds["device_id"]).rolled_back_policies = {}
+        db.commit()
+
+    # 5c. A change that passes the first check but loses contact later is rolled back by the
+    #     watchdog when its probation window ends.
+    with env["db"]() as db:
+        late = Policy(name="late", type=PolicyType.aliases, content={"aliases": [
+            {"name": "CSFM_LATE", "type": "host", "address": ["203.0.113.9"]}]})
+        db.add(late)
+        db.flush()
+        db.add(PolicyAssignment(policy_id=late.id, device_id=creds["device_id"]))
+        db.commit()
+        late_id = late.id
+    short = {"CSFM_TEST_GUARD_WINDOW": "1"}
+    assert agent(env, "run", extra_env=short) == "Checked in; ran 1 task(s)"
+    assert [a["name"] for a in fw_config(env)["aliases"]["alias"]] == ["CSFM_LATE"]
+    assert (guard_dir / "guard.json").exists()
+    # Contact is lost some time after the change (simulated: the proxy goes bad).
+    cfg = fw_config(env)
+    cfg["system"].update(proxyurl="127.0.0.1", proxyport=str(_free_port()))
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
+    time.sleep(1.2)
+    assert agent(env, "watchdog") == "Change rolled back"
+    cfg = fw_config(env)
+    assert not cfg.get("aliases", {}).get("alias") and "proxyurl" not in cfg["system"]
+    assert str(late_id) not in json.loads(agent(env, "state"))["state"]["policies"]
+    assert agent(env, "run") == "Checked in; ran 0 task(s)"
+    with env["db"]() as db:
+        device = db.get(Device, creds["device_id"])
+        assert device.rolled_back_policies.get(str(late_id))
+        late_task = db.scalar(select(Task).where(Task.type == TaskType.apply_policy).order_by(Task.id.desc()))
+        assert late_task.status == TaskStatus.failed and "Rolled back on the firewall" in late_task.output
+
+    # 5d. Cleared on the server, it is sent again; a check-in after the change confirms it.
+    with env["db"]() as db:
+        db.get(Device, creds["device_id"]).rolled_back_policies = {}
+        db.commit()
+    assert agent(env, "run") == "Checked in; ran 1 task(s)"
+    assert (guard_dir / "guard.json").exists()
+    assert agent(env, "run") == "Checked in; ran 0 task(s)"
+    assert not (guard_dir / "guard.json").exists()
+    assert [a["name"] for a in fw_config(env)["aliases"]["alias"]] == ["CSFM_LATE"]
+    with env["db"]() as db:
+        db.query(PolicyAssignment).delete()
+        db.commit()
+    assert agent(env, "run") == "Checked in; ran 1 task(s)"
+    assert agent(env, "run") == "Checked in; ran 0 task(s)"
+    assert fw_config(env)["aliases"]["alias"] == [] and not (guard_dir / "guard.json").exists()
+
     # 6. The firewall's local settings override the server: reboot is not allowed.
     with env["db"]() as db:
         device = db.get(Device, creds["device_id"])
@@ -247,6 +330,9 @@ def test_full_lifecycle(env):
         restore = db.get(Task, restore_id)
         assert restore.status == TaskStatus.success, restore.output
     assert "mwexec_bg: /etc/rc.reboot" in (env["fw"] / "actions.log").read_text()
+    # After the reboot the restore is on probation; the watchdog reboots back if contact is lost.
+    guard = json.loads((guard_dir / "guard.json").read_text())
+    assert guard["mode"] == "reboot" and guard["tasks"][0]["id"] == restore_id
     restored = (env["fw"] / "conf" / "config.xml").read_text()
     assert "<pfsense>" in restored
 

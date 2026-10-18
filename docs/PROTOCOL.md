@@ -47,8 +47,16 @@ Body: the agent's report.
  "carp": [], "packages": [{"name": "pfSense-pkg-…", "version": "…"}],
  "updates": {"installed_version": "…", "version": "…", "update_available": false, "packages": []},
  "config": {"sha256": "…", "revision": "admin@10.0.0.5: …", "time": 1700000000},
- "applied_policies": {"3": "<sha256 of policy type+content>"}}
+ "applied_policies": {"3": "<sha256 of policy type+content>"},
+ "change_guard": {"tasks": [42], "deadline": "…"},
+ "rollbacks": [{"id": "9f1c…", "tasks": [42], "changes": "apply policy 'Office rules' revision 3",
+                "reason": "the management server was unreachable when the probation window ended",
+                "changed_at": "…", "rolled_back_at": "…"}]}
 ```
+
+`change_guard` is present while a change is on probation. `rollbacks` lists rollbacks not yet
+acknowledged; the agent drops them after a successful check-in, and the server ignores repeats by
+`id`.
 
 Response:
 

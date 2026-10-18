@@ -260,6 +260,9 @@ def reconcile_device_policies(
         return []
     open_tasks = _open_policy_tasks(db, device)
     applied = dict(device.applied_policies or {})
+    # Changes the firewall rolled back are not re-sent until an operator clears them
+    # (or the policy gets a new revision), so a change that cuts it off cannot loop.
+    rolled_back = device.rolled_back_policies or {}
     created: list[Task] = []
 
     desired = desired_policies(db, device)
@@ -268,7 +271,7 @@ def reconcile_device_policies(
         pid = str(policy.id)
         digest = policy_hash(policy)
         existing = open_tasks.get(pid)
-        if applied.get(pid) == digest:
+        if applied.get(pid) == digest or rolled_back.get(pid) == digest:
             continue
         if existing is not None:
             if existing.type == TaskType.apply_policy and existing.payload["policy"]["hash"] == digest:
@@ -286,7 +289,7 @@ def reconcile_device_policies(
 
     # The agent keeps its own record of what each policy created, so removal only needs the id.
     for pid in applied:
-        if pid in desired_ids or pid in open_tasks:
+        if pid in desired_ids or pid in open_tasks or rolled_back.get(pid) == "remove":
             continue
         task = Task(
             device_id=device.id,

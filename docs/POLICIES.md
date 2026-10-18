@@ -10,8 +10,10 @@ Unassigning or deleting it makes the firewall remove what that policy created (a
 it changed), and nothing else.
 
 The server validates every document before saving, and the agent validates again before applying.
-Firewall rules, system and config_set policies are verified after applying: if the firewall cannot
-reach the server within about 20 seconds, the previous configuration is restored and the task fails.
+Every policy apply and removal runs under the agent's change guard: if the firewall cannot reach the
+server right after the change, or when its 5-minute probation ends, the previous configuration is
+restored, the console raises an alert and that revision is not sent again until cleared. See
+[Automatic rollback](AGENT.md#automatic-rollback-failback).
 
 ## aliases
 

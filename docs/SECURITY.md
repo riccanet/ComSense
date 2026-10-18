@@ -44,8 +44,9 @@ compromised server cannot do more than the firewall owner permitted. By default 
 and service restarts are allowed; upgrades, package changes, restores and reboots are opt-in.
 
 Policies are validated on both ends; `config_set` cannot touch users, groups, authentication servers,
-certificates or the agent's own settings. Changes to rules, DNS and other settings are verified
-afterwards and rolled back if the firewall loses contact with the server.
+certificates or the agent's own settings. Every configuration change (policies and restores) is
+verified afterwards and kept on probation; if the firewall loses contact with the server, the agent
+restores the previous configuration on its own, also after a reboot.
 
 ## Data at rest on the server
 

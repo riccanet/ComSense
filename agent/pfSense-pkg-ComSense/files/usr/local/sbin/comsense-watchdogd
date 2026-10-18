@@ -1,0 +1,20 @@
+#!/bin/sh
+#
+# ComSense change watchdog. Started next to comsense-agentd by
+# /usr/local/etc/rc.d/comsense.sh. Every 30 seconds it checks whether a
+# configuration change made by the agent has passed its probation window
+# without the firewall reaching the management server, and if so restores
+# the previous configuration (see lib/guard.inc). It runs separately from
+# the agent cycle so a hung cycle cannot block a rollback.
+
+PHP=/usr/local/bin/php
+AGENT=/usr/local/pkg/comsense/agent.php
+LOCK=/var/run/comsense_watchdog.lock
+GUARD=/cf/conf/comsense/guard.json
+
+while true; do
+	if [ -f "${GUARD}" ]; then
+		/usr/bin/lockf -s -t 0 "${LOCK}" /usr/bin/timeout 900 "${PHP}" -f "${AGENT}" watchdog >/dev/null 2>&1
+	fi
+	sleep 30
+done

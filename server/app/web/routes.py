@@ -394,6 +394,7 @@ def device_detail(
         backups=backups,
         alerts=alerts,
         policy_state=policy_state,
+        policy_names={str(p.id): p.name for p in db.scalars(select(Policy))} if device.rolled_back_policies else {},
         assignable=[
             p for p in db.scalars(select(Policy).order_by(Policy.name)) if p.id not in assigned_ids
         ],
@@ -443,6 +444,25 @@ def device_queue_task(
     audit(db, user.username, f"task.{ttype.value}", target=device.id, detail=json.dumps(payload), ip=_ip(request))
     db.commit()
     flash(request, f"Queued task #{task.id} ({ttype.value}). It runs at the next check-in.", "success")
+    return redirect(f"/devices/{device_id}")
+
+
+@router.post("/devices/{device_id}/rollbacks/clear")
+def device_clear_rollbacks(
+    device_id: str, request: Request, user: User = Depends(operator), db: Session = Depends(get_db)
+):
+    device = _get_device(db, device_id)
+    cleared = ", ".join(sorted(device.rolled_back_policies or {}))
+    device.rolled_back_policies = {}
+    now = utcnow()
+    for alert in db.scalars(
+        select(Alert).where(Alert.device_id == device.id, Alert.resolved_at.is_(None), Alert.key.like("rollback:%"))
+    ):
+        alert.resolved_at = now
+        alert.acknowledged_by = alert.acknowledged_by or user.username
+    audit(db, user.username, "device.rollbacks_cleared", target=device.id, detail=cleared, ip=_ip(request))
+    db.commit()
+    flash(request, "Cleared. The changes are sent again at the next check-in.", "success")
     return redirect(f"/devices/{device_id}")
 
 
