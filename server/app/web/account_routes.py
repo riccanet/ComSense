@@ -1,6 +1,7 @@
 """Settings page (email, alert notifications), password reset by email and user email preferences."""
 from __future__ import annotations
 
+import ipaddress
 import re
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
@@ -16,9 +17,12 @@ from ..security import RateLimiter, hash_password
 from ..services.appsettings import (
     SEVERITIES,
     SMTP_SECURITY,
+    AgentNetworkSettings,
     encrypt_secret,
+    get_agent_network_settings,
     get_alert_email_settings,
     get_email_settings,
+    save_agent_network_settings,
     save_alert_email_settings,
     save_email_settings,
 )
@@ -64,6 +68,7 @@ def settings_page(request: Request, user: User = Depends(admin), db: Session = D
         securities=SMTP_SECURITY,
         severities=SEVERITIES,
         opted_in_users=recipients,
+        agent_network=get_agent_network_settings(db),
     )
 
 
@@ -167,6 +172,28 @@ def settings_alerts(
     audit(db, user.username, "settings.alerts_updated", detail=f"enabled={enabled} severity={min_severity}", ip=_ip(request))
     db.commit()
     flash(request, "Alert email settings saved.", "success")
+    return redirect("/settings")
+
+
+@router.post("/settings/agent-network")
+def settings_agent_network(
+    request: Request,
+    trusted_proxies: str = Form(""),
+    user: User = Depends(admin),
+    db: Session = Depends(get_db),
+):
+    entries = [e for e in re.split(r"[\s,;]+", trusted_proxies.strip()) if e]
+    networks = []
+    for entry in entries:
+        try:
+            networks.append(str(ipaddress.ip_network(entry, strict=False)))
+        except ValueError:
+            flash(request, f"Not an IP address or network: {entry}", "error")
+            return redirect("/settings")
+    save_agent_network_settings(db, AgentNetworkSettings(trusted_proxies=networks), user.username)
+    audit(db, user.username, "settings.agent_network_updated", detail=", ".join(networks) or "none", ip=_ip(request))
+    db.commit()
+    flash(request, "Agent port settings saved. They take effect within 15 seconds.", "success")
     return redirect("/settings")
 
 

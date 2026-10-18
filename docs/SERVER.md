@@ -94,6 +94,14 @@ Do **not** route the agent port through the proxy: forward it straight to the se
 pinned certificate reaches the firewalls and their real addresses are seen. If `CSFM_DOMAIN` points at
 the proxy or a CDN, give the agent port its own DNS name with `CSFM_AGENT_DOMAIN`.
 
+If the agent port has to go through a proxy anyway (for example NetBird's reverse proxy), use a TCP
+pass-through service, never TLS termination, so the pinned certificate still reaches the firewalls.
+To keep the firewalls' real addresses, turn on PROXY protocol for that service (NetBird: target option
+`proxy_protocol: true`; HAProxy: `send-proxy-v2`) and list the proxy's addresses under **Settings →
+Agent port behind a pass-through proxy** (NetBird: `100.64.0.0/10`). The agent port accepts PROXY
+protocol v1 and v2 only from those networks; a header from anywhere else closes the connection, and
+connections without a header keep working as before.
+
 ## First sign-in
 
 On its first start the server creates the admin account (`CSFM_INITIAL_ADMIN_USER`, default `admin`)

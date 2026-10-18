@@ -19,6 +19,7 @@ from ..models import AppSetting, utcnow
 
 EMAIL_KEY = "email"
 ALERT_EMAIL_KEY = "alert_email"
+AGENT_NETWORK_KEY = "agent_network"
 SMTP_SECURITY = ("starttls", "ssl", "none")
 SEVERITIES = ("warning", "critical")
 
@@ -49,6 +50,13 @@ class AlertEmailSettings:
     extra_recipients: list[str] = field(default_factory=list)
     # Alerts opened before alert email was switched on are never sent.
     enabled_since: str = ""
+
+
+@dataclass
+class AgentNetworkSettings:
+    # Networks allowed to send a PROXY protocol header on the agent port (CIDRs),
+    # e.g. a NetBird or HAProxy pass-through proxy. Empty: headers are refused.
+    trusted_proxies: list[str] = field(default_factory=list)
 
 
 def _secret_box(secret_key: str) -> Fernet:
@@ -101,3 +109,11 @@ def get_alert_email_settings(db: Session) -> AlertEmailSettings:
 
 def save_alert_email_settings(db: Session, value: AlertEmailSettings, actor: str) -> None:
     _save(db, ALERT_EMAIL_KEY, value, actor)
+
+
+def get_agent_network_settings(db: Session) -> AgentNetworkSettings:
+    return _load(db, AGENT_NETWORK_KEY, AgentNetworkSettings)
+
+
+def save_agent_network_settings(db: Session, value: AgentNetworkSettings, actor: str) -> None:
+    _save(db, AGENT_NETWORK_KEY, value, actor)

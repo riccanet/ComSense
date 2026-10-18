@@ -13,11 +13,15 @@ import asyncio
 import contextlib
 import logging
 import signal
+import socket
 
 import uvicorn
 
 from .config import get_settings
+from .db import session_factory
 from .main import create_agent_app, create_web_app, init_backend
+from .proxyproto import TrustedNetworks, make_front_handler
+from .services.appsettings import get_agent_network_settings
 from .tls import ensure_agent_tls
 
 log = logging.getLogger("comsense")
@@ -52,14 +56,30 @@ async def serve() -> None:
             server_header=False,
         )
     )
+    # The agent port is served by a small front listener that understands PROXY
+    # protocol headers from trusted proxies and relays the TLS stream unchanged to
+    # the agent app on a loopback socket.
+    inner = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    inner.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    inner.bind(("127.0.0.1", 0))
+    inner_port = inner.getsockname()[1]
+
+    def trusted_loader() -> list[str]:
+        with session_factory()() as db:
+            return get_agent_network_settings(db).trusted_proxies
+
+    front = await asyncio.start_server(
+        make_front_handler("127.0.0.1", inner_port, TrustedNetworks(trusted_loader)),
+        host=settings.agent_host,
+        port=settings.agent_port,
+        reuse_address=True,
+    )
     agent = _Server(
         uvicorn.Config(
             create_agent_app(settings),
-            host=settings.agent_host,
-            port=settings.agent_port,
             ssl_certfile=str(tls.cert_file),
             ssl_keyfile=str(tls.key_file),
-            # Agents connect directly, so the socket address is the real client.
+            # Client addresses come from the front listener (ClientAddressMiddleware).
             proxy_headers=False,
             server_header=False,
             timeout_keep_alive=15,
@@ -74,7 +94,11 @@ async def serve() -> None:
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop)
-    await asyncio.gather(web.serve(), agent.serve())
+    try:
+        await asyncio.gather(web.serve(), agent.serve(sockets=[inner]))
+    finally:
+        front.close()
+        await front.wait_closed()
 
 
 def main() -> None:

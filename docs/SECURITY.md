@@ -22,6 +22,9 @@
   your reverse proxy. Admins can therefore lock the console down completely (allow-lists, WAF, SSO,
   VPN) while the fleet keeps working, and the internet-facing surface is limited to token-authenticated
   agent endpoints.
+* A PROXY protocol header on the agent port (for a pass-through proxy that forwards real client
+  addresses) is honoured only from the trusted proxy networks set on the Settings page; from any other
+  address the connection is closed, so client addresses used for rate limiting and audit cannot be spoofed.
 * The agent only speaks HTTPS (TLS 1.2+), with no redirects and no other protocols; HTTP URLs are
   rejected in the settings.
 * By default the server issues its own certificate for the agent port and every agent **pins its

@@ -18,6 +18,7 @@ from .api import agent as agent_api
 from .config import Settings, get_settings
 from .db import init_engine, session_factory, upgrade_schema
 from .models import Role, User
+from .proxyproto import ClientAddressMiddleware
 from .scheduler import scheduler_loop
 from .security import generate_temporary_password, hash_password
 from .web import account_routes, customer_routes
@@ -169,6 +170,8 @@ def create_agent_app(settings: Settings) -> FastAPI:
 
     _mount_downloads(app, settings)
     app.include_router(agent_api.router)
+    # Real client addresses for connections relayed by the PROXY protocol front listener.
+    app.add_middleware(ClientAddressMiddleware)
     return app
 
 
