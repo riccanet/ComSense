@@ -64,7 +64,8 @@ All settings are environment variables:
 | `CSFM_CHECKIN_INTERVAL` | 60 | Seconds between agent check-ins (sent to agents) |
 | `CSFM_OFFLINE_AFTER` | 300 | Seconds without a check-in before a firewall is marked offline |
 | `CSFM_SCHEDULED_BACKUP_HOURS` | 24 | Queue a backup when the newest is older than this (0 disables) |
-| `CSFM_BACKUP_RETENTION_COUNT` | 100 | Unpinned backups kept per firewall |
+| `CSFM_BACKUP_RETENTION_COUNT` | 5 | Most recent distinct backups kept per firewall; pinned backups are kept in addition |
+| `CSFM_TASK_RETENTION_DAYS` | 90 | Finished tasks older than this are deleted (0 keeps them forever) |
 | `CSFM_METRICS_RETENTION_DAYS` | 30 | Metric history kept |
 | `CSFM_MAX_BACKUP_BYTES` | 33554432 | Largest accepted config.xml |
 | `CSFM_SESSION_MAX_AGE` | 28800 | Web session lifetime in seconds |

@@ -57,8 +57,11 @@ class Settings:
     metrics_retention_days: int = field(
         default_factory=lambda: _int("CSFM_METRICS_RETENTION_DAYS", 30)
     )
+    task_retention_days: int = field(
+        default_factory=lambda: _int("CSFM_TASK_RETENTION_DAYS", 90)
+    )
     backup_retention_count: int = field(
-        default_factory=lambda: _int("CSFM_BACKUP_RETENTION_COUNT", 100)
+        default_factory=lambda: _int("CSFM_BACKUP_RETENTION_COUNT", 5)
     )
     scheduled_backup_hours: int = field(
         default_factory=lambda: _int("CSFM_SCHEDULED_BACKUP_HOURS", 24)

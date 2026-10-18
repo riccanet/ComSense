@@ -9,11 +9,13 @@ from sqlalchemy import delete, select
 
 from .config import Settings
 from .db import session_factory
-from .models import Backup, Device, DeviceStatus, Metric, TaskType, aware, utcnow
+from .models import Device, DeviceStatus, Metric, Task, TaskStatus, TaskType, aware, utcnow
 from .services import alerts as alert_svc
 from .services.tasks import TaskError, expire_stale_tasks, has_open_task, queue_task
 
 log = logging.getLogger("comsense.scheduler")
+
+FINISHED_STATES = (TaskStatus.success, TaskStatus.failed, TaskStatus.cancelled, TaskStatus.expired)
 
 
 def run_once(settings: Settings) -> None:
@@ -32,13 +34,9 @@ def run_once(settings: Settings) -> None:
             for device in db.scalars(select(Device).where(Device.status == DeviceStatus.online)):
                 if "backup" not in (device.capabilities or []):
                     continue
-                latest = db.scalar(
-                    select(Backup.created_at)
-                    .where(Backup.device_id == device.id)
-                    .order_by(Backup.created_at.desc())
-                    .limit(1)
-                )
-                if latest is not None and aware(latest) > due:
+                # An unchanged config is deduplicated, so the newest Backup row can be
+                # old; last_backup_at records that the firewall did upload recently.
+                if device.last_backup_at is not None and aware(device.last_backup_at) > due:
                     continue
                 if has_open_task(db, device, TaskType.backup):
                     continue
@@ -50,6 +48,13 @@ def run_once(settings: Settings) -> None:
         db.execute(
             delete(Metric).where(Metric.ts < now - timedelta(days=settings.metrics_retention_days))
         )
+        if settings.task_retention_days > 0:
+            db.execute(
+                delete(Task).where(
+                    Task.status.in_(FINISHED_STATES),
+                    Task.created_at < now - timedelta(days=settings.task_retention_days),
+                )
+            )
         db.commit()
 
 

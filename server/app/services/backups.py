@@ -71,6 +71,7 @@ def store_backup(
 
     existing = db.scalar(select(Backup).where(Backup.device_id == device.id, Backup.sha256 == digest))
     device.config_sha256 = digest
+    device.last_backup_at = utcnow()
     if existing is not None:
         return existing, False
 

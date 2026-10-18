@@ -166,6 +166,8 @@ class Device(Base):
     # Actions the firewall owner allowed locally in the package settings.
     capabilities: Mapped[list[str]] = mapped_column(JSON, default=list)
     config_sha256: Mapped[str] = mapped_column(String(64), default="")
+    # Last time the agent uploaded its config, even when it matched a stored backup.
+    last_backup_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     notes: Mapped[str] = mapped_column(Text, default="")
 
     organization: Mapped[Organization | None] = relationship(back_populates="devices")

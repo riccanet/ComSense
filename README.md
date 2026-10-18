@@ -24,7 +24,7 @@ connections for management. A firewall can join the server only after someone en
 | Area | What you get |
 | --- | --- |
 | **Monitoring** | Online/offline status, CPU, memory, disk, load, pf states, uptime, interfaces, gateways (loss/delay), services, CARP, installed packages; 24 h charts; alerts for down gateways, stopped services, full disks, high memory and firewalls that stop checking in. |
-| **Backups** | `config.xml` is uploaded automatically whenever it changes and at least daily, deduplicated by SHA-256, **encrypted at rest**, with retention, pinning, download, and one-click restore (typed confirmation; reboots the box). |
+| **Backups** | `config.xml` is uploaded automatically whenever it changes and at least daily, deduplicated by SHA-256, **encrypted at rest**, keeping the last 5 per firewall (configurable) plus any you pin, with download and one-click restore (typed confirmation; reboots the box). |
 | **Policies** | Aliases, firewall rules, system settings (DNS, NTP, timezone, hostname/domain), package install/remove, and a restricted generic config setter. Assign to one firewall, an organization or all firewalls. Policies are applied idempotently, report compliance, and removing a policy removes only what it created. Rule, system and config changes are **rolled back automatically if the firewall can no longer reach the server**. |
 | **Updates** | Shows available pfSense and package updates; upgrade pfSense, upgrade packages, install/remove packages, restart services, reboot. |
 | **Organization** | Organizations (customers/sites), bulk actions, users with admin/operator/viewer roles, full audit log. |
