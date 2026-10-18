@@ -120,3 +120,21 @@ def test_security_headers(client):
     resp = client.get("/login")
     assert "frame-ancestors 'none'" in resp.headers["content-security-policy"]
     assert resp.headers["x-frame-options"] == "DENY"
+
+
+def test_theme_cookie_is_rendered_server_side(client):
+    assert 'data-theme="auto"' in client.get("/login").text
+    for theme in ("light", "dark", "auto"):
+        client.cookies.set("csfm_theme", theme)
+        html = client.get("/login").text
+        assert f'data-theme="{theme}"' in html
+        assert f'data-theme-set="{theme}" aria-pressed="true"' in html
+    client.cookies.set("csfm_theme", '"><script>x</script>')
+    assert 'data-theme="auto"' in client.get("/login").text
+
+
+def test_brand_assets_are_served(client):
+    for path in ("favicon.svg", "favicon-32.png", "apple-touch-icon.png", "logo-light.svg", "logo-dark.svg", "mark.svg"):
+        assert client.get(f"/static/brand/{path}").status_code == 200, path
+    html = client.get("/login").text
+    assert "/static/brand/favicon.svg" in html and "brand-mark" in html

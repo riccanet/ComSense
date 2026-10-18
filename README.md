@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="server/app/static/brand/logo-dark.svg">
+    <img alt="ComSense Firewall Manager" src="server/app/static/brand/logo-light.svg" width="320">
+  </picture>
+</p>
+
 # ComSense Firewall Manager
 
 ComSense Firewall Manager (ComSense for short) is self-hosted management and monitoring for fleets of **pfSense CE** and **pfSense Plus** firewalls.
@@ -27,7 +34,7 @@ connections for management. A firewall can join the server only after someone en
 | **Backups** | `config.xml` is uploaded automatically whenever it changes and at least daily, deduplicated by SHA-256, **encrypted at rest**, keeping the last 5 per firewall (configurable) plus any you pin, with download and one-click restore (typed confirmation; reboots the box). |
 | **Policies** | Aliases, firewall rules, system settings (DNS, NTP, timezone, hostname/domain), package install/remove, and a restricted generic config setter. Assign to one firewall, an organization or all firewalls. Policies are applied idempotently, report compliance, and removing a policy removes only what it created. Rule, system and config changes are **rolled back automatically if the firewall can no longer reach the server**. |
 | **Updates** | Shows available pfSense and package updates; upgrade pfSense, upgrade packages, install/remove packages, restart services, reboot. |
-| **Organization** | Organizations (customers/sites), bulk actions, users with admin/operator/viewer roles, full audit log. |
+| **Organization** | Organizations (customers/sites), bulk actions, users with admin/operator/viewer roles, full audit log. Light, dark and automatic (follow the OS) themes. |
 | **Security** | One-time, expiring, revocable enrollment keys (optionally requiring approval); per-device tokens stored hashed and rotated every 30 days; strict TLS on the agent with optional private CA and public-key pinning; every remote action must also be allowed locally on the firewall. See [docs/SECURITY.md](docs/SECURITY.md). |
 
 ## Repository layout

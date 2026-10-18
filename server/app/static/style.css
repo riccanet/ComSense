@@ -1,11 +1,20 @@
+/*
+ * Themes: <html data-theme="light|dark|auto">. "auto" follows the operating
+ * system. The server renders the attribute from the csfm_theme cookie, so the
+ * page never flashes the wrong theme.
+ */
 :root {
-  --bg: #f4f6f9;
+  --bg: #f5f6f8;
   --panel: #ffffff;
   --text: #1d2430;
   --muted: #667085;
   --line: #dde2ea;
-  --accent: #1f5fbf;
+  --accent: #d7262e;
+  --accent-hover: #b81f26;
   --accent-text: #ffffff;
+  --link: #b81f26;
+  --brick: #1d2430;
+  --brand-tag: #d7262e;
   --ok: #1b7f4a;
   --warn: #a86500;
   --bad: #b42318;
@@ -13,23 +22,56 @@
   --warn-bg: #fff4dc;
   --bad-bg: #fde8e7;
   --neutral-bg: #edf0f5;
+  --chart-cpu: #d7262e;
+  --chart-mem: #a86500;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: #0f1217;
+  --panel: #181c23;
+  --text: #e6e9ef;
+  --muted: #98a2b3;
+  --line: #2a313c;
+  --accent: #e5484d;
+  --accent-hover: #f2555a;
+  --accent-text: #ffffff;
+  --link: #ff6b66;
+  --brick: #c9d0da;
+  --brand-tag: #ff5a52;
+  --ok: #4cc38a;
+  --warn: #f0b44c;
+  --bad: #f97066;
+  --ok-bg: #12301f;
+  --warn-bg: #3a2c0e;
+  --bad-bg: #3d1614;
+  --neutral-bg: #232a35;
+  --chart-cpu: #ff5a52;
+  --chart-mem: #f0b44c;
+  color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #11151c;
-    --panel: #1a2029;
-    --text: #e4e8ef;
+  :root[data-theme="auto"] {
+    --bg: #0f1217;
+    --panel: #181c23;
+    --text: #e6e9ef;
     --muted: #98a2b3;
-    --line: #2c3442;
-    --accent: #5b9bf3;
-    --accent-text: #0b1220;
+    --line: #2a313c;
+    --accent: #e5484d;
+    --accent-hover: #f2555a;
+    --accent-text: #ffffff;
+    --link: #ff6b66;
+    --brick: #c9d0da;
+    --brand-tag: #ff5a52;
     --ok: #4cc38a;
     --warn: #f0b44c;
     --bad: #f97066;
     --ok-bg: #12301f;
     --warn-bg: #3a2c0e;
     --bad-bg: #3d1614;
-    --neutral-bg: #252c38;
+    --neutral-bg: #232a35;
+    --chart-cpu: #ff5a52;
+    --chart-mem: #f0b44c;
+    color-scheme: dark;
   }
 }
 * { box-sizing: border-box; }
@@ -39,7 +81,7 @@ body {
   background: var(--bg);
   color: var(--text);
 }
-a { color: var(--accent); text-decoration: none; }
+a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
 h1 { font-size: 1.5rem; margin: 0 0 1rem; }
 h2 { font-size: 1.1rem; margin: 0 0 .75rem; }
@@ -49,12 +91,46 @@ footer { text-align: center; padding: 1rem; font-size: 12px; }
 
 .topbar {
   display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap;
-  padding: .6rem 1.5rem; background: var(--panel); border-bottom: 1px solid var(--line);
+  padding: .5rem 1.5rem; background: var(--panel);
+  border-top: 3px solid var(--accent); border-bottom: 1px solid var(--line);
 }
-.topbar .brand { font-weight: 700; font-size: 1.1rem; color: var(--text); }
-.topbar nav { display: flex; gap: 1rem; flex-wrap: wrap; flex: 1; }
-.topbar nav a { color: var(--text); }
-.topbar .who { display: flex; gap: .5rem; align-items: center; }
+.topbar .brand { color: var(--text); text-decoration: none; }
+.topbar nav { display: flex; gap: .25rem; flex-wrap: wrap; flex: 1; }
+.topbar nav a { color: var(--text); padding: .35rem .6rem; border-radius: 6px; }
+.topbar nav a:hover { background: var(--neutral-bg); text-decoration: none; }
+.topbar nav a.active { color: var(--accent); background: var(--bad-bg); font-weight: 600; }
+.topbar .who { display: flex; gap: .6rem; align-items: center; }
+
+/* Brand */
+.brand-lockup { display: inline-flex; align-items: center; gap: .6rem; }
+.brand-mark { display: block; flex: none; }
+.brand-mark .bricks { fill: var(--brick); }
+.brand-text { display: flex; flex-direction: column; line-height: 1; }
+.brand-name { font-weight: 800; font-size: 1.3rem; letter-spacing: -0.02em; color: var(--text); }
+.brand-tag {
+  margin-top: .3rem; font-size: .62rem; font-weight: 700; letter-spacing: .2em;
+  text-transform: uppercase; color: var(--brand-tag);
+}
+.login .login-brand { display: flex; justify-content: center; margin: .5rem 0 .25rem; }
+.login .login-brand .brand-name { font-size: 2.1rem; }
+.login .login-brand .brand-tag { font-size: .8rem; }
+.login > p { text-align: center; margin-top: .25rem; }
+
+/* Theme switch */
+.theme-switch {
+  display: inline-flex; border: 1px solid var(--line); border-radius: 8px; padding: 2px; gap: 2px;
+  background: var(--bg);
+}
+.theme-switch button {
+  display: inline-flex; align-items: center; gap: .3rem; border: 0; border-radius: 6px;
+  background: transparent; color: var(--muted); padding: .2rem .45rem; font-size: 12px; cursor: pointer;
+}
+.theme-switch button:hover { color: var(--text); }
+.theme-switch button[aria-pressed="true"] { background: var(--panel); color: var(--accent); box-shadow: 0 1px 2px rgba(0,0,0,.15); }
+.theme-switch svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.theme-switch svg .fill { fill: currentColor; stroke: none; }
+.topbar .theme-switch span { display: none; }
+footer { display: flex; flex-direction: column; align-items: center; gap: .6rem; }
 
 .card {
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
@@ -107,10 +183,11 @@ input, select, textarea, button, .button {
 textarea { width: 100%; }
 button, .button { cursor: pointer; display: inline-block; }
 button:hover, .button:hover { border-color: var(--accent); text-decoration: none; }
-button.primary, .button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+button.primary, .button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+button.primary:hover, .button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 button.danger, .button.danger { color: var(--bad); border-color: var(--bad); }
 button.small, .button.small { padding: .15rem .5rem; font-size: 12px; }
-button.link { background: none; border: none; color: var(--accent); padding: 0; }
+button.link { background: none; border: none; color: var(--link); padding: 0; }
 
 form.inline, details.inline { display: inline-block; }
 details.inline > summary { list-style: none; }
@@ -133,5 +210,9 @@ pre { background: var(--neutral-bg); padding: .75rem; border-radius: 6px; overfl
 .nowrap { white-space: nowrap; }
 canvas { width: 100%; max-width: 420px; height: auto; margin-top: .75rem; }
 .key { display: inline-block; width: 10px; height: 3px; margin: 0 .3rem 2px .5rem; }
-.key.cpu { background: var(--accent); }
-.key.mem { background: var(--warn); }
+.key.cpu { background: var(--chart-cpu); }
+.key.mem { background: var(--chart-mem); }
+
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}

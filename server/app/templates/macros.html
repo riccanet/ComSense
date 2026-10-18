@@ -12,3 +12,19 @@
   <button class="{{ cls }}">{{ label }}</button>
 </form>
 {%- endmacro %}
+
+{% macro brand_mark(height=36) -%}
+<svg class="brand-mark" viewBox="0 0 50 64" height="{{ height }}" width="{{ (height * 50 / 64) | round | int }}" aria-hidden="true" focusable="false"><g class="bricks"><rect x="2" y="44" width="22" height="8" rx="1.5"/><rect x="26" y="44" width="22" height="8" rx="1.5"/><rect x="2" y="54" width="10" height="8" rx="1.5"/><rect x="14" y="54" width="22" height="8" rx="1.5"/><rect x="38" y="54" width="10" height="8" rx="1.5"/><rect x="2" y="34" width="10" height="8" rx="1.5"/><rect x="38" y="34" width="10" height="8" rx="1.5"/></g><g transform="translate(11 2) scale(0.875 1.1111)"><path class="flame-outer" fill="#D7262E" d="M16 1C17 8 25 12 25 22C25 29 21 35 16 35C11 35 7 29 7 22C7 17 10 14 12 11C12 15 14 17 15.2 17C14 11 15 5 16 1Z"/><path class="flame-inner" fill="#FF8A3D" d="M16 18C17 22 21 24 21 28C21 31.5 18.8 34 16 34C13.2 34 11 31.5 11 28.5C11 26 12.5 24.5 13.5 23C13.6 25 14.6 26 15.4 26C15 23 15.4 20.5 16 18Z"/></g></svg>
+{%- endmacro %}
+
+{% macro brand_lockup(height=36) -%}
+<span class="brand-lockup">{{ brand_mark(height) }}<span class="brand-text"><span class="brand-name">ComSense</span><span class="brand-tag">Firewall Manager</span></span></span>
+{%- endmacro %}
+
+{% macro theme_switch(theme) -%}
+<div class="theme-switch" role="group" aria-label="Colour theme">
+  <button type="button" data-theme-set="light" aria-pressed="{{ 'true' if theme == 'light' else 'false' }}" title="Light theme"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg><span>Light</span></button>
+  <button type="button" data-theme-set="dark" aria-pressed="{{ 'true' if theme == 'dark' else 'false' }}" title="Dark theme"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg><span>Dark</span></button>
+  <button type="button" data-theme-set="auto" aria-pressed="{{ 'true' if theme == 'auto' else 'false' }}" title="Match the system setting"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path class="fill" d="M12 3.5a8.5 8.5 0 0 1 0 17Z"/></svg><span>Auto</span></button>
+</div>
+{%- endmacro %}

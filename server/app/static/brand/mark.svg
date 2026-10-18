@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 64" width="50" height="64">
+<title>ComSense Firewall Manager</title>
+<style>.bricks{fill:#1D2430}@media (prefers-color-scheme: dark){.bricks{fill:#C9D0DA}}</style>
+<g class="bricks" fill="#1D2430"><rect x="2" y="44" width="22" height="8" rx="1.5"/><rect x="26" y="44" width="22" height="8" rx="1.5"/><rect x="2" y="54" width="10" height="8" rx="1.5"/><rect x="14" y="54" width="22" height="8" rx="1.5"/><rect x="38" y="54" width="10" height="8" rx="1.5"/><rect x="2" y="34" width="10" height="8" rx="1.5"/><rect x="38" y="34" width="10" height="8" rx="1.5"/></g><g transform="translate(11 2) scale(0.875 1.1111)"><path class="flame-outer" fill="#D7262E" d="M16 1C17 8 25 12 25 22C25 29 21 35 16 35C11 35 7 29 7 22C7 17 10 14 12 11C12 15 14 17 15.2 17C14 11 15 5 16 1Z"/><path class="flame-inner" fill="#FF8A3D" d="M16 18C17 22 21 24 21 28C21 31.5 18.8 34 16 34C13.2 34 11 31.5 11 28.5C11 26 12.5 24.5 13.5 23C13.6 25 14.6 26 15.4 26C15 23 15.4 20.5 16 18Z"/></g>
+</svg>

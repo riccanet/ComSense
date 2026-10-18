@@ -1,29 +1,34 @@
+{% from "macros.html" import brand_lockup, theme_switch with context %}
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="{{ theme }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>{% block title %}ComSense{% endblock %} · ComSense Firewall Manager</title>
+  <link rel="icon" href="/static/brand/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/brand/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/static/brand/apple-touch-icon.png">
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/app.js" defer></script>
 </head>
 <body>
 {% if user %}
+{% set path = request.url.path %}
 <header class="topbar">
-  <a class="brand" href="/">ComSense Firewall Manager</a>
+  <a class="brand" href="/" aria-label="ComSense Firewall Manager home">{{ brand_lockup(34) }}</a>
   <nav>
-    <a href="/">Dashboard</a>
-    <a href="/devices">Firewalls</a>
-    <a href="/policies">Policies</a>
-    <a href="/alerts">Alerts</a>
-    <a href="/organizations">Organizations</a>
-    {% if user.role == Role.admin %}
-    <a href="/keys">Enrollment keys</a>
-    <a href="/users">Users</a>
-    <a href="/audit">Audit log</a>
-    {% endif %}
+    {% for href, label, admin_only in [
+      ("/", "Dashboard", False), ("/devices", "Firewalls", False), ("/policies", "Policies", False),
+      ("/alerts", "Alerts", False), ("/organizations", "Organizations", False),
+      ("/keys", "Enrollment keys", True), ("/users", "Users", True), ("/audit", "Audit log", True)] %}
+      {% if not admin_only or user.role == Role.admin %}
+      <a href="{{ href }}"{% if path == href or (href != "/" and path.startswith(href)) %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
+      {% endif %}
+    {% endfor %}
   </nav>
   <div class="who">
+    {{ theme_switch(theme) }}
     <a href="/account">{{ user.username }}</a> <span class="muted">({{ user.role.value }})</span>
     <form method="post" action="/logout" class="inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -38,6 +43,9 @@
   {% endfor %}
   {% block content %}{% endblock %}
 </main>
-<footer class="muted">ComSense Firewall Manager {{ version }}</footer>
+<footer class="muted">
+  {% if not user %}{{ theme_switch(theme) }}{% endif %}
+  <span>ComSense Firewall Manager {{ version }}</span>
+</footer>
 </body>
 </html>

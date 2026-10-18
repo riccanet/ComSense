@@ -110,6 +110,16 @@ TEMPLATES.env.filters["bytes"] = _fmt_bytes
 TEMPLATES.env.filters["pretty_json"] = lambda v: json.dumps(v, indent=2, sort_keys=True)
 
 
+THEMES = ("light", "dark", "auto")
+THEME_COOKIE = "csfm_theme"
+
+
+def theme_preference(request: Request) -> str:
+    """The viewer's chosen theme. It is rendered into <html data-theme> so there is no flash."""
+    value = request.cookies.get(THEME_COOKIE, "auto")
+    return value if value in THEMES else "auto"
+
+
 def render(request: Request, template: str, status_code: int = 200, **ctx: Any) -> HTMLResponse:
     ctx.update(
         request=request,
@@ -118,6 +128,7 @@ def render(request: Request, template: str, status_code: int = 200, **ctx: Any) 
         flashes=pop_flashes(request),
         version=__version__,
         Role=Role,
+        theme=theme_preference(request),
     )
     return TEMPLATES.TemplateResponse(request, template, ctx, status_code=status_code)
 

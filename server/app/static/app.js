@@ -18,7 +18,29 @@
     }
   });
 
+  // Theme: stored in a cookie so the server renders the right theme on the next page load.
+  function setTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    document.cookie = "csfm_theme=" + theme + "; path=/; max-age=31536000; SameSite=Lax" +
+      (location.protocol === "https:" ? "; Secure" : "");
+    document.querySelectorAll("[data-theme-set]").forEach(function (b) {
+      b.setAttribute("aria-pressed", b.getAttribute("data-theme-set") === theme ? "true" : "false");
+    });
+    drawMetrics();
+  }
+  if (window.matchMedia) {
+    // In auto mode, redraw the chart when the operating system switches theme.
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    var onChange = function () { drawMetrics(); };
+    if (mq.addEventListener) { mq.addEventListener("change", onChange); } else if (mq.addListener) { mq.addListener(onChange); }
+  }
+
   document.addEventListener("click", function (ev) {
+    var themeBtn = ev.target.closest ? ev.target.closest("[data-theme-set]") : null;
+    if (themeBtn) {
+      setTheme(themeBtn.getAttribute("data-theme-set"));
+      return;
+    }
     var el = ev.target;
     if (el.hasAttribute("data-back") && window.history.length > 1) {
       ev.preventDefault();
@@ -81,8 +103,8 @@
       });
       ctx.stroke();
     }
-    line("cpu", style.getPropertyValue("--accent"));
-    line("mem", style.getPropertyValue("--warn"));
+    line("cpu", style.getPropertyValue("--chart-cpu"));
+    line("mem", style.getPropertyValue("--chart-mem"));
   }
   document.addEventListener("DOMContentLoaded", drawMetrics);
 })();
