@@ -423,7 +423,7 @@ class AuditLog(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
-    actor: Mapped[str] = mapped_column(String(64))  # username, "agent:<device id>" or "system"
+    actor: Mapped[str] = mapped_column(String(64))  # username or "system" (older entries: "agent:<device id>")
     action: Mapped[str] = mapped_column(String(64))
     target: Mapped[str] = mapped_column(String(255), default="")
     detail: Mapped[str] = mapped_column(Text, default="")

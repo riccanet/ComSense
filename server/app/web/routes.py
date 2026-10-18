@@ -1119,4 +1119,9 @@ def users_update(
 @router.get("/audit", response_class=HTMLResponse)
 def audit_page(request: Request, user: User = Depends(admin), db: Session = Depends(get_db)):
     entries = db.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(500)).all()
-    return render(request, "audit.html", entries=entries)
+    # Firewalls are logged by id (it never changes); show their current names.
+    ids = {e.target for e in entries if e.target} | {
+        e.actor.removeprefix("agent:") for e in entries if e.actor.startswith("agent:")
+    }
+    devices = {d.id: d.name for d in db.scalars(select(Device).where(Device.id.in_(ids)))} if ids else {}
+    return render(request, "audit.html", entries=entries, devices=devices)

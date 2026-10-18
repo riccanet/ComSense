@@ -174,7 +174,7 @@ async def enroll(
     db.flush()
     audit(
         db,
-        f"agent:{device.id}",
+        "system",
         "device.reenrolled" if reenrolled else "device.enrolled",
         target=device.id,
         detail=f"hostname={device.hostname} key={key.prefix} approval={key.require_approval}",
@@ -343,7 +343,7 @@ def rotate_token(
     token = generate_device_token()
     device.token_hash = hash_secret(token)
     device.token_rotated_at = utcnow()
-    audit(db, f"agent:{device.id}", "device.token_rotated", target=device.id, ip=client_ip(request))
+    audit(db, "system", "device.token_rotated", target=device.id, ip=client_ip(request))
     db.commit()
     return {"token": token}
 
@@ -416,7 +416,7 @@ async def upload_backup(
     db.flush()
     if created:
         prune_backups(db, settings, device)
-        audit(db, f"agent:{device.id}", "backup.stored", target=device.id, detail=f"backup={backup.id}")
+        audit(db, "system", "backup.stored", target=device.id, detail=f"backup={backup.id}")
     db.commit()
     return {"backup_id": backup.id, "sha256": backup.sha256, "created": created}
 

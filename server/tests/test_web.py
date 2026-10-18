@@ -153,3 +153,21 @@ def test_brand_assets_are_served(client):
         assert client.get(f"/static/brand/{path}").status_code == 200, path
     html = client.get("/login").text
     assert "/static/brand/favicon.svg" in html and "brand-mark" in html
+
+
+def test_audit_log_shows_firewall_names_and_system(client, db, agent):
+    from app.audit import audit
+    from app.models import AuditLog
+
+    creds = enroll(agent, make_key(db))
+    did = creds["device_id"]
+    db.get(Device, did).name = "Main office"
+    audit(db, f"agent:{did}", "backup.stored", target=did)  # written by older versions
+    audit(db, "admin", "device.deleted", target="0b0f3c55-1f2a-4c6e-9a1b-2c3d4e5f6a7b")
+    db.commit()
+    assert db.scalar(select(AuditLog).where(AuditLog.action == "device.enrolled")).actor == "system"
+    login(client)
+    page = client.get("/audit").text
+    assert f'<a href="/devices/{did}">Main office</a>' in page
+    assert "agent:" not in page and "<td>system</td>" in page
+    assert "deleted firewall" in page

@@ -123,6 +123,6 @@ def record_rollbacks(db: Session, device: Device, events: Any) -> int:
                     rolled[str(policy["id"])] = str(policy.get("hash", ""))
             elif task.type == TaskType.remove_policy:
                 rolled[str((task.payload or {}).get("policy_id"))] = "remove"
-        audit(db, f"agent:{device.id}", "device.change_rolled_back", target=device.id, detail=f"{changes}: {reason}")
+        audit(db, "system", "device.change_rolled_back", target=device.id, detail=f"{changes}: {reason}")
     device.rolled_back_policies = rolled
     return new

@@ -6,7 +6,8 @@
   <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th><th>IP</th></tr></thead>
   <tbody>
   {% for e in entries %}
-    <tr><td class="nowrap">{{ e.ts|dt }}</td><td>{{ e.actor }}</td><td>{{ e.action }}</td><td class="small">{{ e.target }}</td><td class="small">{{ e.detail }}</td><td>{{ e.ip }}</td></tr>
+    <tr><td class="nowrap">{{ e.ts|dt }}</td><td>{{ "system" if e.actor.startswith("agent:") else e.actor }}</td><td>{{ e.action }}</td>
+      <td class="small">{% if e.target in devices %}<a href="/devices/{{ e.target }}">{{ devices[e.target] }}</a>{% elif e.target|length == 36 and e.target.count("-") == 4 %}<span class="muted" title="{{ e.target }}">deleted firewall</span>{% else %}{{ e.target }}{% endif %}</td><td class="small">{{ e.detail }}</td><td>{{ e.ip }}</td></tr>
   {% else %}<tr><td colspan="6" class="muted">Nothing logged yet.</td></tr>{% endfor %}
   </tbody>
 </table>
