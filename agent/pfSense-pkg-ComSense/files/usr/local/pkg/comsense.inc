@@ -18,7 +18,27 @@ define('CSFM_WATCHDOG_PIDFILE', '/var/run/comsense_watchdog.pid');
 function comsense_install() {
 	csfm_ensure_db_dir();
 	comsense_remove_stale_registration();
+	comsense_refresh_service_entry();
 	comsense_write_rcfile();
+}
+
+/*
+ * pfSense keeps an existing service entry on reinstall, so a changed <service>
+ * in comsense.xml would never take effect. Drop ours here: the installer adds it
+ * again from comsense.xml right after this hook. (Up to 0.1.6 its status command
+ * called comsense_running(), which the GUI cannot see, and broke the dashboard.)
+ */
+function comsense_refresh_service_entry() {
+	$removed = false;
+	foreach (config_get_path('installedpackages/service', array()) as $idx => $svc) {
+		if (is_array($svc) && trim($svc['name'] ?? '') === 'comsense') {
+			config_del_path("installedpackages/service/{$idx}");
+			$removed = true;
+		}
+	}
+	if ($removed) {
+		write_config('ComSense: refreshing the agent service entry');
+	}
 }
 
 /*

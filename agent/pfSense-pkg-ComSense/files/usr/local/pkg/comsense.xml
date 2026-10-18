@@ -26,7 +26,9 @@
 		<name>comsense</name>
 		<rcfile>comsense.sh</rcfile>
 		<description>ComSense Firewall Manager agent</description>
-		<custom_php_service_status_command>comsense_running();</custom_php_service_status_command>
+		<!-- pfSense evals this as-is, without loading comsense.inc (e.g. in the dashboard's Services widget),
+		     so it may only use pfSense core functions. -->
+		<custom_php_service_status_command>isvalidpid('/var/run/comsense_agent.pid')</custom_php_service_status_command>
 	</service>
 	<tabs>
 		<tab>

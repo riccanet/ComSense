@@ -173,6 +173,11 @@ def test_agent_package_is_a_valid_pkg_archive(tmp_path):
     assert info.findtext("name") == short
     assert info.findtext("internal_name") == "comsense"  # the service name pfSense stops on removal
     assert info.findtext("version") == manifest["version"]
+    # pfSense evals the service status command without loading the package's include file (the
+    # dashboard's Services widget, Status > Services), so it may only call pfSense core functions.
+    pkg_xml = ET.fromstring(files["/usr/local/pkg/comsense.xml"][1])
+    status_cmd = pkg_xml.findtext("service/custom_php_service_status_command")
+    assert status_cmd == "isvalidpid('/var/run/comsense_agent.pid')", status_cmd
     post = manifest["scripts"]["post-install"]
     assert "/etc/rc.packages pfSense-pkg-ComSense POST-INSTALL" in post and not post.startswith("#!")
 
