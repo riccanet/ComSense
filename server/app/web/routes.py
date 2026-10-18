@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -123,7 +123,17 @@ def _fmt_arch(value: str) -> str:
     return names.get(value, value)
 
 
+def _fmt_isodate(value) -> str:
+    """An ISO 8601 time reported by an agent, as '2026-10-18 19:40 UTC (2m ago)'."""
+    try:
+        when = datetime.fromisoformat(str(value))
+    except ValueError:
+        return "unknown"
+    return f"{_fmt_dt(when)} ({_ago(when)})"
+
+
 TEMPLATES.env.filters["ago"] = _ago
+TEMPLATES.env.filters["isodate"] = _fmt_isodate
 TEMPLATES.env.filters["arch"] = _fmt_arch
 TEMPLATES.env.filters["dt"] = _fmt_dt
 TEMPLATES.env.filters["bytes"] = _fmt_bytes
@@ -452,6 +462,33 @@ def device_queue_task(
     db.commit()
     flash(request, f"Queued task #{task.id} ({ttype.value}). It runs at the next check-in.", "success")
     return redirect(f"/devices/{device_id}")
+
+
+PROCESS_SORTS = {"cpu": "cpu", "mem": "rss_kb"}
+
+
+@router.get("/devices/{device_id}/processes", response_class=HTMLResponse)
+def device_processes(
+    device_id: str, request: Request, sort: str = "cpu", user: User = Depends(viewer), db: Session = Depends(get_db)
+):
+    device = _get_device(db, device_id)
+    snapshot = (device.inventory or {}).get("processes") or {}
+    key = PROCESS_SORTS.get(sort, "cpu")
+    rows = sorted(
+        (p for p in snapshot.get("top") or [] if isinstance(p, dict)),
+        key=lambda p: p.get(key) if isinstance(p.get(key), (int, float)) else 0,
+        reverse=True,
+    )
+    return render(
+        request,
+        "processes.html",
+        device=device,
+        rows=rows,
+        sort=sort if sort in PROCESS_SORTS else "cpu",
+        taken_at=snapshot.get("taken_at"),
+        total=snapshot.get("total"),
+        metrics=(device.inventory or {}).get("metrics") or {},
+    )
 
 
 @router.post("/devices/{device_id}/rollbacks/clear")

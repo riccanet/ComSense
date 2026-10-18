@@ -53,7 +53,7 @@ From **Diagnostics > Command Prompt** or an SSH shell:
 Copy the install command from the server's *Enrollment keys* page. It looks like:
 
 ```sh
-fetch -o /tmp/comsense.pkg --no-verify-peer --no-verify-hostname https://comsense.example.com:10443/downloads/pfSense-pkg-ComSense-0.1.7.pkg \
+fetch -o /tmp/comsense.pkg --no-verify-peer --no-verify-hostname https://comsense.example.com:10443/downloads/pfSense-pkg-ComSense-0.1.8.pkg \
   && [ "$(sha256 -q /tmp/comsense.pkg)" = "<sha256 shown on the page>" ] \
   && pkg-static add /tmp/comsense.pkg
 ```

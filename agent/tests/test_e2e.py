@@ -184,6 +184,10 @@ def test_full_lifecycle(env):
         # A package service whose status check fails (its function lives in a file the CLI has not
         # loaded, as with comsense_running() on a real firewall) is reported as unknown; the check-in
         # still happens.
+        # The busiest processes come with every check-in (real ps output here).
+        procs = device.inventory["processes"]
+        assert procs["total"] > 0 and procs["top"] and {"pid", "cpu", "rss_kb", "command"} <= set(procs["top"][0])
+        assert all(len(p["command"]) <= 160 for p in procs["top"])
         services = {s["name"]: s["running"] for s in device.inventory["services"]}
         assert services == {"unbound": True, "comsense": None}
         assert device.updates["update_available"] is True

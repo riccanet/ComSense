@@ -277,3 +277,9 @@ button:disabled:hover { border-color: var(--line); }
 }
 .qr-box { display: inline-block; background: #fff; padding: .4rem; border-radius: 8px; border: 1px solid var(--line); line-height: 0; }
 .qr-box svg { width: 200px; height: 200px; }
+
+/* Firewall processes */
+table.list td.num, table.list th.num { text-align: right; }
+table.processes td.cmd { max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+h2 a.plain { color: inherit; }
+h2 a.plain:hover { color: var(--accent); text-decoration: none; }

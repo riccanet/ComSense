@@ -343,6 +343,44 @@ function csfm_config_file() {
 	return ($dir ?: '/cf/conf') . '/config.xml';
 }
 
+/*
+ * The busiest processes: the top 25 by CPU plus the top 25 by memory. Command
+ * lines are cut short so little of any argument leaves the firewall.
+ */
+define('CSFM_PROCESS_TOP', 25);
+define('CSFM_COMMAND_MAX', 160);
+
+function csfm_collect_processes() {
+	exec('/usr/bin/timeout 20 /bin/ps -axww -o pid=,user=,pcpu=,pmem=,rss=,time=,state=,command= 2>/dev/null', $lines, $rc);
+	$all = array();
+	foreach ($lines as $line) {
+		$f = preg_split('/\s+/', trim($line), 8);
+		if (count($f) < 8 || !ctype_digit($f[0]) || strpos($f[7], '/bin/ps -axww -o pid=') === 0) {
+			continue;  /* also skip this ps itself */
+		}
+		$all[] = array(
+			'pid' => (int)$f[0],
+			'user' => $f[1],
+			'cpu' => (float)$f[2],
+			'mem' => (float)$f[3],
+			'rss_kb' => csfm_num($f[4]),
+			'time' => $f[5],
+			'state' => $f[6],
+			'command' => function_exists('mb_substr') ? mb_substr($f[7], 0, CSFM_COMMAND_MAX) : substr($f[7], 0, CSFM_COMMAND_MAX),
+		);
+	}
+	$by = function ($key) use ($all) {
+		$list = $all;
+		usort($list, function ($a, $b) use ($key) { return $b[$key] <=> $a[$key]; });
+		return array_slice($list, 0, CSFM_PROCESS_TOP);
+	};
+	$top = array();
+	foreach (array_merge($by('cpu'), $by('rss_kb')) as $p) {
+		$top[$p['pid']] = $p;
+	}
+	return array('taken_at' => gmdate('c'), 'total' => count($all), 'top' => array_values($top));
+}
+
 /* One report section; a failing collector costs only its own section, never the check-in. */
 function csfm_section($name, $fn) {
 	try {
@@ -369,6 +407,7 @@ function csfm_collect_report() {
 		'services' => csfm_section('services', 'csfm_collect_services'),
 		'carp' => csfm_section('carp', 'csfm_collect_carp'),
 		'packages' => csfm_section('packages', 'csfm_collect_packages'),
+		'processes' => csfm_section('processes', 'csfm_collect_processes'),
 		'config' => array(
 			'sha256' => (string)@hash_file('sha256', csfm_config_file()),
 			'revision' => (string)csfm_cfg_get('revision/description', ''),

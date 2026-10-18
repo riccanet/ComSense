@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Processes · {{ device.name }}{% endblock %}
+{% block content %}
+<p class="small"><a href="/devices/{{ device.id }}">&larr; {{ device.name }}</a></p>
+<div class="heading">
+  <h1>Processes</h1>
+  <p class="toolbar">
+    Sort by
+    <a href="?sort=cpu"{% if sort == "cpu" %} class="active"{% endif %}>CPU</a> ·
+    <a href="?sort=mem"{% if sort == "mem" %} class="active"{% endif %}>Memory</a>
+  </p>
+</div>
+{% if rows %}
+<p class="muted">The busiest processes on {{ device.name }}: the top 25 by CPU and the top 25 by memory, out of
+{{ total }} running, as of {{ taken_at|isodate }}. Refreshed at every check-in.
+{% if metrics.cpu_pct is number %}Overall CPU {{ "%.1f"|format(metrics.cpu_pct) }}%{% endif %}{% if metrics.mem_pct is number %}, memory {{ "%.1f"|format(metrics.mem_pct) }}%{% endif %}.</p>
+<table class="list processes">
+  <thead><tr><th class="num">PID</th><th>User</th><th class="num">CPU %</th><th class="num">Mem %</th><th class="num">Resident</th><th class="num">CPU time</th><th>State</th><th>Command</th></tr></thead>
+  <tbody>
+  {% for p in rows %}
+    <tr>
+      <td class="num mono">{{ p.pid }}</td>
+      <td>{{ p.user }}</td>
+      <td class="num">{{ "%.1f"|format(p.cpu or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(p.mem or 0) }}</td>
+      <td class="num nowrap">{{ ((p.rss_kb or 0) * 1024)|bytes }}</td>
+      <td class="num mono">{{ p.time }}</td>
+      <td class="mono">{{ p.state }}</td>
+      <td class="mono small cmd" title="{{ p.command }}">{{ p.command }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="small muted">CPU % is ps's recent average per process (100% = one core). Command lines are shortened to 160 characters.</p>
+{% else %}
+<p class="muted">No process information yet. It is sent by agent 0.1.8 or newer at every check-in.</p>
+{% endif %}
+{% endblock %}
