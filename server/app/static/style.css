@@ -314,3 +314,7 @@ label.inline-choice select { display: inline-block; width: auto; margin: 0 .3rem
 /* Forms opened by a "New ..." button at the top of a list (customers, users). */
 .reveal:not(:target) { display: none; }
 .reveal:target { scroll-margin-top: 1rem; }
+
+/* config.xml viewer */
+pre.config-xml { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: .75rem 1rem;
+  max-height: 75vh; overflow: auto; font-size: 12px; line-height: 1.45; white-space: pre; tab-size: 4; }

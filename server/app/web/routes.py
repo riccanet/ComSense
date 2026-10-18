@@ -51,7 +51,8 @@ from ..security import (
 from ..enrollment import make_code
 from ..services.agentpkg import agent_outdated, latest_package
 from ..services.appsettings import agent_tls_names, effective_agent_url, format_dt, get_email_settings, setup_pending
-from ..services.backups import delete_backup_file, load_backup
+from ..services.backups import BackupError, delete_backup_file, load_backup
+from ..services.configview import current_backup, port_forwards, redact
 from ..services.policies import TYPE_LABELS, desired_policies, policy_hash
 from ..services.tasks import COMING_SOON, SAFE_TASKS, TASK_CAPABILITY, TaskError, queue_task
 from ..tls import ensure_agent_tls
@@ -399,6 +400,13 @@ def device_detail(
     device_id: str, request: Request, user: User = Depends(viewer), db: Session = Depends(get_db)
 ):
     device = _get_device(db, device_id)
+    nat_backup = current_backup(db, device)
+    nat_rules, nat_error = [], ""
+    if nat_backup is not None:
+        try:
+            nat_rules = port_forwards(request.app.state.settings, nat_backup)
+        except (BackupError, OSError) as exc:
+            nat_error = str(exc)
     since = utcnow() - timedelta(hours=24)
     metrics = db.scalars(
         select(Metric).where(Metric.device_id == device.id, Metric.ts >= since).order_by(Metric.ts)
@@ -442,6 +450,9 @@ def device_detail(
         policy_names={str(p.id): p.name for p in db.scalars(select(Policy))} if device.rolled_back_policies else {},
         latest_agent=_latest_agent_version(request),
         page_token=_device_page_token(db, device),
+        nat_backup=nat_backup,
+        nat_rules=nat_rules,
+        nat_error=nat_error,
         device_groups=db.scalars(
             select(DeviceGroup).where(DeviceGroup.devices.any(Device.id == device.id)).order_by(DeviceGroup.name)
         ).all(),
@@ -810,6 +821,39 @@ def backup_download(
         media_type="application/xml",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/devices/{device_id}/config", response_class=HTMLResponse)
+def device_config(
+    device_id: str,
+    request: Request,
+    backup: int | None = None,
+    secrets: int = 0,
+    settings: Settings = Depends(get_settings),
+    user: User = Depends(operator),
+    db: Session = Depends(get_db),
+):
+    """The firewall's config.xml (its current one by default, or any stored backup), secrets hidden.
+    Admins can show them; that is audited like a download."""
+    device = _get_device(db, device_id)
+    backups = db.scalars(
+        select(Backup).where(Backup.device_id == device.id).order_by(Backup.created_at.desc())
+    ).all()
+    chosen = next((b for b in backups if b.id == backup), None) if backup else current_backup(db, device)
+    text, error = "", ""
+    show_secrets = bool(secrets) and user.role == Role.admin
+    if chosen is not None:
+        try:
+            text = load_backup(settings, chosen).decode("utf-8", "replace")
+        except (BackupError, OSError) as exc:
+            error = str(exc)
+        if not show_secrets:
+            text = redact(text)
+        else:
+            audit(db, user.username, "backup.viewed_secrets", target=device.id, detail=str(chosen.id), ip=_ip(request))
+            db.commit()
+    return render(request, "device_config.html", device=device, backups=backups, chosen=chosen, xml=text,
+                  error=error, show_secrets=show_secrets, current_sha=device.config_sha256)
 
 
 @router.post("/backups/{backup_id}/pin")

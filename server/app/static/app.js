@@ -81,6 +81,10 @@
 
   document.addEventListener("change", function (ev) {
     var el = ev.target;
+    if (el.hasAttribute("data-autosubmit-select") && el.form) {
+      el.form.submit();
+      return;
+    }
     // Lists with a checkbox per row that saves as soon as it is ticked (Settings > Users).
     if (el.form && el.form.hasAttribute("data-autosubmit")) {
       el.form.submit();

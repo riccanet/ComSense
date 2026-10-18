@@ -12,6 +12,7 @@
   <h1>{{ device.name }} {{ status_badge(device.status.value) }}</h1>
   <div class="actions">
     {% set agent_old = latest_agent and device.agent_version and device.agent_version|agent_outdated(latest_agent) %}
+    {% if can_operate %}<a class="button" href="/devices/{{ device.id }}/config">View config</a>{% endif %}
     {% if can_operate and device.status.value not in ("pending", "disabled") %}
     {{ post_button("/devices/" ~ device.id ~ "/check-now", "Check now", "", "") }}
     {% if agent_old %}{{ post_button("/devices/" ~ device.id ~ "/update-agent", "Update agent to " ~ latest_agent, "primary", "Install agent " ~ latest_agent ~ " on this firewall? It updates itself in the background and checks in again.") }}{% endif %}
@@ -148,6 +149,34 @@ reach ComSense by then, it restores its previous configuration automatically.</d
     {% else %}<tr><td colspan="9" class="muted">Not reported yet.</td></tr>{% endfor %}
     </tbody>
   </table>
+</section>
+
+<section class="card">
+  <h2>Inbound NAT policies</h2>
+  {% if nat_backup %}
+  <p class="small muted">Port forwards in the firewall's configuration as of {{ nat_backup.created_at|dt }}.
+  [CSFM] marks the ones managed from Configurations.</p>
+  {% endif %}
+  {% if nat_error %}<p class="small">Could not read the configuration: {{ nat_error }}</p>{% endif %}
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Interface</th><th>Protocol</th><th>Source</th><th>Destination</th><th>Port</th><th>Redirect to</th><th>Filter rule</th><th>Description</th></tr></thead>
+    <tbody>
+    {% for r in nat_rules %}
+      <tr{% if r.disabled %} class="muted"{% endif %}>
+        <td>{{ r.interface }}</td>
+        <td>{{ r.protocol }}</td>
+        <td>{{ r.source }}</td>
+        <td>{{ r.destination }}</td>
+        <td class="mono">{{ r.port }}</td>
+        <td class="mono">{% if r.nordr %}<span class="muted">no redirect</span>{% else %}{{ r.target }}{% if r.local_port %}:{{ r.local_port }}{% endif %}{% endif %}</td>
+        <td class="small">{{ {"pass": "pass", "linked": "linked rule", "none": "none"}[r.filter_rule] }}</td>
+        <td>{{ r.descr }}{% if r.disabled %} <span class="badge s-disabled">disabled</span>{% endif %}</td>
+      </tr>
+    {% else %}<tr><td colspan="8" class="muted">{% if nat_backup %}No port forwards.{% else %}No configuration backup yet; port forwards appear after the firewall's first backup.{% endif %}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
 </section>
 
 <div class="grid2">

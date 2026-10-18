@@ -23,7 +23,14 @@ from ..audit import audit
 from ..config import Settings, get_settings
 from ..db import get_db
 from ..models import Device, DeviceGroup, Organization, Policy, PolicyAssignment, PolicyType, Role, User, utcnow
-from ..services.policies import TYPE_LABELS, PolicyError, desired_policies, policy_hash, validate_policy
+from ..services.policies import (
+    TYPE_LABELS,
+    PolicyError,
+    desired_policies,
+    endpoint_text,
+    policy_hash,
+    validate_policy,
+)
 from ..services.policy_examples import EXAMPLES
 from .auth import flash, require, verify_csrf
 from .routes import _ip, redirect, render
@@ -55,20 +62,6 @@ def _render(request: Request, template: str, section: str, settings: Settings, *
 
 
 # ------------------------------------------------------------ endpoints
-
-def endpoint_text(ep: dict[str, Any] | None) -> str:
-    """{"network": "lan"} -> "lan net", {"network": "wanip"} -> "wan address", ..."""
-    ep = ep or {}
-    neg = "!" if ep.get("not") else ""
-    if ep.get("address"):
-        return neg + ep["address"]
-    net = ep.get("network")
-    if net == "(self)":
-        return neg + "this firewall"
-    if net:
-        return neg + (f"{net[:-2]} address" if net.endswith("ip") else f"{net} net")
-    return neg + "any"
-
 
 def parse_endpoint(text: str, port: str = "") -> dict[str, Any]:
     text = text.strip()

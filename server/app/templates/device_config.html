@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}config.xml · {{ device.name }}{% endblock %}
+{% block content %}
+<p class="small"><a href="/devices/{{ device.id }}">&larr; {{ device.name }}</a></p>
+<div class="heading">
+  <h1>config.xml</h1>
+  <div class="actions">
+    {% if chosen %}
+    {% if user.role.value == "admin" %}
+      {% if show_secrets %}<a class="button" href="?backup={{ chosen.id }}">Hide secrets</a>
+      {% else %}<a class="button" href="?backup={{ chosen.id }}&amp;secrets=1" title="Shows passwords, hashes and private keys; recorded in the audit log">Show secrets</a>{% endif %}
+    {% endif %}
+    <a class="button" href="/backups/{{ chosen.id }}/download">Download</a>
+    {% endif %}
+  </div>
+</div>
+{% if backups %}
+<form method="get" class="toolbar">
+  <label>Version
+    <select name="backup" data-autosubmit-select>
+      {% for b in backups %}
+      <option value="{{ b.id }}"{% if chosen and b.id == chosen.id %} selected{% endif %}>{{ b.created_at|dt }}{% if b.sha256 == current_sha %} (current){% endif %}{% if b.reason %} · {{ b.reason }}{% endif %}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <noscript><button>Show</button></noscript>
+</form>
+{% endif %}
+{% if not chosen %}
+<p class="muted">No configuration backup yet. The firewall uploads its config.xml at check-in once backups are allowed.</p>
+{% elif error %}
+<div class="flash error">Could not read this backup: {{ error }}</div>
+{% else %}
+<p class="small muted">{% if show_secrets %}Passwords, hashes and private keys are shown.{% else %}Passwords, hashes and private keys are hidden.{% endif %}
+Use your browser's Find (Ctrl+F) to search.</p>
+<pre class="config-xml">{{ xml }}</pre>
+{% endif %}
+{% endblock %}

@@ -67,6 +67,20 @@ TYPE_LABELS = {
 }
 
 
+def endpoint_text(ep: dict[str, Any] | None) -> str:
+    """{"network": "lan"} -> "lan net", {"network": "wanip"} -> "wan address", ..."""
+    ep = ep or {}
+    neg = "!" if ep.get("not") else ""
+    if ep.get("address"):
+        return neg + ep["address"]
+    net = ep.get("network")
+    if net == "(self)":
+        return neg + "this firewall"
+    if net:
+        return neg + (f"{net[:-2]} address" if net.endswith("ip") else f"{net} net")
+    return neg + "any"
+
+
 class PolicyError(ValueError):
     pass
 
