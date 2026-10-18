@@ -433,7 +433,27 @@ def test_full_lifecycle(env):
     # helper connects out over a WebSocket (pinned TLS) and runs a real shell on a pseudo-terminal.
     terminal_session(env, creds)
 
-    # 11. A disabled device is locked out.
+    # 11. Surviving pfSense upgrades: the agent keeps a copy of its package and a boot script outside the
+    #     package, and registers the script as a shellcmd; once in place, check-ins leave them alone.
+    rec = env["fw"] / "db" / "recovery"
+    copies = sorted(p.name for p in rec.glob("pfSense-pkg-ComSense-*.pkg"))
+    from app.services.agentpkg import latest_package
+
+    assert copies == [latest_package(env["dir"] / "data" / "downloads")["name"]]
+    script = (rec / "recover.sh").read_text()
+    assert "pkg-static add -f" not in script and '${PKG} add -f "${FILE}"' in script
+    shellcmd = fw_config(env)["system"]["shellcmd"]
+    assert shellcmd == ["/usr/sbin/daemon -f /bin/sh " + str(rec / "recover.sh")]
+    writes = (env["fw"] / "actions.log").read_text().count("reinstall the agent at boot")
+    assert writes == 1
+    agent(env, "run")
+    assert (env["fw"] / "actions.log").read_text().count("reinstall the agent at boot") == 1
+    # Removing the package on purpose turns it off; a pfSense upgrade does not.
+    agent(env, "disable-recovery")
+    assert "shellcmd" not in fw_config(env)["system"] or fw_config(env)["system"]["shellcmd"] == []
+    assert (rec / "disabled").exists() and not list(rec.glob("*.pkg"))
+
+    # 12. A disabled device is locked out.
     with env["db"]() as db:
         from app.models import DeviceStatus
 

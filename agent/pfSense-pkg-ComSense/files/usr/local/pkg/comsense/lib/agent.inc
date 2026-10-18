@@ -8,6 +8,7 @@ require_once(__DIR__ . '/client.inc');
 require_once(__DIR__ . '/collect.inc');
 require_once(__DIR__ . '/tasks.inc');
 require_once(__DIR__ . '/guard.inc');
+require_once(__DIR__ . '/recovery.inc');
 
 /*
  * Exchange a one-time enrollment key for a device token. The key itself is
@@ -176,6 +177,11 @@ function csfm_cycle() {
 	}
 	/* After checking in, so a slow or unreachable update repository never delays it. */
 	csfm_schedule_update_check();
+	try {
+		csfm_maintain_recovery($client);
+	} catch (Throwable $e) {
+		csfm_log('Could not prepare reinstall after upgrades: ' . $e->getMessage(), LOG_WARNING);
+	}
 	return sprintf('Checked in; ran %d task(s)', count($tasks));
 }
 

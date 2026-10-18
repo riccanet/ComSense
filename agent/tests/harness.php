@@ -153,6 +153,9 @@ switch ($argv[1] ?? 'run') {
 	case 'terminal':
 		echo csfm_terminal_session((string)($argv[2] ?? '')) . "\n";
 		break;
+	case 'disable-recovery':
+		csfm_disable_recovery();
+		break;
 	case 'wait':
 		$r = csfm_wait_for_work((int)($argv[2] ?? 60));
 		echo $r . "\n";

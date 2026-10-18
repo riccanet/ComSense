@@ -60,6 +60,10 @@ function comsense_remove_stale_registration() {
 }
 
 function comsense_deinstall() {
+	/* A pfSense upgrade removes the package too; only a deliberate removal stops the boot-time reinstall. */
+	if (!csfm_removal_is_upgrade()) {
+		csfm_disable_recovery();
+	}
 	comsense_stop();
 	unlink_if_exists('/usr/local/etc/rc.d/comsense.sh');
 	/* Keep /var/db/comsense so a reinstall keeps its identity; remove it by hand to fully reset. */

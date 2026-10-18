@@ -53,7 +53,7 @@ From **Diagnostics > Command Prompt** or an SSH shell:
 Copy the install command from the server's *Settings > Enrollment keys* page. It looks like:
 
 ```sh
-fetch -o /tmp/comsense.pkg --no-verify-peer --no-verify-hostname https://comsense.example.com:10443/downloads/pfSense-pkg-ComSense-0.2.3.pkg \
+fetch -o /tmp/comsense.pkg --no-verify-peer --no-verify-hostname https://comsense.example.com:10443/downloads/pfSense-pkg-ComSense-0.2.4.pkg \
   && [ "$(sha256 -q /tmp/comsense.pkg)" = "<sha256 shown on the page>" ] \
   && pkg-static add /tmp/comsense.pkg
 ```
@@ -115,6 +115,23 @@ this task: install 0.1.9 once by hand.
 
 Each cycle runs in a new PHP process so it always sees the current configuration, under a lock so a
 manual *Check in now* cannot overlap a scheduled one.
+
+## Surviving pfSense upgrades
+
+pfSense reinstalls packages from Netgate's repository after an upgrade, and this package is not in it,
+so an upgrade would leave the firewall without its agent. The agent therefore keeps, outside its
+package (pkg never removes them):
+
+* `/var/db/comsense/recovery/pfSense-pkg-ComSense-<version>.pkg`, a copy of itself, fetched over its
+  pinned connection from the server;
+* `/var/db/comsense/recovery/recover.sh`, a boot script, registered as a pfSense *shellcmd*
+  (`system/shellcmd` in config.xml, which upgrades keep).
+
+At boot the script waits for pfSense to finish reinstalling its own packages and, if the agent is
+missing, installs the copy. Credentials and settings survive the upgrade, so it carries on as the same
+firewall and reports the upgrade's result. Removing the package on purpose (Package Manager, or
+`pkg delete` outside an upgrade) removes the shellcmd and the copy, so it does not come back.
+Requires agent 0.2.4 or later before the upgrade.
 
 ## Automatic rollback (failback)
 
