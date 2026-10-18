@@ -42,11 +42,18 @@ admin = require(Role.admin)
 viewer = require(Role.viewer)
 forgot_limiter = RateLimiter(limit=5, window_seconds=900)
 
-# Pages the settings forms may return to: the Settings page or a setup wizard step.
-RETURN_PAGES = {"/settings", "/setup", "/setup/email", "/setup/agent"}
+# Settings sections: (path, label), shown as the navigation on the left of each settings page.
+SETTINGS_SECTIONS = [
+    ("/settings/email", "Email (SMTP)"),
+    ("/settings/alerts", "Alert emails"),
+    ("/settings/addresses", "Addresses"),
+    ("/settings/setup", "Setup wizard"),
+]
+# Pages the settings forms may return to: a settings section or a setup wizard step.
+RETURN_PAGES = {path for path, _ in SETTINGS_SECTIONS} | {"/setup", "/setup/email", "/setup/agent"}
 
 
-def _page(value: str, default: str = "/settings") -> str:
+def _page(value: str, default: str) -> str:
     return value if value in RETURN_PAGES else default
 
 def _send_reset_in_background(settings: Settings, user_id: int, token: str, by_admin: bool) -> None:
@@ -65,32 +72,57 @@ def _send_reset_in_background(settings: Settings, user_id: int, token: str, by_a
 # ------------------------------------------------------------------- settings
 
 
-@router.get("/settings", response_class=HTMLResponse)
-def settings_page(
-    request: Request,
-    settings: Settings = Depends(get_settings),
-    user: User = Depends(admin),
-    db: Session = Depends(get_db),
-):
-    alert_cfg = get_alert_email_settings(db)
+@router.get("/settings")
+def settings_index(user: User = Depends(admin)):
+    return redirect(SETTINGS_SECTIONS[0][0])
+
+
+def _settings_page(request: Request, section: str, **ctx):
+    return render(request, "settings.html", section=section, sections=SETTINGS_SECTIONS, **ctx)
+
+
+@router.get("/settings/email", response_class=HTMLResponse)
+def settings_email_page(request: Request, user: User = Depends(admin), db: Session = Depends(get_db)):
+    return _settings_page(request, "/settings/email", email=get_email_settings(db), securities=SMTP_SECURITY)
+
+
+@router.get("/settings/alerts", response_class=HTMLResponse)
+def settings_alerts_page(request: Request, user: User = Depends(admin), db: Session = Depends(get_db)):
     recipients = db.scalar(
         select(func.count()).select_from(User).where(
             User.active.is_(True), User.email_alerts.is_(True), User.email != ""
         )
     )
-    return render(
+    return _settings_page(
         request,
-        "settings.html",
+        "/settings/alerts",
+        alerts=get_alert_email_settings(db),
         email=get_email_settings(db),
-        alerts=alert_cfg,
-        securities=SMTP_SECURITY,
         severities=SEVERITIES,
         opted_in_users=recipients,
+    )
+
+
+@router.get("/settings/addresses", response_class=HTMLResponse)
+def settings_addresses_page(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    user: User = Depends(admin),
+    db: Session = Depends(get_db),
+):
+    return _settings_page(
+        request,
+        "/settings/addresses",
         agent_network=get_agent_network_settings(db),
         default_agent_url=settings.agent_url,
         site=get_site_settings(db),
         default_console_url=settings.public_url.rstrip("/"),
     )
+
+
+@router.get("/settings/setup", response_class=HTMLResponse)
+def settings_setup_page(request: Request, user: User = Depends(admin), db: Session = Depends(get_db)):
+    return _settings_page(request, "/settings/setup", site=get_site_settings(db))
 
 
 @router.post("/settings/email")
@@ -105,8 +137,8 @@ def settings_email(
     clear_password: bool = Form(False),
     from_address: str = Form(""),
     from_name: str = Form(""),
-    back: str = Form("/settings"),
-    next: str = Form("/settings"),
+    back: str = Form("/settings/email"),
+    next: str = Form("/settings/email"),
     settings: Settings = Depends(get_settings),
     user: User = Depends(admin),
     db: Session = Depends(get_db),
@@ -115,7 +147,7 @@ def settings_email(
     host, from_address = host.strip(), from_address.strip()
     if enabled and (not host or not valid_email(from_address)):
         flash(request, "To turn email on, enter the SMTP server and a valid From address.", "error")
-        return redirect(_page(back))
+        return redirect(_page(back, "/settings/email"))
     if security not in SMTP_SECURITY or not 1 <= port <= 65535:
         raise HTTPException(400, "Invalid SMTP security or port")
     cfg.enabled = enabled
@@ -133,14 +165,14 @@ def settings_email(
     audit(db, user.username, "settings.email_updated", detail=f"enabled={enabled} host={cfg.host}", ip=_ip(request))
     db.commit()
     flash(request, "Email settings saved.", "success")
-    return redirect(_page(next))
+    return redirect(_page(next, "/settings/email"))
 
 
 @router.post("/settings/email/test")
 def settings_email_test(
     request: Request,
     to: str = Form(""),
-    back: str = Form("/settings"),
+    back: str = Form("/settings/email"),
     settings: Settings = Depends(get_settings),
     user: User = Depends(admin),
     db: Session = Depends(get_db),
@@ -148,7 +180,7 @@ def settings_email_test(
     to = to.strip() or user.email
     if not valid_email(to):
         flash(request, "Enter an address to send the test email to.", "error")
-        return redirect(_page(back))
+        return redirect(_page(back, "/settings/email"))
     try:
         send_mail(
             get_email_settings(db),
@@ -164,7 +196,7 @@ def settings_email_test(
         flash(request, f"Test email sent to {to}.", "success")
     audit(db, user.username, "settings.email_test", target=to, ip=_ip(request))
     db.commit()
-    return redirect(_page(back))
+    return redirect(_page(back, "/settings/email"))
 
 
 @router.post("/settings/alerts")
@@ -183,7 +215,7 @@ def settings_alerts(
     bad = [e for e in extras if not valid_email(e)]
     if bad:
         flash(request, f"Not a valid email address: {', '.join(bad)}", "error")
-        return redirect("/settings")
+        return redirect("/settings/alerts")
     cfg = get_alert_email_settings(db)
     if enabled and not cfg.enabled:
         # Only alerts opened from now on are emailed, not the existing backlog.
@@ -196,7 +228,7 @@ def settings_alerts(
     audit(db, user.username, "settings.alerts_updated", detail=f"enabled={enabled} severity={min_severity}", ip=_ip(request))
     db.commit()
     flash(request, "Alert email settings saved.", "success")
-    return redirect("/settings")
+    return redirect("/settings/alerts")
 
 
 @router.post("/settings/agent-network")
@@ -205,8 +237,8 @@ def settings_agent_network(
     console_url: str = Form(""),
     agent_url: str = Form(""),
     trusted_proxies: str = Form(""),
-    back: str = Form("/settings"),
-    next: str = Form("/settings"),
+    back: str = Form("/settings/addresses"),
+    next: str = Form("/settings/addresses"),
     settings: Settings = Depends(get_settings),
     user: User = Depends(admin),
     db: Session = Depends(get_db),
@@ -215,12 +247,12 @@ def settings_agent_network(
         console = normalize_console_url(console_url)
     except ValueError as exc:
         flash(request, f"Console address: {exc}", "error")
-        return redirect(_page(back))
+        return redirect(_page(back, "/settings/addresses"))
     try:
         url = normalize_agent_url(agent_url, urlsplit(settings.agent_url).port or settings.agent_port)
     except ValueError as exc:
         flash(request, f"Agent address: {exc}", "error")
-        return redirect(_page(back))
+        return redirect(_page(back, "/settings/addresses"))
     entries = [e for e in re.split(r"[\s,;]+", trusted_proxies.strip()) if e]
     networks = []
     for entry in entries:
@@ -228,7 +260,7 @@ def settings_agent_network(
             networks.append(str(ipaddress.ip_network(entry, strict=False)))
         except ValueError:
             flash(request, f"Not an IP address or network: {entry}", "error")
-            return redirect(_page(back))
+            return redirect(_page(back, "/settings/addresses"))
     site = get_site_settings(db)
     site.console_url = console
     save_site_settings(db, site, user.username)
@@ -244,7 +276,7 @@ def settings_agent_network(
     )
     db.commit()
     flash(request, "Addresses saved. Trusted proxies take effect within 15 seconds.", "success")
-    return redirect(_page(next))
+    return redirect(_page(next, "/settings/addresses"))
 
 
 # ---------------------------------------------------------- password resets

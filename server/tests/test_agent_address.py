@@ -42,7 +42,7 @@ def test_agent_address_from_settings_page_goes_into_enrollment_codes(client, db,
     csrf = login(client)
     assert parse_code(_new_code(client, csrf))["url"] == settings.agent_url
 
-    page = client.get("/settings").text
+    page = client.get("/settings/addresses").text
     assert settings.agent_url in page  # shown as the default
 
     r = client.post(

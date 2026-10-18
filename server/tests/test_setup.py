@@ -99,7 +99,7 @@ def test_wizard_steps_save_settings_and_create_first_code(client, db, settings):
         data={"host": "", "from_address": "", "next": "https://evil.example", "csrf_token": csrf},
         follow_redirects=False,
     )
-    assert r.headers["location"] == "/settings"
+    assert r.headers["location"] == "/settings/email"
 
     # Step 3: package and first enrollment code, for a new customer.
     page = client.get("/setup/agent").text

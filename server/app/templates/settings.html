@@ -3,10 +3,16 @@
 {% block title %}Settings{% endblock %}
 {% block content %}
 <h1>Settings</h1>
-<p class="muted">Saved in the database. The server's container settings only cover how it starts (database, keys, listeners).
-<a href="/setup">Run the setup wizard again</a>.</p>
-
-<div class="grid2">
+<div class="settings-layout">
+  <nav class="settings-nav" aria-label="Settings sections">
+    {% for href, label in sections %}
+    <a href="{{ href }}"{% if href == section %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+    <p class="small muted">Saved in the database. The server's container settings only cover how it starts
+    (database, keys, listeners).</p>
+  </nav>
+  <div class="settings-body">
+{% if section == "/settings/email" %}
 <section class="card">
   <h2>Outgoing email (SMTP)</h2>
   <p class="small muted">Used for alert emails and password reset links.</p>
@@ -36,7 +42,7 @@
   </form>
   <p class="small muted">The SMTP password is stored encrypted.</p>
 </section>
-
+{% elif section == "/settings/alerts" %}
 <section class="card">
   <h2>Alert emails</h2>
   <p class="small muted">New alerts are collected and sent once a minute as one summary email per recipient.
@@ -60,8 +66,7 @@
     <div><button class="primary">Save alert settings</button></div>
   </form>
 </section>
-</div>
-
+{% elif section == "/settings/addresses" %}
 <section class="card">
   <h2>Addresses</h2>
   <form method="post" action="/settings/agent-network" class="stack">
@@ -88,4 +93,16 @@
     <div><button class="primary">Save addresses</button></div>
   </form>
 </section>
+{% else %}
+<section class="card">
+  <h2>Setup wizard</h2>
+  <p>Walks through the addresses, outgoing email and connecting a first firewall: the agent package and an
+  enrollment code. It runs on its own after the first sign-in; run it again any time to review those settings.</p>
+  <p class="small muted">{% if site.setup_completed_at %}Last finished by {{ site.setup_completed_by }} on
+  {{ site.setup_completed_at[:16]|replace("T", " ") }} UTC.{% else %}Not finished yet.{% endif %}</p>
+  <p><a class="button primary" href="/setup">Run the setup wizard</a></p>
+</section>
+{% endif %}
+  </div>
+</div>
 {% endblock %}

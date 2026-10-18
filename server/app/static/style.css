@@ -259,3 +259,19 @@ button:disabled:hover { border-color: var(--line); }
 .setup-nav:only-child, form .setup-nav { justify-content: flex-end; }
 .setup-skip { text-align: center; margin-top: .5rem; }
 .setup-skip button { font-size: 13px; }
+
+/* Settings: section navigation on the left */
+.settings-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+.settings-nav { display: flex; flex-direction: column; gap: .15rem; position: sticky; top: 1rem; }
+.settings-nav a { color: var(--text); padding: .45rem .7rem; border-radius: 6px; border-left: 3px solid transparent; }
+.settings-nav a:hover { background: var(--neutral-bg); text-decoration: none; }
+.settings-nav a.active { color: var(--accent); background: var(--bad-bg); border-left-color: var(--accent); font-weight: 600; }
+.settings-nav p { margin: .75rem .7rem 0; }
+.settings-body > .card:first-child { margin-top: 0; }
+@media (max-width: 760px) {
+  .settings-layout { grid-template-columns: 1fr; }
+  .settings-nav { position: static; flex-direction: row; flex-wrap: wrap; }
+  .settings-nav a { border-left: 0; border-bottom: 2px solid transparent; }
+  .settings-nav a.active { border-bottom-color: var(--accent); }
+  .settings-nav p { display: none; }
+}
