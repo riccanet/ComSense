@@ -157,8 +157,10 @@ def login(client, username="admin", password=ADMIN_PASSWORD) -> str:
 @pytest.fixture(autouse=True)
 def _fresh_time_zone_cache():
     """The display time zone is cached per process; each test starts from its own database."""
+    from zoneinfo import ZoneInfo
+
     from app.services import appsettings
 
-    appsettings._tz_cache["at"] = float("-inf")
+    appsettings._tz_cache.update(at=float("-inf"), tz=ZoneInfo("UTC"))
     yield
-    appsettings._tz_cache["at"] = float("-inf")
+    appsettings._tz_cache.update(at=float("-inf"), tz=ZoneInfo("UTC"))

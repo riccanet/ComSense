@@ -2,7 +2,10 @@
 {% from "macros.html" import csrf with context %}
 {% block title %}Customers{% endblock %}
 {% block content %}
-<h1>Customers</h1>
+<div class="heading">
+  <h1>Customers</h1>
+  {% if user.role.value != "viewer" %}<div class="actions"><a class="button primary" href="#new-customer">New customer</a></div>{% endif %}
+</div>
 <p class="muted">Each customer groups its firewalls. Create an enrollment key for a customer and every firewall that
 enrolls with it lands under that customer; you can also move a firewall from its page.</p>
 <table class="list">
@@ -19,15 +22,15 @@ enrolls with it lands under that customer; you can also move a firewall from its
       <td>{% if sc.get("pending") %}<span class="badge s-pending">{{ sc.pending }}</span>{% else %}0{% endif %}</td>
       <td>{% if alert_counts.get(c.id) %}<a href="/customers/{{ c.id }}#alerts"><span class="badge sev-warning">{{ alert_counts[c.id] }}</span></a>{% else %}0{% endif %}</td>
     </tr>
-  {% else %}<tr><td colspan="7" class="muted">No customers yet. Add one below.</td></tr>{% endfor %}
+  {% else %}<tr><td colspan="7" class="muted">No customers yet.</td></tr>{% endfor %}
   {% if unassigned %}
     <tr><td colspan="7" class="muted small"><a href="/devices?org=none">{{ unassigned }} firewall{{ "" if unassigned == 1 else "s" }} not assigned to a customer</a></td></tr>
   {% endif %}
   </tbody>
 </table>
 {% if user.role.value != "viewer" %}
-<section class="card">
-  <h2>Add customer</h2>
+<section class="card reveal" id="new-customer">
+  <h2>New customer</h2>
   <form method="post" action="/customers" class="grid-form">
     {{ csrf() }}
     <label>Customer name <input name="name" required></label>
@@ -35,7 +38,7 @@ enrolls with it lands under that customer; you can also move a firewall from its
     <label>Contact email <input name="contact_email" type="email"></label>
     <label>Contact phone <input name="contact_phone"></label>
     <label class="wide">Notes <textarea name="notes" rows="2"></textarea></label>
-    <div><button class="primary">Add customer</button></div>
+    <div><button class="primary">Add customer</button> <a class="button" href="#">Cancel</a></div>
   </form>
 </section>
 {% endif %}

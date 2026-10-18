@@ -20,7 +20,7 @@ def test_user_list_links_to_a_page_per_user(client, db):
     op = _add(db, email="op@example.com")
     page = client.get("/users").text
     assert f'href="/users/{op.id}"' in page and 'action="/users"' in page  # the add-user form stays
-    assert 'name="role"' not in page.split("Add user")[0]  # role and password live on the user's page
+    assert 'name="role"' not in page.split('id="new-user"')[0]  # role and password live on the user's page
     row = re.search(rf'id="flags-{op.id}".*?</tr>', page, re.S).group(0)
     assert 'name="active"' in row and 'name="email_alerts"' in row
 

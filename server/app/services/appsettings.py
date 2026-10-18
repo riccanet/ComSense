@@ -216,8 +216,12 @@ def display_timezone() -> tzinfo:
 
 
 def format_dt(value: datetime | None) -> str:
-    """'2026-10-18 14:40 CDT' in the configured time zone."""
-    return aware(value).astimezone(display_timezone()).strftime("%Y-%m-%d %H:%M %Z") if value else ""
+    """'2026-10-18 2:40 PM CDT': 12-hour clock, in the configured time zone."""
+    if not value:
+        return ""
+    local = aware(value).astimezone(display_timezone())
+    hour = local.hour % 12 or 12
+    return f"{local:%Y-%m-%d} {hour}:{local:%M %p %Z}"
 
 
 def _host_port(value: str) -> tuple[str, int | None]:

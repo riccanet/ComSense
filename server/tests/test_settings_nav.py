@@ -63,6 +63,26 @@ def test_time_zone_setting(client, db):
     client.post("/settings/general", data={"timezone": "America/Chicago", "csrf_token": csrf})
     db.expire_all()
     assert get_site_settings(db).timezone == "America/Chicago"
-    assert format_dt(datetime(2026, 7, 1, 17, 30, tzinfo=timezone.utc)) == "2026-07-01 12:30 CDT"
-    assert format_dt(datetime(2026, 1, 1, 17, 30, tzinfo=timezone.utc)) == "2026-01-01 11:30 CST"
+    assert format_dt(datetime(2026, 7, 1, 17, 30, tzinfo=timezone.utc)) == "2026-07-01 12:30 PM CDT"
+    assert format_dt(datetime(2026, 1, 1, 17, 30, tzinfo=timezone.utc)) == "2026-01-01 11:30 AM CST"
     assert 'value="America/Chicago" selected' in client.get("/settings/general").text
+
+
+def test_times_use_a_12_hour_clock(db):
+    from datetime import datetime, timezone
+
+    from app.services.appsettings import format_dt
+
+    utc = timezone.utc
+    assert format_dt(datetime(2026, 10, 18, 0, 5, tzinfo=utc)) == "2026-10-18 12:05 AM UTC"
+    assert format_dt(datetime(2026, 10, 18, 9, 7, tzinfo=utc)) == "2026-10-18 9:07 AM UTC"
+    assert format_dt(datetime(2026, 10, 18, 12, 0, tzinfo=utc)) == "2026-10-18 12:00 PM UTC"
+    assert format_dt(datetime(2026, 10, 18, 23, 59, tzinfo=utc)) == "2026-10-18 11:59 PM UTC"
+
+
+def test_new_buttons_open_the_add_forms(client):
+    login(client)
+    users = client.get("/users").text
+    assert 'href="#new-user"' in users and 'id="new-user"' in users and 'action="/users"' in users
+    customers = client.get("/customers").text
+    assert 'href="#new-customer"' in customers and 'id="new-customer"' in customers

@@ -310,3 +310,7 @@ fieldset.plain { border: 0; padding: 0; margin: 0; min-width: 0; display: flex; 
 .rows-table td.center { text-align: center; vertical-align: middle; }
 label.inline-choice { display: block; margin-bottom: .75rem; }
 label.inline-choice select { display: inline-block; width: auto; margin: 0 .3rem; }
+
+/* Forms opened by a "New ..." button at the top of a list (customers, users). */
+.reveal:not(:target) { display: none; }
+.reveal:target { scroll-margin-top: 1rem; }

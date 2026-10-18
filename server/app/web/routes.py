@@ -135,7 +135,7 @@ def _fmt_arch(value: str) -> str:
 
 
 def _fmt_isodate(value) -> str:
-    """An ISO 8601 time reported by an agent, as '2026-10-18 14:40 CDT (2m ago)'."""
+    """An ISO 8601 time reported by an agent, as '2026-10-18 2:40 PM CDT (2m ago)'."""
     try:
         when = datetime.fromisoformat(str(value))
     except ValueError:
