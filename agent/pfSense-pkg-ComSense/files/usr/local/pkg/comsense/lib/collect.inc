@@ -183,19 +183,50 @@ function csfm_collect_gateways() {
 	return $out;
 }
 
+/*
+ * Package services report their status through a PHP snippet that calls a
+ * function from the package's include file (ours: comsense_running()). The GUI
+ * has those loaded; a CLI process does not, so load them as pfSense does.
+ */
+function csfm_load_package_includes() {
+	static $done = false;
+	if ($done) {
+		return;
+	}
+	$done = true;
+	foreach (csfm_cfg_get('installedpackages/package', array()) ?: array() as $pkg) {
+		$inc = is_array($pkg) ? ($pkg['include_file'] ?? '') : '';
+		if ($inc !== '' && is_readable($inc)) {
+			try {
+				require_once($inc);
+			} catch (Throwable $e) {
+				csfm_log("Could not load {$inc}: " . $e->getMessage(), LOG_WARNING);
+			}
+		}
+	}
+}
+
 function csfm_collect_services() {
 	$out = array();
 	if (!function_exists('get_services') || !function_exists('get_service_status')) {
 		return $out;
 	}
+	csfm_load_package_includes();
 	foreach (get_services() as $svc) {
 		if (empty($svc['name'])) {
 			continue;
 		}
+		try {
+			$running = (bool)get_service_status($svc);
+		} catch (Throwable $e) {
+			/* One package's broken status check must not stop the report. */
+			$running = null;
+			csfm_log("Status of service {$svc['name']} unavailable: " . $e->getMessage(), LOG_WARNING);
+		}
 		$out[] = array(
 			'name' => $svc['name'],
 			'description' => $svc['description'] ?? '',
-			'running' => (bool)get_service_status($svc),
+			'running' => $running,
 			'enabled' => true,
 		);
 	}
@@ -312,6 +343,16 @@ function csfm_config_file() {
 	return ($dir ?: '/cf/conf') . '/config.xml';
 }
 
+/* One report section; a failing collector costs only its own section, never the check-in. */
+function csfm_section($name, $fn) {
+	try {
+		return $fn();
+	} catch (Throwable $e) {
+		csfm_log("Could not collect {$name}: " . $e->getMessage(), LOG_ERR);
+		return array();
+	}
+}
+
 function csfm_collect_report() {
 	$state = csfm_state();
 	$applied = array();
@@ -321,13 +362,13 @@ function csfm_collect_report() {
 	$report = array(
 		'agent_version' => CSFM_AGENT_VERSION,
 		'capabilities' => csfm_capabilities(),
-		'system' => csfm_collect_system(),
-		'metrics' => csfm_collect_metrics(),
-		'interfaces' => csfm_collect_interfaces(),
-		'gateways' => csfm_collect_gateways(),
-		'services' => csfm_collect_services(),
-		'carp' => csfm_collect_carp(),
-		'packages' => csfm_collect_packages(),
+		'system' => csfm_section('system', 'csfm_collect_system'),
+		'metrics' => csfm_section('metrics', 'csfm_collect_metrics'),
+		'interfaces' => csfm_section('interfaces', 'csfm_collect_interfaces'),
+		'gateways' => csfm_section('gateways', 'csfm_collect_gateways'),
+		'services' => csfm_section('services', 'csfm_collect_services'),
+		'carp' => csfm_section('carp', 'csfm_collect_carp'),
+		'packages' => csfm_section('packages', 'csfm_collect_packages'),
 		'config' => array(
 			'sha256' => (string)@hash_file('sha256', csfm_config_file()),
 			'revision' => (string)csfm_cfg_get('revision/description', ''),

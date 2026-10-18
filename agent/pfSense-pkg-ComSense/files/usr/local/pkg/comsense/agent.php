@@ -27,13 +27,22 @@ require_once('services.inc');
 require_once('service-utils.inc');
 require_once('pkg-utils.inc');
 require_once(__DIR__ . '/lib/agent.inc');
+/* Package hooks, e.g. comsense_running() used by the service status check. */
+require_once('/usr/local/pkg/comsense.inc');
 
 define('CSFM_VERBOSE', in_array('-v', $argv, true));
 
 $cmd = $argv[1] ?? 'run';
 switch ($cmd) {
 	case 'run':
-		echo csfm_cycle() . "\n";
+		try {
+			echo csfm_cycle() . "\n";
+		} catch (Throwable $e) {
+			/* Shown on the Status page and by "status", instead of failing silently every cycle. */
+			csfm_record_error('Agent cycle failed: ' . $e->getMessage() . ' (' . basename($e->getFile()) . ':' . $e->getLine() . ')');
+			fwrite(STDERR, (string)$e . "\n");
+			exit(1);
+		}
 		break;
 	case 'status':
 		$creds = csfm_credentials();

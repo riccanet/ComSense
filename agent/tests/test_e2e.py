@@ -181,6 +181,11 @@ def test_full_lifecycle(env):
         device = db.get(Device, creds["device_id"])
         assert device.hostname == "fw-e2e.example.net" and device.wan_ip == "198.51.100.20"
         assert device.capabilities == ["backup", "policy", "restore", "services"]
+        # A package service whose status check fails (its function lives in a file the CLI has not
+        # loaded, as with comsense_running() on a real firewall) is reported as unknown; the check-in
+        # still happens.
+        services = {s["name"]: s["running"] for s in device.inventory["services"]}
+        assert services == {"unbound": True, "comsense": None}
         assert device.updates["update_available"] is True
         assert db.scalar(select(Backup).where(Backup.device_id == device.id)) is not None
 

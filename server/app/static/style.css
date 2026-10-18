@@ -163,7 +163,7 @@ dd { margin: 0; word-break: break-word; }
 .s-online, .s-up, .s-running, .s-success, .s-in-sync { background: var(--ok-bg); color: var(--ok); }
 .s-offline, .s-down, .s-stopped, .s-failed, .s-expired, .sev-critical { background: var(--bad-bg); color: var(--bad); }
 .s-pending, .s-sent, .s-loss, .s-delay, .sev-warning { background: var(--warn-bg); color: var(--warn); }
-.s-disabled, .s-cancelled { background: var(--neutral-bg); color: var(--muted); }
+.s-disabled, .s-cancelled, .s-unknown { background: var(--neutral-bg); color: var(--muted); }
 
 .flash { padding: .6rem 1rem; border-radius: 6px; margin-bottom: 1rem; background: var(--neutral-bg); }
 .flash.success { background: var(--ok-bg); color: var(--ok); }

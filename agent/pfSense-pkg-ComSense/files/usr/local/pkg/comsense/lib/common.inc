@@ -6,7 +6,7 @@
  * config accessors wrapped below, so it can be exercised outside a firewall.
  */
 
-define('CSFM_AGENT_VERSION', '0.1.2');
+define('CSFM_AGENT_VERSION', '0.1.3');
 if (!defined('CSFM_DB_DIR')) {
 	/* Overridable so the agent can be exercised outside a firewall. */
 	define('CSFM_DB_DIR', '/var/db/comsense');

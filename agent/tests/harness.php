@@ -117,8 +117,17 @@ function return_gateways_status($byname = false) {
 	return array('WAN_DHCP' => array('monitorip' => '198.51.100.1', 'status' => 'online', 'delay' => '1ms', 'loss' => '0.0%'));
 }
 function return_gateways_array() { return array('WAN_DHCP' => array('gateway' => '198.51.100.1', 'friendlyiface' => 'wan')); }
-function get_services() { return array(array('name' => 'unbound', 'description' => 'DNS Resolver')); }
-function get_service_status($svc) { return true; }
+function get_services() {
+	return array(array('name' => 'unbound', 'description' => 'DNS Resolver'),
+	    array('name' => 'comsense', 'description' => 'ComSense agent'));
+}
+/* Like pfSense: a package service's status snippet calls a function from its include file. */
+function get_service_status($svc) {
+	if ($svc['name'] === 'comsense') {
+		return comsense_status_from_include_file();
+	}
+	return true;
+}
 function service_control_restart($name, $extras) { csfm_test_action("restart {$name}"); return "{$name} has been restarted."; }
 function get_system_pkg_version($baseonly = false, $use_cache = true) {
 	return array('version' => '2.7.2-RELEASE', 'installed_version' => '2.7.0-RELEASE', 'pkg_version_compare' => '<');

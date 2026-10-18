@@ -160,7 +160,7 @@ reach ComSense by then, it restores its previous configuration automatically.</d
     {% for s in inv.get("services", []) %}
       <tr>
         <td>{{ s.name }} <span class="muted small">{{ s.description }}</span></td>
-        <td>{{ status_badge("running" if s.running else "stopped") }}</td>
+        <td>{{ status_badge("unknown" if s.running is none else ("running" if s.running else "stopped")) }}</td>
         <td>
           {% if can_operate and not changes_enabled %}
           <button class="small" disabled>Restart</button>
