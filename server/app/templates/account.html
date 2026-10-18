@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}Account{% endblock %}
+{% block content %}
+<section class="card narrow">
+  <h1>Change password</h1>
+  <form method="post" action="/account/password" class="stack">
+    {{ csrf() }}
+    <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
+    <label>New password (12+ characters) <input type="password" name="new" minlength="12" autocomplete="new-password" required></label>
+    <label>Confirm new password <input type="password" name="confirm" minlength="12" autocomplete="new-password" required></label>
+    <button class="primary">Change password</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!DOCTYPE packagegui SYSTEM "../schema/packages.dtd">
+<?xml-stylesheet type="text/xsl" href="../xsl/package.xsl"?>
+<packagegui>
+	<copyright>
+	<![CDATA[
+/*
+ * pfmanager.xml
+ *
+ * Licensed under the Apache License, Version 2.0.
+ */
+	]]>
+	</copyright>
+	<name>pfmanager</name>
+	<title>Services/PfManager Agent</title>
+	<category>Services</category>
+	<version>%%PKGVERSION%%</version>
+	<include_file>/usr/local/pkg/pfmanager.inc</include_file>
+	<aftersaveredirect>/pkg_edit.php?xml=pfmanager.xml</aftersaveredirect>
+	<menu>
+		<name>PfManager Agent</name>
+		<section>Services</section>
+		<url>/pkg_edit.php?xml=pfmanager.xml</url>
+	</menu>
+	<service>
+		<name>pfmanager</name>
+		<rcfile>pfmanager.sh</rcfile>
+		<description>PfManager management agent</description>
+		<custom_php_service_status_command>pfmanager_running();</custom_php_service_status_command>
+	</service>
+	<tabs>
+		<tab>
+			<text>Settings</text>
+			<url>/pkg_edit.php?xml=pfmanager.xml</url>
+			<active/>
+		</tab>
+		<tab>
+			<text>Status</text>
+			<url>/pfmanager_status.php</url>
+		</tab>
+	</tabs>
+	<fields>
+		<field>
+			<name>Connection</name>
+			<type>listtopic</type>
+		</field>
+		<field>
+			<fielddescr>Enable</fielddescr>
+			<fieldname>enable</fieldname>
+			<type>checkbox</type>
+			<description>Run the PfManager agent</description>
+		</field>
+		<field>
+			<fielddescr>Server URL</fielddescr>
+			<fieldname>server_url</fieldname>
+			<type>input</type>
+			<size>60</size>
+			<description>HTTPS address of the management server, e.g. https://pfmanager.example.com (add :port if it is not 443). Plain HTTP is not accepted.</description>
+		</field>
+		<field>
+			<fielddescr>Enrollment key</fielddescr>
+			<fieldname>enrollment_key</fieldname>
+			<type>password</type>
+			<size>60</size>
+			<description>One-time key created under Enrollment keys on the management server. The firewall exchanges it for its own credential on save, and the key is then erased. Leave blank once enrolled; enter a new key to re-enroll.</description>
+		</field>
+		<field>
+			<fielddescr>Server CA certificate</fielddescr>
+			<fieldname>ca_cert</fieldname>
+			<type>textarea</type>
+			<encoding>base64</encoding>
+			<rows>6</rows>
+			<cols>65</cols>
+			<description>Optional. PEM certificate of the CA that signed the server certificate, if it is not publicly trusted. Leave blank for Let's Encrypt or other public CAs.</description>
+		</field>
+		<field>
+			<fielddescr>Public key pin</fielddescr>
+			<fieldname>pin_sha256</fieldname>
+			<type>input</type>
+			<size>60</size>
+			<description>Optional. Base64 SHA-256 of the server's public key; separate several with spaces. Connections to any other key are refused.</description>
+		</field>
+		<field>
+			<name>Allowed remote actions</name>
+			<type>listtopic</type>
+		</field>
+		<field>
+			<fielddescr>Monitoring</fielddescr>
+			<fieldname>none</fieldname>
+			<type>info</type>
+			<description>Health, inventory and update status are always reported while the agent is enabled. Choose below what the server may change on this firewall.</description>
+		</field>
+		<field>
+			<fielddescr>Backups</fielddescr>
+			<fieldname>allow_backup</fieldname>
+			<type>checkbox</type>
+			<default_value>on</default_value>
+			<description>Upload config.xml to the server when it changes and on request</description>
+		</field>
+		<field>
+			<fielddescr>Policies</fielddescr>
+			<fieldname>allow_policy</fieldname>
+			<type>checkbox</type>
+			<default_value>on</default_value>
+			<description>Apply aliases, firewall rules and settings defined in server policies</description>
+		</field>
+		<field>
+			<fielddescr>Packages</fielddescr>
+			<fieldname>allow_packages</fieldname>
+			<type>checkbox</type>
+			<description>Install and remove packages</description>
+		</field>
+		<field>
+			<fielddescr>Upgrades</fielddescr>
+			<fieldname>allow_upgrade</fieldname>
+			<type>checkbox</type>
+			<description>Upgrade pfSense and installed packages (system upgrades reboot the firewall)</description>
+		</field>
+		<field>
+			<fielddescr>Services</fielddescr>
+			<fieldname>allow_services</fieldname>
+			<type>checkbox</type>
+			<default_value>on</default_value>
+			<description>Restart services</description>
+		</field>
+		<field>
+			<fielddescr>Restore</fielddescr>
+			<fieldname>allow_restore</fieldname>
+			<type>checkbox</type>
+			<description>Restore a configuration backup from the server (reboots the firewall)</description>
+		</field>
+		<field>
+			<fielddescr>Reboot</fielddescr>
+			<fieldname>allow_reboot</fieldname>
+			<type>checkbox</type>
+			<description>Reboot the firewall</description>
+		</field>
+	</fields>
+	<custom_php_install_command>pfmanager_install();</custom_php_install_command>
+	<custom_php_deinstall_command>pfmanager_deinstall();</custom_php_deinstall_command>
+	<custom_php_validation_command>pfmanager_validate_input($_POST, $input_errors);</custom_php_validation_command>
+	<custom_php_resync_config_command>pfmanager_resync();</custom_php_resync_config_command>
+</packagegui>

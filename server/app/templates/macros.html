@@ -1,0 +1,14 @@
+{% macro csrf() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+{%- endmacro %}
+
+{% macro status_badge(status) -%}
+<span class="badge s-{{ status|replace(" ", "-") }}">{{ status }}</span>
+{%- endmacro %}
+
+{% macro post_button(action, label, cls="", confirm="") -%}
+<form method="post" action="{{ action }}" class="inline"{% if confirm %} data-confirm="{{ confirm }}"{% endif %}>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button class="{{ cls }}">{{ label }}</button>
+</form>
+{%- endmacro %}

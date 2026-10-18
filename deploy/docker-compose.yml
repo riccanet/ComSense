@@ -1,0 +1,56 @@
+# PfManager server: PostgreSQL + application + Caddy (automatic HTTPS).
+#
+#   cp .env.example .env && edit .env
+#   docker compose up -d
+#
+# Only Caddy is published. Firewalls connect to https://$PFM_DOMAIN (port 443).
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pfmanager
+      POSTGRES_USER: pfmanager
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pfmanager -d pfmanager"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: ../server
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      PFM_DATABASE_URL: postgresql+psycopg://pfmanager:${POSTGRES_PASSWORD}@db:5432/pfmanager
+      PFM_PUBLIC_URL: https://${PFM_DOMAIN:?set PFM_DOMAIN in .env}
+    volumes:
+      - app-data:/var/lib/pfmanager
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PFM_DOMAIN: ${PFM_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  db-data:
+  app-data:
+  caddy-data:
+  caddy-config:

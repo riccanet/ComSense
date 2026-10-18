@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "macros.html" import post_button with context %}
+{% block title %}Alerts{% endblock %}
+{% block content %}
+<h1>Alerts</h1>
+<p class="toolbar">
+  <a href="/alerts?show=open"{% if show == "open" %} class="active"{% endif %}>Open</a> ·
+  <a href="/alerts?show=all"{% if show == "all" %} class="active"{% endif %}>All</a>
+</p>
+<table class="list">
+  <thead><tr><th>Firewall</th><th>Severity</th><th>Alert</th><th>Opened</th><th>Resolved</th><th>Acknowledged</th><th></th></tr></thead>
+  <tbody>
+  {% for a in alerts %}
+    <tr>
+      <td><a href="/devices/{{ a.device_id }}">{{ a.device.name }}</a></td>
+      <td><span class="badge sev-{{ a.severity }}">{{ a.severity }}</span></td>
+      <td>{{ a.message }}</td>
+      <td>{{ a.opened_at|dt }}</td>
+      <td>{{ a.resolved_at|dt if a.resolved_at else "open" }}</td>
+      <td>{{ a.acknowledged_by }}</td>
+      <td>{% if not a.acknowledged_by and user.role.value != "viewer" %}{{ post_button("/alerts/" ~ a.id ~ "/ack", "Acknowledge", "small") }}{% endif %}</td>
+    </tr>
+  {% else %}<tr><td colspan="7" class="muted">No alerts.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

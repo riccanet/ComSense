@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Policies{% endblock %}
+{% block content %}
+<div class="heading">
+  <h1>Policies</h1>
+  {% if user.role.value != "viewer" %}<a class="button primary" href="/policies/new">New policy</a>{% endif %}
+</div>
+<p class="muted">Policies describe settings that the agent enforces on every assigned firewall. Changing a policy
+re-applies it at each firewall's next check-in; unassigning it removes only the items it created.</p>
+<table class="list">
+  <thead><tr><th>Name</th><th>Type</th><th>Revision</th><th>Assignments</th><th>Enabled</th><th>Updated</th></tr></thead>
+  <tbody>
+  {% for p in policies %}
+    <tr>
+      <td><a href="/policies/{{ p.id }}">{{ p.name }}</a><div class="muted small">{{ p.description }}</div></td>
+      <td>{{ p.type.value }}</td>
+      <td>{{ p.revision }}</td>
+      <td>{{ p.assignments|length }}</td>
+      <td>{{ "yes" if p.enabled else "no" }}</td>
+      <td>{{ p.updated_at|ago }} <span class="muted small">{{ p.updated_by }}</span></td>
+    </tr>
+  {% else %}<tr><td colspan="6" class="muted">No policies yet.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

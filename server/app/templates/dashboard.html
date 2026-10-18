@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge with context %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<div class="tiles">
+  <a class="tile" href="/devices"><span class="num">{{ total }}</span><span>Firewalls</span></a>
+  <a class="tile ok" href="/devices"><span class="num">{{ counts.online }}</span><span>Online</span></a>
+  <a class="tile bad" href="/devices"><span class="num">{{ counts.offline }}</span><span>Offline</span></a>
+  <a class="tile warn" href="/devices"><span class="num">{{ counts.pending }}</span><span>Awaiting approval</span></a>
+  <a class="tile" href="/alerts"><span class="num">{{ alerts|length }}</span><span>Open alerts</span></a>
+  <a class="tile" href="#updates"><span class="num">{{ updates|length }}</span><span>Updates available</span></a>
+</div>
+
+<div class="grid2">
+<section class="card">
+  <h2>Open alerts</h2>
+  {% if alerts %}
+  <table>
+    <thead><tr><th>Firewall</th><th>Severity</th><th>Alert</th><th>Since</th></tr></thead>
+    <tbody>
+    {% for a in alerts %}
+      <tr>
+        <td><a href="/devices/{{ a.device_id }}">{{ a.device.name }}</a></td>
+        <td><span class="badge sev-{{ a.severity }}">{{ a.severity }}</span></td>
+        <td>{{ a.message }}</td>
+        <td>{{ a.opened_at|ago }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">No open alerts.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Recent tasks</h2>
+  {% if recent_tasks %}
+  <table>
+    <thead><tr><th>#</th><th>Firewall</th><th>Task</th><th>Status</th><th>By</th><th>When</th></tr></thead>
+    <tbody>
+    {% for t in recent_tasks %}
+      <tr>
+        <td><a href="/tasks/{{ t.id }}">{{ t.id }}</a></td>
+        <td><a href="/devices/{{ t.device_id }}">{{ t.device.name }}</a></td>
+        <td>{{ t.type.value }}</td>
+        <td>{{ status_badge(t.status.value) }}</td>
+        <td>{{ t.created_by }}</td>
+        <td>{{ t.created_at|ago }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">No tasks yet.</p>{% endif %}
+</section>
+</div>
+
+<section class="card" id="updates">
+  <h2>Updates available</h2>
+  {% if updates %}
+  <table>
+    <thead><tr><th>Firewall</th><th>Installed</th><th>Available</th></tr></thead>
+    <tbody>
+    {% for d in updates %}
+      <tr>
+        <td><a href="/devices/{{ d.id }}">{{ d.name }}</a></td>
+        <td>{{ d.updates.installed_version }}</td>
+        <td>{{ d.updates.version }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">Every firewall that reported is up to date.</p>{% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,26 @@
+#!/bin/sh
+#
+# PfManager agent loop. Started by /usr/local/etc/rc.d/pfmanager.sh under
+# daemon(8). Each cycle runs in a fresh PHP process so it always sees the
+# current config.xml, and lockf(1) stops a manual "check in now" from
+# overlapping with a scheduled cycle.
+
+PHP=/usr/local/bin/php
+AGENT=/usr/local/pkg/pfmanager/agent.php
+INTERVAL_FILE=/var/db/pfmanager/interval
+LOCK=/var/run/pfmanager_agent.lock
+
+# Spread check-ins from many firewalls that boot at the same time.
+sleep $(( $(/usr/bin/jot -r 1 0 20) ))
+
+while true; do
+	/usr/bin/lockf -s -t 0 "${LOCK}" /usr/bin/timeout 3600 "${PHP}" -f "${AGENT}" run >/dev/null 2>&1
+	INTERVAL=60
+	if [ -r "${INTERVAL_FILE}" ]; then
+		INTERVAL=$(/bin/cat "${INTERVAL_FILE}")
+	fi
+	case "${INTERVAL}" in
+		''|*[!0-9]*) INTERVAL=60 ;;
+	esac
+	sleep "${INTERVAL}"
+done

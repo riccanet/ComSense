@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge, csrf, post_button with context %}
+{% block title %}{{ device.name }}{% endblock %}
+{% block content %}
+{% set inv = device.inventory or {} %}
+{% set sysinfo = inv.get("system", {}) %}
+{% set m = inv.get("metrics", {}) %}
+{% set can_operate = user.role.value in ("operator", "admin") %}
+{% set is_admin = user.role.value == "admin" %}
+
+<div class="heading">
+  <h1>{{ device.name }} {{ status_badge(device.status.value) }}</h1>
+  <div class="actions">
+    {% if is_admin and device.status.value == "pending" %}
+    <form method="post" action="/devices/{{ device.id }}/status" class="inline">
+      {{ csrf() }}<input type="hidden" name="action" value="approve"><button class="primary">Approve</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if device.status.value == "pending" %}
+<div class="flash warn">This firewall enrolled with a key that requires approval. It receives no tasks until an admin approves it.</div>
+{% endif %}
+
+<div class="grid3">
+  <section class="card">
+    <h2>System</h2>
+    <dl>
+      <dt>Hostname</dt><dd>{{ device.hostname }}</dd>
+      <dt>Edition</dt><dd>{{ "pfSense Plus" if device.edition == "plus" else "pfSense CE" if device.edition == "ce" else device.edition }}</dd>
+      <dt>Version</dt><dd>{{ device.product_version }}</dd>
+      <dt>Platform</dt><dd>{{ device.platform }}</dd>
+      <dt>Serial / ID</dt><dd>{{ device.serial or device.unique_id }}</dd>
+      <dt>Agent</dt><dd>{{ device.agent_version }}</dd>
+      <dt>WAN IP</dt><dd>{{ device.wan_ip }}</dd>
+      <dt>Checks in from</dt><dd>{{ device.last_seen_ip }}</dd>
+      <dt>Last seen</dt><dd>{{ device.last_seen_at|ago }}</dd>
+      <dt>Enrolled</dt><dd>{{ device.enrolled_at|dt }}</dd>
+      <dt>Allowed actions</dt><dd>{{ device.capabilities|join(", ") or "monitoring only" }}</dd>
+    </dl>
+  </section>
+
+  <section class="card">
+    <h2>Health</h2>
+    <dl>
+      <dt>Uptime</dt><dd>{{ ((m.uptime or 0) // 86400) }}d {{ ((m.uptime or 0) % 86400 // 3600) }}h</dd>
+      <dt>CPU</dt><dd>{{ "%.1f%%"|format(m.cpu_pct) if m.cpu_pct is number else "—" }}</dd>
+      <dt>Load</dt><dd>{{ (m.load or [])|join(" / ") }}</dd>
+      <dt>Memory</dt><dd>{{ "%.1f%%"|format(m.mem_pct) if m.mem_pct is number else "—" }}</dd>
+      <dt>Disk</dt><dd>{{ "%.1f%%"|format(m.disk_pct) if m.disk_pct is number else "—" }}</dd>
+      <dt>States</dt><dd>{{ m.states }} / {{ m.states_max }}</dd>
+      <dt>Config</dt><dd class="mono small">{{ device.config_sha256[:16] }}</dd>
+    </dl>
+    <canvas id="metrics-chart" width="420" height="140" aria-label="CPU and memory over 24 hours"></canvas>
+    <script type="application/json" id="metrics-data">{{ metrics|tojson }}</script>
+    <p class="small muted"><span class="key cpu"></span>CPU % <span class="key mem"></span>Memory %, last 24 hours</p>
+  </section>
+
+  <section class="card">
+    <h2>Updates</h2>
+    {% set up = device.updates or {} %}
+    {% if up %}
+      <dl>
+        <dt>Installed</dt><dd>{{ up.installed_version }}</dd>
+        <dt>Latest</dt><dd>{{ up.version }}</dd>
+        <dt>Status</dt><dd>{% if up.update_available %}<span class="badge s-pending">update available</span>{% else %}up to date{% endif %}</dd>
+        <dt>Package updates</dt><dd>{{ (up.packages or [])|length }}</dd>
+      </dl>
+      {% if up.packages %}
+      <ul class="small">{% for p in up.packages %}<li>{{ p.name }} {{ p.installed }} → {{ p.available }}</li>{% endfor %}</ul>
+      {% endif %}
+      <p class="small muted">Checked {{ up.checked_at or "" }}</p>
+    {% else %}<p class="muted">No update information yet.</p>{% endif %}
+
+    {% if can_operate %}
+    <h3>Run a task</h3>
+    <form method="post" action="/devices/{{ device.id }}/tasks" class="stack" data-confirm-select>
+      {{ csrf() }}
+      <select name="task_type">
+        {% for t, label in manual_tasks.items() %}
+          {% set cap = task_capability[t] %}
+          <option value="{{ t.value }}"{% if cap and cap not in device.capabilities %} disabled{% endif %}>{{ label }}{% if cap and cap not in device.capabilities %} (not allowed on firewall){% endif %}</option>
+        {% endfor %}
+      </select>
+      <button>Queue task</button>
+    </form>
+    {% endif %}
+  </section>
+</div>
+
+<section class="card">
+  <h2>Interfaces</h2>
+  <table>
+    <thead><tr><th>Interface</th><th>Device</th><th>Status</th><th>IPv4</th><th>IPv6</th><th>Media</th><th>In</th><th>Out</th><th>Errors</th></tr></thead>
+    <tbody>
+    {% for i in inv.get("interfaces", []) %}
+      <tr>
+        <td>{{ i.descr }} <span class="muted small">{{ i.name }}</span></td>
+        <td>{{ i.if }}</td>
+        <td>{{ status_badge(i.status) }}</td>
+        <td>{{ i.ipaddr }}{% if i.subnet %}/{{ i.subnet }}{% endif %}</td>
+        <td class="small">{{ i.ipaddrv6 }}</td>
+        <td class="small">{{ i.media }}</td>
+        <td>{{ i.inbytes|bytes }}</td>
+        <td>{{ i.outbytes|bytes }}</td>
+        <td>{{ (i.inerrs or 0) + (i.outerrs or 0) }}</td>
+      </tr>
+    {% else %}<tr><td colspan="9" class="muted">Not reported yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<div class="grid2">
+<section class="card">
+  <h2>Gateways</h2>
+  <table>
+    <thead><tr><th>Name</th><th>Gateway</th><th>Monitor</th><th>Status</th><th>Delay</th><th>Loss</th></tr></thead>
+    <tbody>
+    {% for g in inv.get("gateways", []) %}
+      <tr><td>{{ g.name }}</td><td>{{ g.gateway }}</td><td>{{ g.monitor }}</td><td>{{ status_badge(g.status) }}</td><td>{{ g.delay }}</td><td>{{ g.loss }}</td></tr>
+    {% else %}<tr><td colspan="6" class="muted">None reported.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Services</h2>
+  <table>
+    <thead><tr><th>Service</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for s in inv.get("services", []) %}
+      <tr>
+        <td>{{ s.name }} <span class="muted small">{{ s.description }}</span></td>
+        <td>{{ status_badge("running" if s.running else "stopped") }}</td>
+        <td>
+          {% if can_operate and "services" in device.capabilities %}
+          <form method="post" action="/devices/{{ device.id }}/tasks" class="inline">
+            {{ csrf() }}
+            <input type="hidden" name="task_type" value="restart_service">
+            <input type="hidden" name="service" value="{{ s.name }}">
+            <button class="small">Restart</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}<tr><td colspan="3" class="muted">None reported.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+</div>
+
+<div class="grid2">
+<section class="card">
+  <h2>Packages</h2>
+  <table>
+    <thead><tr><th>Package</th><th>Version</th></tr></thead>
+    <tbody>
+    {% for p in inv.get("packages", []) %}<tr><td>{{ p.name }}</td><td>{{ p.version }}</td></tr>
+    {% else %}<tr><td colspan="2" class="muted">None reported.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if can_operate and "packages" in device.capabilities %}
+  <form method="post" action="/devices/{{ device.id }}/tasks" class="toolbar">
+    {{ csrf() }}
+    <input name="package" placeholder="pfSense-pkg-name" required>
+    <select name="task_type"><option value="install_package">Install</option><option value="remove_package">Remove</option></select>
+    <button>Queue</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Policies</h2>
+  <table>
+    <thead><tr><th>Policy</th><th>Type</th><th>State</th><th></th></tr></thead>
+    <tbody>
+    {% for ps in policy_state %}
+      <tr>
+        <td><a href="/policies/{{ ps.policy.id }}">{{ ps.policy.name }}</a> <span class="muted small">rev {{ ps.policy.revision }}</span></td>
+        <td>{{ ps.policy.type.value }}</td>
+        <td>{{ status_badge("in sync" if ps.in_sync else "pending") }}</td>
+        <td>{% if can_operate and ps.direct %}{{ post_button("/devices/" ~ device.id ~ "/policies/" ~ ps.policy.id ~ "/unassign", "Unassign", "small") }}{% elif not ps.direct %}<span class="muted small">via org/global</span>{% endif %}</td>
+      </tr>
+    {% else %}<tr><td colspan="4" class="muted">No policies assigned.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if "policy" not in device.capabilities %}<p class="small muted">Policy management is turned off on this firewall.</p>{% endif %}
+  {% if can_operate and assignable %}
+  <form method="post" action="/devices/{{ device.id }}/policies" class="toolbar">
+    {{ csrf() }}
+    <select name="policy_id">{% for p in assignable %}<option value="{{ p.id }}">{{ p.name }} ({{ p.type.value }})</option>{% endfor %}</select>
+    <button>Assign</button>
+  </form>
+  {% endif %}
+</section>
+</div>
+
+<section class="card" id="backups">
+  <h2>Configuration backups</h2>
+  <table>
+    <thead><tr><th>Taken</th><th>Reason</th><th>Config change</th><th>Version</th><th>Size</th><th>SHA-256</th><th></th></tr></thead>
+    <tbody>
+    {% for b in backups %}
+      <tr>
+        <td>{{ b.created_at|dt }}{% if b.pinned %} <span class="badge">pinned</span>{% endif %}</td>
+        <td>{{ b.reason }}</td>
+        <td class="small">{{ b.config_revision }}</td>
+        <td>{{ b.product_version }}</td>
+        <td>{{ b.size|bytes }}</td>
+        <td class="mono small">{{ b.sha256[:12] }}</td>
+        <td class="nowrap">
+          {% if can_operate %}
+          <a class="button small" href="/backups/{{ b.id }}/download">Download</a>
+          {{ post_button("/backups/" ~ b.id ~ "/pin", "Unpin" if b.pinned else "Pin", "small") }}
+          {% endif %}
+          {% if is_admin %}
+          <details class="inline">
+            <summary class="button small">Restore…</summary>
+            <form method="post" action="/backups/{{ b.id }}/restore" class="stack">
+              {{ csrf() }}
+              <span class="small">Replaces the running configuration and reboots the firewall. Type <strong>{{ device.name }}</strong> to confirm.</span>
+              <input name="confirm" required>
+              <button class="danger small">Restore and reboot</button>
+            </form>
+          </details>
+          {{ post_button("/backups/" ~ b.id ~ "/delete", "Delete", "small danger", "Delete this backup permanently?") }}
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}<tr><td colspan="7" class="muted">No backups yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<div class="grid2">
+<section class="card">
+  <h2>Tasks</h2>
+  <table>
+    <thead><tr><th>#</th><th>Task</th><th>Status</th><th>By</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+    {% for t in tasks %}
+      <tr>
+        <td><a href="/tasks/{{ t.id }}">{{ t.id }}</a></td>
+        <td>{{ t.type.value }}{% if t.payload.policy %} <span class="muted small">{{ t.payload.policy.name }}</span>{% endif %}</td>
+        <td>{{ status_badge(t.status.value) }}</td>
+        <td>{{ t.created_by }}</td>
+        <td>{{ t.created_at|ago }}</td>
+        <td>{% if can_operate and t.status.value == "pending" %}{{ post_button("/tasks/" ~ t.id ~ "/cancel", "Cancel", "small") }}{% endif %}</td>
+      </tr>
+    {% else %}<tr><td colspan="6" class="muted">No tasks yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Alerts</h2>
+  <table>
+    <thead><tr><th>Severity</th><th>Alert</th><th>Opened</th><th>Resolved</th></tr></thead>
+    <tbody>
+    {% for a in alerts %}
+      <tr>
+        <td><span class="badge sev-{{ a.severity }}">{{ a.severity }}</span></td>
+        <td>{{ a.message }}</td>
+        <td>{{ a.opened_at|dt }}</td>
+        <td>{{ a.resolved_at|dt if a.resolved_at else "open" }}</td>
+      </tr>
+    {% else %}<tr><td colspan="4" class="muted">No alerts.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+</div>
+
+{% if can_operate %}
+<section class="card">
+  <h2>Settings</h2>
+  <form method="post" action="/devices/{{ device.id }}/edit" class="grid-form">
+    {{ csrf() }}
+    <label>Name <input name="name" value="{{ device.name }}" required></label>
+    <label>Organization
+      <select name="organization_id">
+        <option value="">None</option>
+        {% for o in orgs %}<option value="{{ o.id }}"{% if device.organization_id == o.id %} selected{% endif %}>{{ o.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="wide">Notes <textarea name="notes" rows="3">{{ device.notes }}</textarea></label>
+    <button>Save</button>
+  </form>
+  {% if is_admin %}
+  <div class="toolbar danger-zone">
+    {% if device.status.value == "disabled" %}
+      <form method="post" action="/devices/{{ device.id }}/status" class="inline">{{ csrf() }}<input type="hidden" name="action" value="enable"><button>Enable</button></form>
+    {% else %}
+      <form method="post" action="/devices/{{ device.id }}/status" class="inline" data-confirm="Disable this firewall? Its agent will be rejected until re-enabled.">{{ csrf() }}<input type="hidden" name="action" value="disable"><button class="danger">Disable</button></form>
+    {% endif %}
+    {{ post_button("/devices/" ~ device.id ~ "/delete", "Delete firewall", "danger", "Delete this firewall, its history and all of its backups? The agent will need a new enrollment key.") }}
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

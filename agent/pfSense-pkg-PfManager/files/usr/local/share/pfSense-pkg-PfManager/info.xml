@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<pfsensepkgs>
+<package>
+	<name>pfmanager</name>
+	<descr><![CDATA[PfManager agent: connects this firewall to a PfManager server for monitoring, configuration backups, policy management and updates. All communication is outbound HTTPS initiated by the firewall.]]></descr>
+	<pkginfolink>https://github.com/riccanet/PfManager</pkginfolink>
+	<version>%%PKGVERSION%%</version>
+	<configurationfile>pfmanager.xml</configurationfile>
+	<include_file>/usr/local/pkg/pfmanager.inc</include_file>
+</package>
+</pfsensepkgs>

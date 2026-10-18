@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, post_button, status_badge with context %}
+{% block title %}{{ policy.name if policy else "New policy" }}{% endblock %}
+{% block content %}
+{% set can_edit = user.role.value != "viewer" %}
+<h1>{{ policy.name if policy else "New policy" }}</h1>
+
+<section class="card">
+  <form method="post" action="{{ '/policies/' ~ policy.id if policy else '/policies' }}" class="stack">
+    {{ csrf() }}
+    <div class="grid-form">
+      <label>Name <input name="name" value="{{ policy.name if policy else (name or '') }}" required {% if not can_edit %}readonly{% endif %}></label>
+      <label>Type
+        {% if policy %}
+          <input value="{{ policy.type.value }}" readonly>
+        {% else %}
+          <select name="type" id="policy-type">
+            {% for t in types %}<option value="{{ t.value }}"{% if t == ptype %} selected{% endif %}>{{ t.value }}</option>{% endfor %}
+          </select>
+        {% endif %}
+      </label>
+      <label class="wide">Description <input name="description" value="{{ policy.description if policy else (description or '') }}" {% if not can_edit %}readonly{% endif %}></label>
+      {% if policy %}<label class="check"><input type="checkbox" name="enabled" value="true"{% if policy.enabled %} checked{% endif %}> Enabled</label>{% endif %}
+    </div>
+    <label>Content (JSON) — see docs/POLICIES.md for every field
+      <textarea name="content" id="policy-content" rows="24" class="mono" spellcheck="false" {% if not can_edit %}readonly{% endif %}>{{ content }}</textarea>
+    </label>
+    {% if examples %}<script type="application/json" id="policy-examples">{{ examples|tojson }}</script>{% endif %}
+    {% if can_edit %}<div><button class="primary">{{ "Save new revision" if policy else "Create policy" }}</button></div>{% endif %}
+  </form>
+  {% if policy %}<p class="small muted">Revision {{ policy.revision }}, updated {{ policy.updated_at|dt }} by {{ policy.updated_by }}</p>{% endif %}
+</section>
+
+{% if policy %}
+<div class="grid2">
+<section class="card">
+  <h2>Assignments</h2>
+  <table>
+    <tbody>
+    {% for a in policy.assignments %}
+      <tr>
+        <td>{% if a.all_devices %}All firewalls{% elif a.organization %}Organization: {{ a.organization.name }}{% elif a.device %}Firewall: <a href="/devices/{{ a.device.id }}">{{ a.device.name }}</a>{% endif %}</td>
+        <td>{% if can_edit %}{{ post_button("/assignments/" ~ a.id ~ "/delete", "Remove", "small") }}{% endif %}</td>
+      </tr>
+    {% else %}<tr><td class="muted">Not assigned.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if can_edit %}
+  <form method="post" action="/policies/{{ policy.id }}/assign" class="toolbar">
+    {{ csrf() }}
+    <select name="target">
+      <option value="all:">All firewalls</option>
+      <optgroup label="Organizations">{% for o in orgs %}<option value="org:{{ o.id }}">{{ o.name }}</option>{% endfor %}</optgroup>
+      <optgroup label="Firewalls">{% for d in devices %}<option value="device:{{ d.id }}">{{ d.name }}</option>{% endfor %}</optgroup>
+    </select>
+    <button>Assign</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Compliance</h2>
+  <table>
+    <thead><tr><th>Firewall</th><th>State</th></tr></thead>
+    <tbody>
+    {% for d, ok in targets %}
+      <tr><td><a href="/devices/{{ d.id }}">{{ d.name }}</a></td><td>{{ status_badge("in sync" if ok else "pending") }}</td></tr>
+    {% else %}<tr><td colspan="2" class="muted">No firewalls receive this policy.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+</div>
+{% if can_edit %}
+<p>{{ post_button("/policies/" ~ policy.id ~ "/delete", "Delete policy", "danger", "Delete this policy? Firewalls remove what it created.") }}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

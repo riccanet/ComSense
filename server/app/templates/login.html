@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+<section class="card narrow">
+  <h1>PfManager</h1>
+  <p class="muted">pfSense fleet management</p>
+  <form method="post" action="/login" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Username <input name="username" autocomplete="username" required autofocus></label>
+    <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+    <button class="primary">Sign in</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge with context %}
+{% block title %}Task {{ task.id }}{% endblock %}
+{% block content %}
+<h1>Task #{{ task.id }} · {{ task.type.value }} {{ status_badge(task.status.value) }}</h1>
+<section class="card">
+  <dl>
+    <dt>Firewall</dt><dd><a href="/devices/{{ task.device_id }}">{{ task.device.name }}</a></dd>
+    <dt>Requested by</dt><dd>{{ task.created_by }}</dd>
+    <dt>Created</dt><dd>{{ task.created_at|dt }}</dd>
+    <dt>Sent to agent</dt><dd>{{ task.sent_at|dt }}</dd>
+    <dt>Finished</dt><dd>{{ task.finished_at|dt }}</dd>
+  </dl>
+  <h2>Payload</h2>
+  <pre>{{ task.payload|pretty_json }}</pre>
+  {% if task.result %}<h2>Result</h2><pre>{{ task.result|pretty_json }}</pre>{% endif %}
+  <h2>Output</h2>
+  <pre>{{ task.output or "(none)" }}</pre>
+</section>
+{% endblock %}

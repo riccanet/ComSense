@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+<h1>Audit log</h1>
+<table class="list">
+  <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th><th>IP</th></tr></thead>
+  <tbody>
+  {% for e in entries %}
+    <tr><td class="nowrap">{{ e.ts|dt }}</td><td>{{ e.actor }}</td><td>{{ e.action }}</td><td class="small">{{ e.target }}</td><td class="small">{{ e.detail }}</td><td>{{ e.ip }}</td></tr>
+  {% else %}<tr><td colspan="6" class="muted">Nothing logged yet.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

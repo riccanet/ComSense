@@ -1,0 +1,325 @@
+from __future__ import annotations
+
+import enum
+import uuid
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .db import Base
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def new_uuid() -> str:
+    return str(uuid.uuid4())
+
+
+class Role(str, enum.Enum):
+    admin = "admin"  # everything, including users and enrollment keys
+    operator = "operator"  # manage devices, policies, backups
+    viewer = "viewer"  # read-only
+
+
+class DeviceStatus(str, enum.Enum):
+    pending = "pending"  # enrolled, waiting for admin approval
+    online = "online"
+    offline = "offline"
+    disabled = "disabled"  # admin disabled; agent calls are rejected
+
+
+class TaskStatus(str, enum.Enum):
+    pending = "pending"  # queued on the server
+    sent = "sent"  # handed to the agent in a check-in response
+    running = "running"  # agent reported it is still working (e.g. upgrade)
+    success = "success"
+    failed = "failed"
+    cancelled = "cancelled"
+    expired = "expired"
+
+
+class TaskType(str, enum.Enum):
+    backup = "backup"
+    apply_policy = "apply_policy"
+    remove_policy = "remove_policy"
+    check_updates = "check_updates"
+    upgrade_system = "upgrade_system"
+    install_package = "install_package"
+    remove_package = "remove_package"
+    upgrade_packages = "upgrade_packages"
+    restart_service = "restart_service"
+    restore_backup = "restore_backup"
+    reboot = "reboot"
+    refresh_inventory = "refresh_inventory"
+
+
+class PolicyType(str, enum.Enum):
+    aliases = "aliases"
+    firewall_rules = "firewall_rules"
+    system = "system"
+    packages = "packages"
+    config_set = "config_set"
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[Role] = mapped_column(Enum(Role, native_enum=False), default=Role.viewer)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Organization(Base):
+    """A customer / site grouping. Enrollment keys place new firewalls into one."""
+
+    __tablename__ = "organizations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    devices: Mapped[list[Device]] = relationship(back_populates="organization")
+
+
+class EnrollmentKey(Base):
+    __tablename__ = "enrollment_keys"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    # First characters of the key, shown in the UI so admins can tell keys apart.
+    prefix: Mapped[str] = mapped_column(String(16), index=True)
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    max_uses: Mapped[int | None] = mapped_column(Integer)
+    use_count: Mapped[int] = mapped_column(Integer, default=0)
+    require_approval: Mapped[bool] = mapped_column(Boolean, default=False)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    organization: Mapped[Organization | None] = relationship()
+
+    def usable(self, now: datetime | None = None) -> bool:
+        now = now or utcnow()
+        if self.revoked:
+            return False
+        if self.expires_at is not None and aware(self.expires_at) <= now:
+            return False
+        if self.max_uses is not None and self.use_count >= self.max_uses:
+            return False
+        return True
+
+
+class Device(Base):
+    __tablename__ = "devices"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    name: Mapped[str] = mapped_column(String(128))
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"), index=True)
+    status: Mapped[DeviceStatus] = mapped_column(
+        Enum(DeviceStatus, native_enum=False), default=DeviceStatus.online
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    token_rotated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # pfSense's own hardware identifier (system_get_uniqueid / Netgate Device ID).
+    unique_id: Mapped[str] = mapped_column(String(128), default="", index=True)
+
+    hostname: Mapped[str] = mapped_column(String(255), default="")
+    edition: Mapped[str] = mapped_column(String(32), default="")  # "ce" or "plus"
+    product_version: Mapped[str] = mapped_column(String(64), default="")
+    agent_version: Mapped[str] = mapped_column(String(32), default="")
+    platform: Mapped[str] = mapped_column(String(128), default="")
+    serial: Mapped[str] = mapped_column(String(128), default="")
+    wan_ip: Mapped[str] = mapped_column(String(64), default="")
+    last_seen_ip: Mapped[str] = mapped_column(String(64), default="")
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    enrolled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    enrollment_key_id: Mapped[int | None] = mapped_column(ForeignKey("enrollment_keys.id"))
+
+    # Latest full snapshot reported by the agent (interfaces, gateways, services, ...).
+    inventory: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # Latest update information: {"installed": ..., "available": ..., "packages": [...]}
+    updates: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # Policy hashes the agent reports as applied: {"<policy id>": "<sha256>"}
+    applied_policies: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # Actions the firewall owner allowed locally in the package settings.
+    capabilities: Mapped[list[str]] = mapped_column(JSON, default=list)
+    config_sha256: Mapped[str] = mapped_column(String(64), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+    organization: Mapped[Organization | None] = relationship(back_populates="devices")
+    tasks: Mapped[list[Task]] = relationship(
+        back_populates="device", cascade="all, delete-orphan", order_by="Task.id.desc()"
+    )
+    backups: Mapped[list[Backup]] = relationship(
+        back_populates="device", cascade="all, delete-orphan", order_by="Backup.id.desc()"
+    )
+    metrics: Mapped[list[Metric]] = relationship(
+        back_populates="device", cascade="all, delete-orphan"
+    )
+    policy_assignments: Mapped[list[PolicyAssignment]] = relationship(
+        back_populates="device", cascade="all, delete-orphan"
+    )
+    alerts: Mapped[list[Alert]] = relationship(
+        back_populates="device", cascade="all, delete-orphan"
+    )
+
+    @property
+    def display_status(self) -> str:
+        return self.status.value
+
+
+class Metric(Base):
+    __tablename__ = "metrics"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    cpu_pct: Mapped[float | None]
+    mem_pct: Mapped[float | None]
+    disk_pct: Mapped[float | None]
+    load1: Mapped[float | None]
+    states: Mapped[int | None]
+    states_max: Mapped[int | None]
+    uptime: Mapped[int | None]
+
+    device: Mapped[Device] = relationship(back_populates="metrics")
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    type: Mapped[TaskType] = mapped_column(Enum(TaskType, native_enum=False))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    status: Mapped[TaskStatus] = mapped_column(
+        Enum(TaskStatus, native_enum=False), default=TaskStatus.pending, index=True
+    )
+    created_by: Mapped[str] = mapped_column(String(64), default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Tasks not picked up before this time expire instead of running late.
+    not_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    result: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    output: Mapped[str] = mapped_column(Text, default="")
+
+    device: Mapped[Device] = relationship(back_populates="tasks")
+
+
+class Backup(Base):
+    __tablename__ = "backups"
+    __table_args__ = (UniqueConstraint("device_id", "sha256", name="uq_backup_device_sha"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    sha256: Mapped[str] = mapped_column(String(64))
+    size: Mapped[int] = mapped_column(Integer)
+    # Path relative to Settings.backup_dir. Contents are Fernet-encrypted gzip.
+    path: Mapped[str] = mapped_column(String(255))
+    reason: Mapped[str] = mapped_column(String(64), default="")
+    config_revision: Mapped[str] = mapped_column(String(255), default="")
+    product_version: Mapped[str] = mapped_column(String(64), default="")
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    task_id: Mapped[int | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"))
+
+    device: Mapped[Device] = relationship(back_populates="backups")
+
+
+class Policy(Base):
+    __tablename__ = "policies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True)
+    type: Mapped[PolicyType] = mapped_column(Enum(PolicyType, native_enum=False))
+    description: Mapped[str] = mapped_column(Text, default="")
+    # Type-specific document; validated by services.policies.validate_policy.
+    content: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(64), default="")
+
+    assignments: Mapped[list[PolicyAssignment]] = relationship(
+        back_populates="policy", cascade="all, delete-orphan"
+    )
+
+
+class PolicyAssignment(Base):
+    """Assigns a policy either to one device or to every device in an organization."""
+
+    __tablename__ = "policy_assignments"
+    __table_args__ = (
+        UniqueConstraint("policy_id", "device_id", "organization_id", name="uq_policy_target"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    policy_id: Mapped[int] = mapped_column(ForeignKey("policies.id", ondelete="CASCADE"), index=True)
+    device_id: Mapped[str | None] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"))
+    organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE")
+    )
+    # Applies to every device regardless of organization.
+    all_devices: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    policy: Mapped[Policy] = relationship(back_populates="assignments")
+    device: Mapped[Device | None] = relationship(back_populates="policy_assignments")
+    organization: Mapped[Organization | None] = relationship()
+
+
+class Alert(Base):
+    __tablename__ = "alerts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    # Stable key so the same condition is not raised twice, e.g. "offline" or "gateway:WAN_DHCP".
+    key: Mapped[str] = mapped_column(String(128))
+    severity: Mapped[str] = mapped_column(String(16), default="warning")
+    message: Mapped[str] = mapped_column(Text)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    acknowledged_by: Mapped[str] = mapped_column(String(64), default="")
+
+    device: Mapped[Device] = relationship(back_populates="alerts")
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    actor: Mapped[str] = mapped_column(String(64))  # username, "agent:<device id>" or "system"
+    action: Mapped[str] = mapped_column(String(64))
+    target: Mapped[str] = mapped_column(String(255), default="")
+    detail: Mapped[str] = mapped_column(Text, default="")
+    ip: Mapped[str] = mapped_column(String(64), default="")
+
+
+def aware(dt: datetime) -> datetime:
+    # SQLite drops tzinfo; treat naive values as UTC.
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}PfManager{% endblock %} · PfManager</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+{% if user %}
+<header class="topbar">
+  <a class="brand" href="/">PfManager</a>
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="/devices">Firewalls</a>
+    <a href="/policies">Policies</a>
+    <a href="/alerts">Alerts</a>
+    <a href="/organizations">Organizations</a>
+    {% if user.role == Role.admin %}
+    <a href="/keys">Enrollment keys</a>
+    <a href="/users">Users</a>
+    <a href="/audit">Audit log</a>
+    {% endif %}
+  </nav>
+  <div class="who">
+    <a href="/account">{{ user.username }}</a> <span class="muted">({{ user.role.value }})</span>
+    <form method="post" action="/logout" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="link">Sign out</button>
+    </form>
+  </div>
+</header>
+{% endif %}
+<main>
+  {% for category, message in flashes %}
+  <div class="flash {{ category }}">{{ message }}</div>
+  {% endfor %}
+  {% block content %}{% endblock %}
+</main>
+<footer class="muted">PfManager {{ version }}</footer>
+</body>
+</html>

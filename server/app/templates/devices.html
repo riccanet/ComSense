@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge, csrf with context %}
+{% block title %}Firewalls{% endblock %}
+{% block content %}
+<h1>Firewalls</h1>
+<form method="get" class="toolbar">
+  <input name="q" value="{{ q }}" placeholder="Search name, hostname or WAN IP">
+  <select name="org">
+    <option value="">All organizations</option>
+    {% for o in orgs %}<option value="{{ o.id }}"{% if org == o.id %} selected{% endif %}>{{ o.name }}</option>{% endfor %}
+  </select>
+  <button>Filter</button>
+</form>
+
+<form method="post" action="/devices/bulk">
+  {{ csrf() }}
+  <table class="list">
+    <thead>
+      <tr>
+        <th><input type="checkbox" data-select-all="device_ids" aria-label="Select all"></th>
+        <th>Name</th><th>Organization</th><th>Status</th><th>Edition / version</th>
+        <th>WAN IP</th><th>Last seen</th><th>Alerts</th><th>Updates</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for d in devices %}
+      <tr>
+        <td><input type="checkbox" name="device_ids" value="{{ d.id }}"></td>
+        <td><a href="/devices/{{ d.id }}">{{ d.name }}</a><div class="muted small">{{ d.hostname }}</div></td>
+        <td>{{ d.organization.name if d.organization else "—" }}</td>
+        <td>{{ status_badge(d.status.value) }}</td>
+        <td>{{ "Plus" if d.edition == "plus" else "CE" if d.edition == "ce" else d.edition }} {{ d.product_version }}</td>
+        <td>{{ d.wan_ip }}</td>
+        <td>{{ d.last_seen_at|ago }}</td>
+        <td>{% if open_alerts.get(d.id) %}<span class="badge sev-warning">{{ open_alerts[d.id] }}</span>{% endif %}</td>
+        <td>{% if d.updates.update_available %}<span class="badge s-pending">{{ d.updates.version }}</span>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="9" class="muted">No firewalls yet. Create an <a href="/keys">enrollment key</a> and install the agent package on a firewall.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if user.role.value != "viewer" and devices %}
+  <div class="toolbar">
+    <label>With selected:
+      <select name="task_type">
+        {% for t, label in bulk_tasks.items() %}<option value="{{ t.value }}">{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <button>Queue</button>
+  </div>
+  {% endif %}
+</form>
+{% endblock %}
