@@ -83,11 +83,12 @@ docs/                        Server, agent, protocol, policy and security docume
    `sudo ./deploy/install-debian.sh [--byo-proxy] comsense.example.com`.
    Details in [docs/SERVER.md](docs/SERVER.md).
 
-2. **Package**: build `pfSense-pkg-ComSense-<version>.pkg` (`sh agent/build-pkg.sh` on FreeBSD or
-   pfSense, or download it from the CI artifacts) and copy it into the server's `downloads` data
-   folder so firewalls can fetch it.
+2. **Sign in and run the setup wizard**: the first admin's one-time password is in the server log. After
+   you choose a new one, the wizard asks for the console and agent addresses and the SMTP server, then
+   gets your first firewall connected. The server builds the agent package itself, so there is nothing
+   to build or copy.
 
-3. **Enroll a firewall**: in the console, go to **Enrollment keys** and create a key. The page shows an
+3. **Enroll more firewalls**: go to **Enrollment keys** and create a key. The page shows an
    install command (it downloads the package from the agent port and checks its SHA-256) and an
    **enrollment code**. On the firewall, run the install command, then open
    **Services > ComSense Agent**, tick *Enable*, paste the code, choose which remote actions to allow,

@@ -53,7 +53,9 @@ services:
         max-file: "3"
 
   app:
-    build: ../server
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
     image: comsense-server:local
     container_name: comsense-app
     restart: unless-stopped

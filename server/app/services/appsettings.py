@@ -23,6 +23,7 @@ from ..models import AppSetting, utcnow
 EMAIL_KEY = "email"
 ALERT_EMAIL_KEY = "alert_email"
 AGENT_NETWORK_KEY = "agent_network"
+SITE_KEY = "site"
 SMTP_SECURITY = ("starttls", "ssl", "none")
 SEVERITIES = ("warning", "critical")
 
@@ -63,6 +64,15 @@ class AgentNetworkSettings:
     # Address firewalls connect to (https://host:port), put into new enrollment codes.
     # Empty: the default from CSFM_AGENT_URL / the console's host name.
     agent_url: str = ""
+
+
+@dataclass
+class SiteSettings:
+    # Web console address used in email links (https://host[:port]). Empty: CSFM_PUBLIC_URL.
+    console_url: str = ""
+    # Set when an admin finishes (or skips) the first-run setup wizard.
+    setup_completed_at: str = ""
+    setup_completed_by: str = ""
 
 
 def _secret_box(secret_key: str) -> Fernet:
@@ -130,31 +140,64 @@ def normalize_agent_url(value: str, default_port: int) -> str:
     value = value.strip().rstrip("/")
     if not value:
         return ""
-    if "://" not in value:
-        value = "https://" + value
-    parts = urlsplit(value)
-    if parts.scheme != "https":
-        raise ValueError("Firewalls only connect over HTTPS")
-    if parts.path or parts.query or parts.fragment or parts.username or parts.password:
-        raise ValueError("Enter only a host name and an optional port")
-    host = parts.hostname or ""
-    try:
-        port = parts.port or default_port
-    except ValueError:
-        raise ValueError("Port must be a number from 1 to 65535") from None
-    try:
-        ip = ipaddress.ip_address(host)
-        host = f"[{ip}]" if ip.version == 6 else str(ip)
-    except ValueError:
-        labels = host.split(".")
-        if not host or len(host) > 253 or not all(
-            label and len(label) <= 63 and label.replace("-", "").isalnum() and not label.startswith("-")
-            for label in labels
-        ):
-            raise ValueError(f"Not a valid host name: {host or value}") from None
-    return f"https://{host}:{port}"
+    host, port = _host_port(value)
+    return f"https://{host}:{port or default_port}"
 
 
 def effective_agent_url(db: Session, settings: Settings) -> str:
     """Address firewalls use: the Settings page value, else the environment default."""
     return get_agent_network_settings(db).agent_url or settings.agent_url
+
+
+def get_site_settings(db: Session) -> SiteSettings:
+    return _load(db, SITE_KEY, SiteSettings)
+
+
+def save_site_settings(db: Session, value: SiteSettings, actor: str) -> None:
+    _save(db, SITE_KEY, value, actor)
+
+
+def _host_port(value: str) -> tuple[str, int | None]:
+    """Validate an https URL or bare host[:port]; return (host for a URL, port or None)."""
+    if "://" not in value:
+        value = "https://" + value
+    parts = urlsplit(value)
+    if parts.scheme != "https":
+        raise ValueError("Use an https:// address")
+    if parts.path or parts.query or parts.fragment or parts.username or parts.password:
+        raise ValueError("Enter only a host name and an optional port")
+    host = parts.hostname or ""
+    try:
+        port = parts.port
+    except ValueError:
+        raise ValueError("Port must be a number from 1 to 65535") from None
+    try:
+        ip = ipaddress.ip_address(host)
+        return (f"[{ip}]" if ip.version == 6 else str(ip)), port
+    except ValueError:
+        pass
+    labels = host.split(".")
+    if not host or len(host) > 253 or not all(
+        label and len(label) <= 63 and label.replace("-", "").isalnum() and not label.startswith("-")
+        for label in labels
+    ):
+        raise ValueError(f"Not a valid host name: {host or value}")
+    return host, port
+
+
+def normalize_console_url(value: str) -> str:
+    """Turn 'host', 'host:port' or 'https://host[:port]' into 'https://host[:port]'. Empty stays empty."""
+    value = value.strip().rstrip("/")
+    if not value:
+        return ""
+    host, port = _host_port(value)
+    return f"https://{host}" + (f":{port}" if port and port != 443 else "")
+
+
+def effective_console_url(db: Session, settings: Settings) -> str:
+    """Web console address for links in emails: the Settings page value, else CSFM_PUBLIC_URL."""
+    return get_site_settings(db).console_url or settings.public_url.rstrip("/")
+
+
+def setup_pending(db: Session) -> bool:
+    return not get_site_settings(db).setup_completed_at

@@ -19,14 +19,18 @@ from ..services.appsettings import (
     SEVERITIES,
     SMTP_SECURITY,
     AgentNetworkSettings,
+    effective_console_url,
     encrypt_secret,
     get_agent_network_settings,
     get_alert_email_settings,
     get_email_settings,
+    get_site_settings,
     normalize_agent_url,
+    normalize_console_url,
     save_agent_network_settings,
     save_alert_email_settings,
     save_email_settings,
+    save_site_settings,
 )
 from ..services.mailer import MailError, send_mail
 from ..services.notifications import create_reset_token, find_reset_token, send_reset_email
@@ -37,6 +41,13 @@ router = APIRouter(dependencies=[Depends(verify_csrf)])
 admin = require(Role.admin)
 viewer = require(Role.viewer)
 forgot_limiter = RateLimiter(limit=5, window_seconds=900)
+
+# Pages the settings forms may return to: the Settings page or a setup wizard step.
+RETURN_PAGES = {"/settings", "/setup", "/setup/email", "/setup/agent"}
+
+
+def _page(value: str, default: str = "/settings") -> str:
+    return value if value in RETURN_PAGES else default
 
 def _send_reset_in_background(settings: Settings, user_id: int, token: str, by_admin: bool) -> None:
     # Runs after the response, so the forgot-password page answers in constant time.
@@ -77,6 +88,8 @@ def settings_page(
         opted_in_users=recipients,
         agent_network=get_agent_network_settings(db),
         default_agent_url=settings.agent_url,
+        site=get_site_settings(db),
+        default_console_url=settings.public_url.rstrip("/"),
     )
 
 
@@ -92,6 +105,8 @@ def settings_email(
     clear_password: bool = Form(False),
     from_address: str = Form(""),
     from_name: str = Form(""),
+    back: str = Form("/settings"),
+    next: str = Form("/settings"),
     settings: Settings = Depends(get_settings),
     user: User = Depends(admin),
     db: Session = Depends(get_db),
@@ -100,7 +115,7 @@ def settings_email(
     host, from_address = host.strip(), from_address.strip()
     if enabled and (not host or not valid_email(from_address)):
         flash(request, "To turn email on, enter the SMTP server and a valid From address.", "error")
-        return redirect("/settings")
+        return redirect(_page(back))
     if security not in SMTP_SECURITY or not 1 <= port <= 65535:
         raise HTTPException(400, "Invalid SMTP security or port")
     cfg.enabled = enabled
@@ -118,13 +133,14 @@ def settings_email(
     audit(db, user.username, "settings.email_updated", detail=f"enabled={enabled} host={cfg.host}", ip=_ip(request))
     db.commit()
     flash(request, "Email settings saved.", "success")
-    return redirect("/settings")
+    return redirect(_page(next))
 
 
 @router.post("/settings/email/test")
 def settings_email_test(
     request: Request,
     to: str = Form(""),
+    back: str = Form("/settings"),
     settings: Settings = Depends(get_settings),
     user: User = Depends(admin),
     db: Session = Depends(get_db),
@@ -132,14 +148,14 @@ def settings_email_test(
     to = to.strip() or user.email
     if not valid_email(to):
         flash(request, "Enter an address to send the test email to.", "error")
-        return redirect("/settings")
+        return redirect(_page(back))
     try:
         send_mail(
             get_email_settings(db),
             settings.secret_key,
             [to],
             "ComSense test email",
-            f"This is a test email from ComSense Firewall Manager at {settings.public_url}.\n"
+            f"This is a test email from ComSense Firewall Manager at {effective_console_url(db, settings)}.\n"
             "If you received it, outgoing email is working.\n",
         )
     except MailError as exc:
@@ -148,7 +164,7 @@ def settings_email_test(
         flash(request, f"Test email sent to {to}.", "success")
     audit(db, user.username, "settings.email_test", target=to, ip=_ip(request))
     db.commit()
-    return redirect("/settings")
+    return redirect(_page(back))
 
 
 @router.post("/settings/alerts")
@@ -186,17 +202,25 @@ def settings_alerts(
 @router.post("/settings/agent-network")
 def settings_agent_network(
     request: Request,
+    console_url: str = Form(""),
     agent_url: str = Form(""),
     trusted_proxies: str = Form(""),
+    back: str = Form("/settings"),
+    next: str = Form("/settings"),
     settings: Settings = Depends(get_settings),
     user: User = Depends(admin),
     db: Session = Depends(get_db),
 ):
     try:
+        console = normalize_console_url(console_url)
+    except ValueError as exc:
+        flash(request, f"Console address: {exc}", "error")
+        return redirect(_page(back))
+    try:
         url = normalize_agent_url(agent_url, urlsplit(settings.agent_url).port or settings.agent_port)
     except ValueError as exc:
         flash(request, f"Agent address: {exc}", "error")
-        return redirect("/settings")
+        return redirect(_page(back))
     entries = [e for e in re.split(r"[\s,;]+", trusted_proxies.strip()) if e]
     networks = []
     for entry in entries:
@@ -204,20 +228,23 @@ def settings_agent_network(
             networks.append(str(ipaddress.ip_network(entry, strict=False)))
         except ValueError:
             flash(request, f"Not an IP address or network: {entry}", "error")
-            return redirect("/settings")
+            return redirect(_page(back))
+    site = get_site_settings(db)
+    site.console_url = console
+    save_site_settings(db, site, user.username)
     save_agent_network_settings(
         db, AgentNetworkSettings(trusted_proxies=networks, agent_url=url), user.username
     )
     audit(
         db,
         user.username,
-        "settings.agent_network_updated",
-        detail=f"address={url or 'default'} trusted={', '.join(networks) or 'none'}",
+        "settings.addresses_updated",
+        detail=f"console={console or 'default'} agent={url or 'default'} trusted={', '.join(networks) or 'none'}",
         ip=_ip(request),
     )
     db.commit()
-    flash(request, "Agent port settings saved. Trusted proxies take effect within 15 seconds.", "success")
-    return redirect("/settings")
+    flash(request, "Addresses saved. Trusted proxies take effect within 15 seconds.", "success")
+    return redirect(_page(next))
 
 
 # ---------------------------------------------------------- password resets

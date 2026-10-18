@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}Set up ComSense{% endblock %}
+{% block content %}
+<div class="setup">
+<h1>Set up ComSense</h1>
+<ol class="steps" aria-label="Setup steps">
+  {% for href, label in steps %}
+  <li class="{{ 'done' if loop.index < step else ('current' if loop.index == step else '') }}"{% if loop.index == step %} aria-current="step"{% endif %}>
+    <a href="{{ href }}"><span class="num">{{ loop.index }}</span> {{ label }}</a>
+  </li>
+  {% endfor %}
+</ol>
+
+{% if step == 1 %}
+<section class="card">
+  <h2>Addresses</h2>
+  <p class="muted">How people and firewalls reach this server. Leave a field empty to keep the default shown in it.</p>
+  <form method="post" action="/settings/agent-network" class="stack">
+    {{ csrf() }}
+    <input type="hidden" name="back" value="/setup">
+    <input type="hidden" name="next" value="/setup/email">
+    <label>Web console address
+      <input name="console_url" value="{{ site.console_url }}" placeholder="{{ default_console_url }}">
+    </label>
+    <p class="small muted">Where admins open this console. Used for links in alert and password reset emails.</p>
+    <label>Address firewalls connect to (host name, optionally with :port)
+      <input name="agent_url" value="{{ agent_network.agent_url }}" placeholder="{{ default_agent_url }}">
+    </label>
+    <p class="small muted">The agent port, as firewalls see it from the internet. Set it when the agent port has its own
+    host name (for example a separate proxy host) or a different outside port because of NAT.</p>
+    <details{% if agent_network.trusted_proxies %} open{% endif %}>
+      <summary>The agent port is behind a TCP pass-through proxy (for example NetBird)</summary>
+      <label>Trusted proxy addresses (IP or CIDR)
+        <textarea name="trusted_proxies" rows="2" placeholder="100.64.0.0/10">{{ agent_network.trusted_proxies|join(", ") }}</textarea>
+      </label>
+      <p class="small muted">Have the proxy send a PROXY protocol header so ComSense sees each firewall's real address.
+      Headers are accepted only from these addresses. Leave empty when firewalls connect directly.</p>
+    </details>
+    <div class="setup-nav"><button class="primary">Save and continue</button></div>
+  </form>
+</section>
+
+{% elif step == 2 %}
+<section class="card">
+  <h2>Outgoing email</h2>
+  <p class="muted">For alert emails and password reset links. You can skip this and set it up later under Settings.</p>
+  <form method="post" action="/settings/email" class="grid-form">
+    {{ csrf() }}
+    <input type="hidden" name="back" value="/setup/email">
+    <input type="hidden" name="next" value="/setup/email">
+    <input type="hidden" name="enabled" value="true">
+    <label>SMTP server <input name="host" value="{{ email.host }}" placeholder="smtp.office365.com" required></label>
+    <label>Port <input name="port" type="number" min="1" max="65535" value="{{ email.port }}"></label>
+    <label>Security
+      <select name="security">
+        {% for s in securities %}<option value="{{ s }}"{% if email.security == s %} selected{% endif %}>{{ {"starttls": "STARTTLS (usually port 587)", "ssl": "SSL/TLS (usually port 465)", "none": "None (not recommended)"}[s] }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Username <input name="username" value="{{ email.username }}" autocomplete="off"></label>
+    <label>Password
+      <input name="password" type="password" autocomplete="new-password" placeholder="{{ 'saved; leave blank to keep' if email.password_encrypted else '' }}">
+    </label>
+    <label>From address <input name="from_address" type="email" value="{{ email.from_address }}" placeholder="comsense@example.com" required></label>
+    <label>From name <input name="from_name" value="{{ email.from_name }}"></label>
+    <div class="wide"><button class="primary">Save email settings</button></div>
+  </form>
+  {% if email.configured %}
+  <form method="post" action="/settings/email/test" class="toolbar">
+    {{ csrf() }}
+    <input type="hidden" name="back" value="/setup/email">
+    <input name="to" type="email" value="{{ user.email }}" placeholder="send a test to…" required>
+    <button>Send test email</button>
+  </form>
+  {% endif %}
+  <div class="setup-nav">
+    <a href="/setup">Back</a>
+    <a class="button{{ ' primary' if email.configured else '' }}" href="/setup/agent">{{ "Continue" if email.configured else "Skip for now" }}</a>
+  </div>
+</section>
+
+{% else %}
+<section class="card">
+  <h2>Get your first agent set up</h2>
+  <ol class="setup-list">
+    <li>
+      <strong>Get the agent package.</strong>
+      {% if package %}
+      Run this from a shell on the firewall (Diagnostics &gt; Command Prompt, or SSH). It downloads the package from this
+      server, checks it and installs it:
+      <pre>fetch -o /tmp/comsense.pkg {% if agent_pin %}--no-verify-peer {% endif %}{{ agent_url }}/downloads/{{ package.name }} &amp;&amp; [ "$(sha256 -q /tmp/comsense.pkg)" = "{{ package.sha256 }}" ] &amp;&amp; pkg-static add /tmp/comsense.pkg</pre>
+      <p>Or download it and copy it to the firewall yourself, then run <code>pkg-static add {{ package.name }}</code> there:</p>
+      <p class="toolbar"><a class="button" href="/downloads/{{ package.name }}" download>Download {{ package.name }}</a></p>
+      <p class="small muted">SHA-256 <span class="mono">{{ package.sha256 }}</span>. Built by this server from its own agent
+      source; installs on pfSense CE and pfSense Plus.</p>
+      {% else %}
+      <p class="flash warn">No agent package is available on this server. Build one with <code>agent/build-pkg.sh</code>
+      and copy it into the server's <code>downloads</code> data folder (see docs/AGENT.md).</p>
+      {% endif %}
+    </li>
+    <li>
+      <strong>Create an enrollment code.</strong>
+      {% if enrollment_code %}
+      Copy it now; it is shown only once. It works for one firewall within 7 days.
+      <div class="copyrow"><input class="mono" readonly value="{{ enrollment_code }}" id="new-code"><button type="button" data-copy="new-code">Copy</button></div>
+      {% else %}
+      It carries this server's agent address (<span class="mono">{{ agent_url }}</span>) and certificate pin, so it is
+      the only thing to paste on the firewall.
+      <form method="post" action="/setup/agent/key" class="grid-form">
+        {{ csrf() }}
+        {% if orgs %}
+        <label>Customer
+          <select name="organization_id">
+            <option value="">None</option>
+            {% for o in orgs %}<option value="{{ o.id }}">{{ o.name }}</option>{% endfor %}
+          </select>
+        </label>
+        {% endif %}
+        <label>{{ "Or a new customer" if orgs else "Customer (optional)" }}
+          <input name="customer" placeholder="e.g. Acme Corp">
+        </label>
+        <div class="wide"><button class="primary">Create enrollment code</button></div>
+      </form>
+      {% endif %}
+    </li>
+    <li>
+      <strong>Connect the firewall.</strong> In pfSense open <strong>Services &gt; ComSense Agent</strong>, tick
+      <em>Enable</em>, paste the enrollment code, choose which remote actions to allow, and save. The firewall needs
+      outbound access to <span class="mono">{{ agent_url }}</span>.
+    </li>
+  </ol>
+  <div class="setup-nav">
+    <a href="/setup/email">Back</a>
+    <form method="post" action="/setup/finish" class="inline">
+      {{ csrf() }}
+      <button class="primary">Finish setup</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+
+{% if step < 3 %}
+<form method="post" action="/setup/finish" class="setup-skip">
+  {{ csrf() }}
+  <input type="hidden" name="skipped" value="true">
+  <button class="link">Skip setup; I'll use the Settings page</button>
+</form>
+{% endif %}
+</div>
+{% endblock %}

@@ -3,7 +3,8 @@
 {% block title %}Settings{% endblock %}
 {% block content %}
 <h1>Settings</h1>
-<p class="muted">Saved in the database. The server's container settings only cover how it starts (database, keys, addresses).</p>
+<p class="muted">Saved in the database. The server's container settings only cover how it starts (database, keys, listeners).
+<a href="/setup">Run the setup wizard again</a>.</p>
 
 <div class="grid2">
 <section class="card">
@@ -62,9 +63,12 @@
 </div>
 
 <section class="card">
-  <h2>Agent port</h2>
+  <h2>Addresses</h2>
   <form method="post" action="/settings/agent-network" class="stack">
     {{ csrf() }}
+    <label>Web console address (used in links in emails)
+      <input name="console_url" value="{{ site.console_url }}" placeholder="{{ default_console_url }}">
+    </label>
     <label>Address firewalls connect to (host name, optionally with :port)
       <input name="agent_url" value="{{ agent_network.agent_url }}" placeholder="{{ default_agent_url }}">
     </label>
@@ -80,7 +84,7 @@
     <label>Trusted proxy addresses (IP or CIDR, separated by spaces or commas)
       <textarea name="trusted_proxies" rows="2" placeholder="100.64.0.0/10">{{ agent_network.trusted_proxies|join(", ") }}</textarea>
     </label>
-    <div><button class="primary">Save agent port settings</button></div>
+    <div><button class="primary">Save addresses</button></div>
   </form>
 </section>
 {% endblock %}

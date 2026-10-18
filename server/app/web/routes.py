@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from datetime import timedelta
@@ -48,7 +47,8 @@ from ..security import (
     verify_password,
 )
 from ..enrollment import make_code
-from ..services.appsettings import effective_agent_url, get_email_settings
+from ..services.agentpkg import latest_package
+from ..services.appsettings import effective_agent_url, get_email_settings, setup_pending
 from ..services.backups import delete_backup_file, load_backup
 from ..services.policy_examples import EXAMPLES
 from ..services.policies import PolicyError, desired_policies, policy_hash, validate_policy
@@ -243,7 +243,7 @@ def change_password(
         db.commit()
         flash(request, "Password changed.", "success")
         if was_temporary:
-            return redirect("/")
+            return redirect("/setup" if user.role == Role.admin and setup_pending(db) else "/")
     return redirect("/account")
 
 
@@ -252,6 +252,8 @@ def change_password(
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, user: User = Depends(viewer), db: Session = Depends(get_db)):
+    if user.role == Role.admin and setup_pending(db) and not db.scalar(select(func.count()).select_from(Device)):
+        return redirect("/setup")
     counts = dict(db.execute(select(Device.status, func.count()).group_by(Device.status)).all())
     alerts = db.scalars(
         select(Alert)
@@ -695,13 +697,7 @@ def keys_page(
     pin = tls.pin if tls.self_signed else None
     new_key = request.session.pop("new_key", None)
     agent_url = effective_agent_url(db, settings)
-    packages = sorted(
-        (settings.data_dir / "downloads").glob("pfSense-pkg-ComSense-*.pkg"), key=lambda p: p.stat().st_mtime
-    )
-    package = None
-    if packages:
-        latest = packages[-1]
-        package = {"name": latest.name, "sha256": hashlib.sha256(latest.read_bytes()).hexdigest()}
+    package = latest_package(settings.data_dir / "downloads")
     return render(
         request,
         "keys.html",
@@ -718,6 +714,33 @@ def keys_page(
     )
 
 
+def create_enrollment_key(
+    db: Session,
+    user: User,
+    name: str,
+    organization_id: int | None = None,
+    expires_days: int = 7,
+    max_uses: int | None = None,
+    require_approval: bool = False,
+    ip: str = "",
+) -> str:
+    """Create a key and return its value; the caller commits and shows it once."""
+    value = generate_enrollment_key()
+    key = EnrollmentKey(
+        name=name.strip()[:128] or "Enrollment key",
+        prefix=key_display_prefix(value),
+        key_hash=hash_secret(value),
+        organization_id=organization_id,
+        expires_at=utcnow() + timedelta(days=expires_days) if expires_days > 0 else None,
+        max_uses=max_uses if max_uses and max_uses > 0 else None,
+        require_approval=require_approval,
+        created_by=user.username,
+    )
+    db.add(key)
+    audit(db, user.username, "enrollment_key.created", target=key.prefix, detail=key.name, ip=ip)
+    return value
+
+
 @router.post("/keys")
 def keys_create(
     request: Request,
@@ -729,19 +752,16 @@ def keys_create(
     user: User = Depends(admin),
     db: Session = Depends(get_db),
 ):
-    value = generate_enrollment_key()
-    key = EnrollmentKey(
-        name=name.strip()[:128] or "Enrollment key",
-        prefix=key_display_prefix(value),
-        key_hash=hash_secret(value),
+    value = create_enrollment_key(
+        db,
+        user,
+        name,
         organization_id=int(organization_id) if organization_id.isdigit() else None,
-        expires_at=utcnow() + timedelta(days=expires_days) if expires_days > 0 else None,
-        max_uses=int(max_uses) if max_uses.isdigit() and int(max_uses) > 0 else None,
+        expires_days=expires_days,
+        max_uses=int(max_uses) if max_uses.isdigit() else None,
         require_approval=require_approval,
-        created_by=user.username,
+        ip=_ip(request),
     )
-    db.add(key)
-    audit(db, user.username, "enrollment_key.created", target=key.prefix, detail=key.name, ip=_ip(request))
     db.commit()
     # Shown once, on the next page load only; never stored in clear text.
     request.session["new_key"] = value

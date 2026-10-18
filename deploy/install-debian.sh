@@ -59,6 +59,9 @@ install -d -m 0750 -g comsense /etc/comsense
 install -d "$APP_DIR"
 rm -rf "$APP_DIR/server"
 cp -r "$SRC/server" "$APP_DIR/server"
+rm -rf "$APP_DIR/agent"
+install -d "$APP_DIR/agent"
+cp -r "$SRC/agent/pfSense-pkg-ComSense" "$APP_DIR/agent/"
 python3 -m venv "$APP_DIR/venv"
 "$APP_DIR/venv/bin/pip" install --upgrade pip >/dev/null
 "$APP_DIR/venv/bin/pip" install -r "$APP_DIR/server/requirements.txt"

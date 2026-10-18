@@ -7,9 +7,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN groupadd --system comsense && useradd --system --gid comsense --home /app comsense
 
 WORKDIR /app
-COPY requirements.txt .
+COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app ./app
+COPY server/app ./app
+# Agent sources: the server builds the pfSense package from them on start.
+COPY agent/pfSense-pkg-ComSense ./agent/pfSense-pkg-ComSense
 
 RUN mkdir -p /var/lib/comsense && chown comsense:comsense /var/lib/comsense
 USER comsense

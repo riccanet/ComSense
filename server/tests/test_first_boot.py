@@ -49,7 +49,7 @@ def test_first_boot_password_is_random_logged_and_must_be_changed(settings, tmp_
             data={"current": password, "new": ADMIN_PASSWORD, "confirm": ADMIN_PASSWORD, "csrf_token": csrf},
             follow_redirects=False,
         )
-        assert done.status_code == 303 and done.headers["location"] == "/"
+        assert done.status_code == 303 and done.headers["location"] == "/setup"
         assert c.get("/devices").status_code == 200
 
     # A second install gets a different password; a restart does not create another.

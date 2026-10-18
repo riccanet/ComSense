@@ -124,6 +124,20 @@ changed. Passwords that admins set for other users, or reset, are one-time in th
 Lost the admin password? `python -m app.cli create-user admin` (in the container:
 `docker exec -it comsense-app python -m app.cli create-user admin`) sets a new one-time password.
 
+### Setup wizard
+
+After the new password is set, admins land in a three-step setup wizard (it also opens from the
+dashboard while it is unfinished and no firewall is enrolled, and again from **Settings → Run the setup
+wizard again**):
+
+1. **Addresses**: the web console address used in email links, the address firewalls connect to, and
+   trusted pass-through proxies. Empty fields keep the defaults from the environment.
+2. **Email**: the SMTP server, with a test email. Can be skipped.
+3. **First firewall**: the agent package (a one-line install command for the firewall shell, or a
+   download) and a single-use enrollment code, optionally for a new customer.
+
+Everything is saved to the database and can be changed later on the Settings page.
+
 Data lives in the volumes `comsense-db` (PostgreSQL) and `comsense-data` (encrypted backups, agent
 certificate, `downloads`), plus `caddy-data` (certificates) for option 1.
 

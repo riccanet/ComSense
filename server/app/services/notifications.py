@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from ..config import Settings
 from ..models import Alert, PasswordResetToken, User, aware, utcnow
 from ..security import hash_secret
-from .appsettings import get_alert_email_settings, get_email_settings
+from .appsettings import effective_console_url, get_alert_email_settings, get_email_settings
 from .mailer import MailError, send_mail
 
 log = logging.getLogger("comsense.notifications")
@@ -92,7 +92,7 @@ def send_alert_notifications(db: Session, settings: Settings) -> int:
 
     recipients = alert_recipients(db, alert_cfg.extra_recipients)
     if recipients:
-        subject, text, html = _alert_digest(settings, opened, resolved)
+        subject, text, html = _alert_digest(effective_console_url(db, settings), opened, resolved)
         sent = 0
         for to in recipients:
             try:
@@ -111,7 +111,7 @@ def send_alert_notifications(db: Session, settings: Settings) -> int:
     return len(recipients)
 
 
-def _alert_digest(settings: Settings, opened: list[Alert], resolved: list[Alert]) -> tuple[str, str, str]:
+def _alert_digest(console_url: str, opened: list[Alert], resolved: list[Alert]) -> tuple[str, str, str]:
     parts = []
     if opened:
         parts.append(f"{len(opened)} new alert{'s' if len(opened) != 1 else ''}")
@@ -119,7 +119,7 @@ def _alert_digest(settings: Settings, opened: list[Alert], resolved: list[Alert]
         parts.append(f"{len(resolved)} resolved")
     critical = any(a.severity == "critical" for a in opened)
     subject = f"[ComSense]{' CRITICAL:' if critical else ''} {', '.join(parts)}"
-    link = f"{settings.public_url.rstrip('/')}/alerts"
+    link = f"{console_url}/alerts"
 
     lines, rows = [], []
     if opened:
@@ -183,7 +183,7 @@ def find_reset_token(db: Session, token: str) -> PasswordResetToken | None:
 
 
 def send_reset_email(db: Session, settings: Settings, user: User, token: str, requested_by_admin: bool = False) -> None:
-    link = f"{settings.public_url.rstrip('/')}/reset/{token}"
+    link = f"{effective_console_url(db, settings)}/reset/{token}"
     who = "An administrator requested" if requested_by_admin else "Someone (hopefully you) requested"
     text = (
         f"Hello {user.username},\n\n{who} a password reset for your ComSense Firewall Manager account.\n\n"

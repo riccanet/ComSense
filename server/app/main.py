@@ -21,7 +21,8 @@ from .models import Role, User
 from .proxyproto import ClientAddressMiddleware
 from .scheduler import scheduler_loop
 from .security import generate_temporary_password, hash_password
-from .web import account_routes, customer_routes
+from .services.agentpkg import ensure_package
+from .web import account_routes, customer_routes, setup_routes
 from .web import routes as web_routes
 from .web.auth import LoginRequired, PasswordChangeRequired
 
@@ -63,6 +64,7 @@ def init_backend(settings: Settings) -> None:
     settings.validate()
     settings.backup_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     (settings.data_dir / "downloads").mkdir(parents=True, exist_ok=True)
+    ensure_package(settings.data_dir / "downloads")
     engine = init_engine(settings.database_url)
     upgrade_schema(engine)
     bootstrap_admin(settings)
@@ -138,6 +140,7 @@ def create_web_app(settings: Settings) -> FastAPI:
     _mount_downloads(app, settings)
     app.include_router(account_routes.router)
     app.include_router(customer_routes.router)
+    app.include_router(setup_routes.router)
     app.include_router(web_routes.router)
     return app
 

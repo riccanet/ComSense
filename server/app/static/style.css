@@ -229,3 +229,26 @@ h1 .badge.soon, h2 .badge.soon { margin-left: .35rem; }
 button:disabled { opacity: .5; cursor: not-allowed; }
 button:disabled:hover { border-color: var(--line); }
 .forgot-link { text-align: center; margin: .75rem 0 0; }
+
+/* First-run setup wizard */
+.setup { max-width: 760px; margin: 0 auto; }
+.steps { display: flex; gap: .5rem; list-style: none; padding: 0; margin: 0 0 1rem; flex-wrap: wrap; }
+.steps li { flex: 1 1 0; min-width: 0; }
+.steps a { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.steps a {
+  display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--panel); color: var(--muted); text-decoration: none;
+}
+.steps .num {
+  display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem;
+  border-radius: 50%; background: var(--neutral-bg); font-weight: 700; font-size: 12px;
+}
+.steps li.current a { border-color: var(--accent); color: inherit; font-weight: 600; }
+.steps li.current .num { background: var(--accent); color: var(--accent-text); }
+.steps li.done .num { background: var(--ok-bg); color: var(--ok); }
+.setup-list { padding-left: 1.25rem; display: flex; flex-direction: column; gap: 1rem; }
+.setup-list .grid-form, .setup-list .copyrow { margin-top: .5rem; }
+.setup-nav { display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-top: 1rem; }
+.setup-nav:only-child, form .setup-nav { justify-content: flex-end; }
+.setup-skip { text-align: center; margin-top: .5rem; }
+.setup-skip button { font-size: 13px; }
