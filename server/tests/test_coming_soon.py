@@ -10,10 +10,10 @@ from sqlalchemy import select
 
 from app.models import Backup, Device, Policy, PolicyAssignment, PolicyType, Task, TaskType
 from app.services.policies import reconcile_device_policies
-from app.services.tasks import AGENT_TASKS, SAFE_TASKS, TaskError, queue_task
+from app.services.tasks import AGENT_TASKS, SAFE_TASKS, TERMINAL_TASKS, TaskError, queue_task
 
-# Updating the agent itself changes no firewall configuration, so it is not held back.
-CHANGE_TASKS = [t for t in TaskType if t not in SAFE_TASKS | AGENT_TASKS]
+# Updating the agent changes no firewall configuration, and the terminal is its own opt-in on the firewall.
+CHANGE_TASKS = [t for t in TaskType if t not in SAFE_TASKS | AGENT_TASKS | TERMINAL_TASKS]
 CONFIG_XML = b'<?xml version="1.0"?>\n<pfsense>\n<version>23.3</version>\n</pfsense>\n'
 
 

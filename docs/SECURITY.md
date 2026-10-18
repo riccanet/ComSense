@@ -41,7 +41,30 @@ The server can only send the fixed task types listed in [PROTOCOL.md](PROTOCOL.m
 "run a command" task. Each action that changes the firewall must also be **allowed locally** in
 *Services > ComSense Agent*; the agent refuses anything else regardless of what the server asks, so a
 compromised server cannot do more than the firewall owner permitted. By default only backups, policies
-and service restarts are allowed; upgrades, package changes, restores and reboots are opt-in.
+and service restarts are allowed; upgrades, package changes, restores, reboots and the remote terminal
+are opt-in.
+
+### Remote terminal
+
+A root shell on the firewall from the console, for troubleshooting. Because it is unrestricted, it is
+guarded on both sides:
+
+* **Off on every firewall** until someone with access to that firewall ticks *Remote terminal* in
+  *Services > ComSense Agent*. The server cannot turn it on.
+* **Admins only, and every session is approved with the admin's authenticator app (TOTP).** Admins
+  without an authenticator app cannot open terminals at all; emailed codes and recovery codes are not
+  accepted. A code works once, and 5 wrong codes lock terminal approval for 15 minutes.
+* The approval is bound to the admin's browser session and must be used within 2 minutes; a session
+  can be joined once and cannot be reattached after a disconnect.
+* The firewall still only connects out: its terminal helper opens a WebSocket to the agent port with
+  the same certificate pin and device token as every other request.
+* Sessions end after 15 minutes without input and after 2 hours.
+* Approval, wrong codes, connect and close are in the audit log. The terminal output is recorded on the
+  server (`data/terminal/<id>.cast`, asciicast v2, up to 10 MB per session) and can be replayed or
+  downloaded from the firewall's page by any admin. Keystrokes are not recorded separately; what the
+  shell echoes is. Recordings are not deleted automatically.
+* The terminal page relaxes the Content Security Policy for styles only (`style-src 'unsafe-inline'`,
+  needed by xterm.js); scripts stay restricted to the console's own files.
 
 Policies are validated on both ends; `config_set` cannot touch users, groups, authentication servers,
 certificates or the agent's own settings. Every configuration change (policies and restores) is

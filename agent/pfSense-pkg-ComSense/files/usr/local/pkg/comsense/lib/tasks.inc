@@ -4,7 +4,8 @@
  *
  * The server can only ask for the task types below, and each one (except
  * read-only ones) needs the matching permission to be ticked locally in
- * Services > ComSense Agent. There is deliberately no "run a command" task.
+ * Services > ComSense Agent. There is no "run a command" task; the remote
+ * terminal (terminal.inc) is a separate opt-in, approved per session.
  */
 
 require_once(__DIR__ . '/common.inc');
@@ -12,6 +13,7 @@ require_once(__DIR__ . '/client.inc');
 require_once(__DIR__ . '/collect.inc');
 require_once(__DIR__ . '/policies.inc');
 require_once(__DIR__ . '/guard.inc');
+require_once(__DIR__ . '/terminal.inc');
 
 define('CSFM_UPGRADE_LOG', '/var/log/comsense-upgrade.log');
 
@@ -29,6 +31,7 @@ $csfm_task_capability = array(
 	'restore_backup' => 'restore',
 	'reboot' => 'reboot',
 	'update_agent' => 'upgrade',
+	'open_terminal' => 'shell',
 );
 
 /* Tasks that change the configuration and run under the change guard (guard.inc). */
@@ -133,6 +136,9 @@ function csfm_task_label($type, $payload) {
 	}
 	if ($type === 'restore_backup') {
 		return 'restore backup #' . (int)($payload['backup_id'] ?? 0);
+	}
+	if ($type === 'open_terminal') {
+		return 'open a remote terminal';
 	}
 	if ($type === 'update_agent') {
 		return 'update agent to ' . ($payload['version'] ?? '?');
@@ -368,6 +374,21 @@ function csfm_finish_agent_update($client) {
 	unset($state['inflight_agent_update']);
 	csfm_save_state($state);
 	@unlink(CSFM_AGENT_UPDATE_PKG);
+}
+
+/* ------------------------------------------------------- remote terminal */
+
+/* Leave a request for comsense-agentd, which starts the terminal helper after this cycle. */
+function csfm_task_open_terminal($client, $id, $payload) {
+	$sid = (string)($payload['session'] ?? '');
+	if (!preg_match(CSFM_TERM_SID_RE, $sid)) {
+		throw new Exception('Malformed terminal task');
+	}
+	csfm_ensure_db_dir();
+	@mkdir(CSFM_TERM_DIR, 0700, true);
+	file_put_contents(csfm_terminal_request_file($sid), (string)time());
+	csfm_log('Remote terminal ' . substr($sid, 0, 8) . ' requested by the management server', LOG_NOTICE);
+	return array('output' => 'Terminal requested; the firewall connects to the console in a moment.');
 }
 
 function csfm_task_restore_backup($client, $id, $payload) {

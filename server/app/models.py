@@ -67,6 +67,7 @@ class TaskType(str, enum.Enum):
     reboot = "reboot"
     refresh_inventory = "refresh_inventory"
     update_agent = "update_agent"
+    open_terminal = "open_terminal"
 
 
 class PolicyType(str, enum.Enum):
@@ -357,6 +358,38 @@ class PasswordResetToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     requested_ip: Mapped[str] = mapped_column(String(64), default="")
+
+
+class TerminalStatus(str, enum.Enum):
+    approved = "approved"  # the admin's authenticator code was accepted; waiting for both ends
+    connected = "connected"
+    closed = "closed"
+
+
+class TerminalSession(Base):
+    """A remote root shell on a firewall (services/terminal.py). Each one is approved with the
+    admin's authenticator code and recorded; the recording is replayable from the device page."""
+
+    __tablename__ = "terminal_sessions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    username: Mapped[str] = mapped_column(String(64))
+    status: Mapped[TerminalStatus] = mapped_column(
+        Enum(TerminalStatus, native_enum=False), default=TerminalStatus.approved
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    close_reason: Mapped[str] = mapped_column(String(255), default="")
+    browser_ip: Mapped[str] = mapped_column(String(64), default="")
+    bytes_in: Mapped[int] = mapped_column(Integer, default=0)
+    bytes_out: Mapped[int] = mapped_column(Integer, default=0)
+    # Recording of the terminal output, relative to Settings.data_dir / "terminal".
+    recording: Mapped[str] = mapped_column(String(255), default="")
+
+    device: Mapped[Device] = relationship()
 
 
 class AuditLog(Base):

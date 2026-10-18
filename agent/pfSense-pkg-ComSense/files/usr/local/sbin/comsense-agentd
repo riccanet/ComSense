@@ -9,12 +9,24 @@ PHP=/usr/local/bin/php
 AGENT=/usr/local/pkg/comsense/agent.php
 INTERVAL_FILE=/var/db/comsense/interval
 LOCK=/var/run/comsense_agent.lock
+TERM_DIR=/var/db/comsense/terminal
 
 # Spread check-ins from many firewalls that boot at the same time.
 sleep $(( $(/usr/bin/jot -r 1 0 20) ))
 
 while true; do
 	/usr/bin/lockf -s -t 0 "${LOCK}" /usr/bin/timeout 3600 "${PHP}" -f "${AGENT}" run >/dev/null 2>&1
+	# Remote terminal sessions the cycle accepted (tasks.inc). Started here rather than in the
+	# cycle, whose timeout(1) would wait for them; daemon(8) detaches each one.
+	for REQ in "${TERM_DIR}"/*.request; do
+		[ -f "${REQ}" ] || continue
+		SID=$(/usr/bin/basename "${REQ}" .request)
+		/bin/rm -f "${REQ}"
+		case "${SID}" in
+			*[!A-Za-z0-9_-]*) continue ;;
+		esac
+		/usr/sbin/daemon -f "${PHP}" -f "${AGENT}" terminal "${SID}"
+	done
 	INTERVAL=60
 	if [ -r "${INTERVAL_FILE}" ]; then
 		INTERVAL=$(/bin/cat "${INTERVAL_FILE}")

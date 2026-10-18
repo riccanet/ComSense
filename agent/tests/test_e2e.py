@@ -62,6 +62,8 @@ def env(tmp_path_factory):
         # The end-to-end test exercises policies, restarts and restores ("coming soon" by default).
         "CSFM_ENABLE_FIREWALL_CHANGES": "true",
         "CSFM_PUBLIC_URL": "https://localhost",
+        # The test talks plain HTTP to the web port (no TLS proxy in front).
+        "CSFM_SECURE_COOKIES": "false",
         "CSFM_WEB_HOST": "127.0.0.1",
         "CSFM_WEB_PORT": str(web_port),
         "CSFM_AGENT_HOST": "127.0.0.1",
@@ -410,7 +412,11 @@ def test_full_lifecycle(env):
         assert db.get(Device, creds["device_id"]).agent_version == package["version"]
     assert not staged.exists()
 
-    # 10. A disabled device is locked out.
+    # 10. Remote terminal: an admin approves the session with their authenticator code, the firewall's
+    # helper connects out over a WebSocket (pinned TLS) and runs a real shell on a pseudo-terminal.
+    terminal_session(env, creds)
+
+    # 11. A disabled device is locked out.
     with env["db"]() as db:
         from app.models import DeviceStatus
 
@@ -419,3 +425,91 @@ def test_full_lifecycle(env):
     assert agent(env, "run") == "Check-in failed"
     with env["db"]() as db:
         assert db.get(Device, creds["device_id"]).last_seen_at is not None
+
+
+def terminal_session(env, creds) -> None:
+    import re
+    import time
+
+    import httpx
+    from websockets.sync.client import connect
+
+    from app.models import Device, Role, TerminalSession, TerminalStatus, User
+    from app.security import hash_password
+    from app.services import mfa
+
+    set_fw_settings(env, allow_shell="on")
+    agent(env, "run")
+    secret = mfa.new_totp_secret()
+    with env["db"]() as db:
+        assert "shell" in db.get(Device, creds["device_id"]).capabilities
+        user = User(username="e2e-admin", password_hash=hash_password("e2e-admin-password"), role=Role.admin)
+        mfa.enable_totp(user, secret, mfa.current_step() - 2, "s" * 48)
+        db.add(user)
+        db.commit()
+
+    web = f"http://127.0.0.1:{env['web_port']}"
+    with httpx.Client(base_url=web, trust_env=False, follow_redirects=True) as http:
+        def csrf(page: str) -> str:
+            return re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
+
+        token = csrf(http.get("/login").text)
+        http.post("/login", data={"username": "e2e-admin", "password": "e2e-admin-password", "csrf_token": token})
+        code = mfa.totp_code(secret, mfa.current_step())
+        r = http.post("/login/mfa", data={"code": code, "csrf_token": csrf(http.get("/login/mfa").text)})
+        assert r.status_code == 200 and "/devices" in r.text, (r.url, re.findall(r"<main.*", r.text, re.S)[:1])
+        page = http.get(f"/devices/{creds['device_id']}/terminal").text
+        code = mfa.totp_code(secret, mfa.current_step() + 1)
+        r = http.post(f"/devices/{creds['device_id']}/terminal", data={"code": code, "csrf_token": csrf(page)})
+        sid = str(r.url).rsplit("/", 1)[1]
+        assert 'data-live="1"' in r.text, r.text[:500]
+        cookie = "; ".join(f"{k}={v}" for k, v in http.cookies.items())
+
+    with connect(f"ws://127.0.0.1:{env['web_port']}/terminal/{sid}/ws",
+                 additional_headers={"Origin": web, "Cookie": cookie}) as browser:
+        assert json.loads(browser.recv(timeout=10))["s"] == "waiting"
+        browser.send(json.dumps({"t": "r", "c": 120, "r": 40}))
+        assert agent(env, "run") == "Checked in; ran 1 task(s)"  # the open_terminal task
+        request = env["fw"] / "db" / "terminal" / f"{sid}.request"
+        assert request.exists()  # comsense-agentd starts the helper after the cycle
+        request.unlink()
+        helper = subprocess.Popen(
+            ["php", str(HARNESS), "terminal", sid],
+            env={**os.environ, "CSFM_TEST_DIR": str(env["fw"]), "CSFM_AGENT_DIR": str(AGENT_DIR)},
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        try:
+            assert json.loads(browser.recv(timeout=20))["s"] == "connected"
+
+            def run_and_wait(command: str, expect: str) -> str:
+                browser.send(json.dumps({"t": "i", "d": command + "\r"}))
+                seen = ""
+                deadline = time.monotonic() + 15
+                while expect not in seen:
+                    assert time.monotonic() < deadline, seen
+                    msg = browser.recv(timeout=15)
+                    seen += msg.decode(errors="replace") if isinstance(msg, bytes) else ""
+                return seen
+
+            run_and_wait("echo ok-$((6*7))", "ok-42")
+            run_and_wait("stty size", "40 120")
+            browser.send(json.dumps({"t": "r", "c": 100, "r": 30}))
+            time.sleep(0.5)
+            run_and_wait("stty size", "30 100")
+            run_and_wait("tty", "/dev/pts/")
+            browser.send(json.dumps({"t": "i", "d": "exit\r"}))
+            while True:
+                msg = browser.recv(timeout=15)
+                if isinstance(msg, str):
+                    closed = json.loads(msg)
+                    if closed.get("s") == "closed":
+                        break
+            assert closed["m"] == "The shell exited.", closed
+        finally:
+            out, _ = helper.communicate(timeout=20)
+        assert helper.returncode == 0 and "The shell exited." in out, out
+
+    with env["db"]() as db:
+        ts = db.get(TerminalSession, sid)
+        assert ts.status == TerminalStatus.closed and ts.bytes_out > 0
+    assert not (env["fw"] / "db" / "terminal" / f"{sid}.tty").exists()

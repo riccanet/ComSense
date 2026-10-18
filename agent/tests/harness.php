@@ -150,6 +150,9 @@ switch ($argv[1] ?? 'run') {
 	case 'check-updates':
 		echo json_encode(csfm_check_updates()) . "\n";
 		break;
+	case 'terminal':
+		echo csfm_terminal_session((string)($argv[2] ?? '')) . "\n";
+		break;
 	case 'wait':
 		$r = csfm_wait_for_work((int)($argv[2] ?? 60));
 		echo $r . "\n";

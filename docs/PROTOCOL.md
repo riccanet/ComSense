@@ -84,6 +84,7 @@ no tasks.
 | `restore_backup` | `{"backup_id","sha256"}` | restore |
 | `reboot` | | reboot |
 | `update_agent` | `{"version","file","sha256"}` | upgrade |
+| `open_terminal` | `{"session"}` | shell |
 
 Tasks not picked up within 24 h (1 h for restores) expire. Tasks with no final result after their
 timeout (15 min by default, 30 min for agent updates, 2 h for system upgrades) are marked failed.
@@ -117,6 +118,15 @@ Long poll between check-ins. The server answers `{"wake": true}` as soon as a ta
 device (for example after *Check now* in the console), or `{"wake": false}` after `N` seconds
 (at most 55). The agent loops on this until its next check-in is due and checks in at once on a
 wake. A server without this endpoint, or any error, makes the agent fall back to a plain sleep.
+
+## WebSocket /terminal/{session}
+
+The firewall end of a remote terminal, opened by the agent's terminal helper after an `open_terminal`
+task (`Authorization: Bearer <device token>`). The session must belong to the device, be approved and
+less than 2 minutes old. Server to agent: text `{"t":"i","d":"<keystrokes>"}` and
+`{"t":"r","c":cols,"r":rows}` (the first `r` arrives once the admin's browser is connected). Agent to
+server: binary frames with terminal output, and text `{"t":"x","m":"<reason>"}` before it ends the
+session.
 
 ## GET /agent-package/{file}
 

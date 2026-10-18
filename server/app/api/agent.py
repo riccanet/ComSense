@@ -12,7 +12,7 @@ import json
 from datetime import timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, WebSocket
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -35,6 +35,7 @@ from ..models import (
 )
 from ..security import RateLimiter, generate_device_token, hash_secret
 from ..services import agentpkg
+from ..services import terminal as terminal_svc
 from ..services import alerts as alert_svc
 from ..services.backups import BackupError, load_backup, prune_backups, store_backup
 from ..services.policies import reconcile_device_policies
@@ -44,7 +45,7 @@ router = APIRouter(prefix="/api/agent/v1", tags=["agent"])
 
 MAX_JSON_BODY = 2 * 1024 * 1024
 TOKEN_MAX_AGE = timedelta(days=30)
-KNOWN_CAPABILITIES = {"backup", "policy", "upgrade", "packages", "services", "restore", "reboot"}
+KNOWN_CAPABILITIES = {"backup", "policy", "upgrade", "packages", "services", "restore", "reboot", "shell"}
 
 enroll_limiter = RateLimiter(limit=10, window_seconds=600)
 # Addresses that keep presenting bad device tokens are refused for a while.
@@ -314,6 +315,25 @@ def agent_package(
     if not path.is_file():
         raise HTTPException(404, "No such package")
     return FileResponse(path, media_type="application/octet-stream")
+
+
+@router.websocket("/terminal/{sid}")
+async def terminal_socket(websocket: WebSocket, sid: str, settings: Settings = Depends(get_settings)) -> None:
+    """The firewall end of a remote terminal session (services/terminal.py), opened by the agent's
+    terminal helper after an open_terminal task. Authenticated with the device token."""
+    ip = websocket.client.host if websocket.client else ""
+    if auth_failure_limiter.blocked(ip):
+        await websocket.close(code=1008)
+        return
+    device_id = await asyncio.to_thread(
+        terminal_svc.check_agent, sid, websocket.headers.get("authorization", "")
+    )
+    if device_id is None:
+        auth_failure_limiter.allow(ip)
+        await websocket.close(code=1008)
+        return
+    await websocket.accept()
+    await terminal_svc.serve_agent(sid, websocket, settings.data_dir)
 
 
 @router.post("/token/rotate")

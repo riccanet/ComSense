@@ -7,7 +7,7 @@
  */
 
 if (!defined('CSFM_AGENT_VERSION')) {
-	define('CSFM_AGENT_VERSION', '0.1.9');
+	define('CSFM_AGENT_VERSION', '0.2.0');
 }
 if (!defined('CSFM_DB_DIR')) {
 	/* Overridable so the agent can be exercised outside a firewall. */
@@ -31,6 +31,7 @@ $csfm_capability_fields = array(
 	'services' => 'allow_services',
 	'restore' => 'allow_restore',
 	'reboot' => 'allow_reboot',
+	'shell' => 'allow_shell',
 );
 
 function csfm_log($message, $priority = LOG_NOTICE) {

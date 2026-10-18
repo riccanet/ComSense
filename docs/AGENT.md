@@ -53,7 +53,7 @@ From **Diagnostics > Command Prompt** or an SSH shell:
 Copy the install command from the server's *Enrollment keys* page. It looks like:
 
 ```sh
-fetch -o /tmp/comsense.pkg --no-verify-peer --no-verify-hostname https://comsense.example.com:10443/downloads/pfSense-pkg-ComSense-0.1.9.pkg \
+fetch -o /tmp/comsense.pkg --no-verify-peer --no-verify-hostname https://comsense.example.com:10443/downloads/pfSense-pkg-ComSense-0.2.0.pkg \
   && [ "$(sha256 -q /tmp/comsense.pkg)" = "<sha256 shown on the page>" ] \
   && pkg-static add /tmp/comsense.pkg
 ```
@@ -82,7 +82,7 @@ is kept so a reinstall keeps its identity; delete that directory to reset comple
 | Server URL | Filled in from the code: the server's **agent** port, e.g. `https://comsense.example.com:10443`. HTTP URLs are rejected. |
 | Public key pin | Filled in from the code when the server uses its own certificate. The agent then trusts exactly this key and nothing else. Empty for a publicly trusted certificate. |
 | Server CA certificate | Rarely needed: only for an agent-port certificate issued by your private CA. |
-| Allowed remote actions | What the server may change: backups, policies, packages, upgrades, service restarts, restore, reboot. Monitoring is always on. The agent refuses anything not ticked here, whatever the server asks. |
+| Allowed remote actions | What the server may change: backups, policies, packages, upgrades, service restarts, restore, reboot, and the remote terminal (see [SECURITY.md](SECURITY.md#remote-terminal)). Monitoring is always on. The agent refuses anything not ticked here, whatever the server asks. |
 
 The agent also uses the proxy configured in **System > Advanced > Miscellaneous**, if any.
 
@@ -154,6 +154,7 @@ php /usr/local/pkg/comsense/agent.php run -v     # one cycle, verbose
 php /usr/local/pkg/comsense/agent.php backup     # upload config.xml now
 php /usr/local/pkg/comsense/agent.php unenroll   # forget the device token
 php /usr/local/pkg/comsense/agent.php wait 60    # wait up to 60 s for work from the server
+php /usr/local/pkg/comsense/agent.php terminal ID  # run an approved terminal session (started by the daemon)
 php /usr/local/pkg/comsense/agent.php watchdog   # roll back a change whose probation ended without contact
 php /usr/local/pkg/comsense/agent.php confirm    # keep the change on probation
 php /usr/local/pkg/comsense/agent.php rollback   # undo the change on probation now

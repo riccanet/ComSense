@@ -16,6 +16,9 @@
     {{ post_button("/devices/" ~ device.id ~ "/check-now", "Check now", "", "") }}
     {% if agent_old %}{{ post_button("/devices/" ~ device.id ~ "/update-agent", "Update agent to " ~ latest_agent, "primary", "Install agent " ~ latest_agent ~ " on this firewall? It updates itself in the background and checks in again.") }}{% endif %}
     {% endif %}
+    {% if is_admin and device.status.value not in ("pending", "disabled") %}
+    <a class="button" href="/devices/{{ device.id }}/terminal" title="Root shell on this firewall; approved with your authenticator app">Terminal</a>
+    {% endif %}
     {% if is_admin and device.status.value == "pending" %}
     <form method="post" action="/devices/{{ device.id }}/status" class="inline">
       {{ csrf() }}<input type="hidden" name="action" value="approve"><button class="primary">Approve</button>
@@ -282,6 +285,26 @@ reach ComSense by then, it restores its previous configuration automatically.</d
     </tbody>
   </table>
 </section>
+
+{% if terminal_sessions %}
+<section class="card">
+  <h2>Terminal sessions</h2>
+  <table>
+    <thead><tr><th>Opened</th><th>By</th><th>Status</th><th>Closed</th><th></th></tr></thead>
+    <tbody>
+    {% for t in terminal_sessions %}
+      <tr>
+        <td class="nowrap">{{ t.created_at|dt }}</td>
+        <td>{{ t.username }}</td>
+        <td>{{ t.status.value }}</td>
+        <td class="small">{% if t.closed_at %}{{ t.closed_at|dt }} <span class="muted">{{ t.close_reason }}</span>{% endif %}</td>
+        <td>{% if t.connected_at %}<a class="button small" href="/terminal/{{ t.id }}">Replay</a>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
 
 <div class="grid2">
 <section class="card">

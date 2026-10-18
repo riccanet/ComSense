@@ -1,0 +1,2 @@
+xterm.js 5.5.0 (@xterm/xterm) and @xterm/addon-fit 0.10.0, MIT licence (LICENSE).
+Served from here so the console needs no CDN; used by the remote terminal (static/terminal.js).

@@ -284,3 +284,14 @@ table.processes td.cmd { max-width: 520px; overflow: hidden; text-overflow: elli
 h2 a.plain { color: inherit; }
 h2 a.plain:hover { color: var(--accent); text-decoration: none; }
 .heading .actions { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+
+/* Remote terminal */
+.terminal-card { max-width: 640px; }
+.terminal { background: #0b0d10; border: 1px solid var(--line); border-radius: 8px; padding: 6px;
+  height: calc(100vh - 250px); min-height: 360px; overflow: auto; }
+.terminal-status { margin: 0 0 .5rem; }
+.terminal-status.ok { color: var(--ok); }
+.terminal-status.bad { color: var(--bad); }
+.inline-dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; margin: 0 0 1rem; }
+.inline-dl dt { color: var(--muted); }
+.inline-dl dd { margin: 0; }

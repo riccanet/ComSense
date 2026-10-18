@@ -137,6 +137,13 @@
 			<type>checkbox</type>
 			<description>Reboot the firewall</description>
 		</field>
+		<field>
+			<fielddescr>Remote terminal</fielddescr>
+			<fieldname>allow_shell</fieldname>
+			<type>checkbox</type>
+			<description>Root shell from the console. Only admins can open one, and each session must be approved with
+			the admin's authenticator app. Sessions are recorded on the server.</description>
+		</field>
 	</fields>
 	<custom_php_install_command>comsense_install();</custom_php_install_command>
 	<custom_php_deinstall_command>comsense_deinstall();</custom_php_deinstall_command>

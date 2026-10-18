@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Terminal · {{ device.name }}{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="/static/vendor/xterm/xterm.css">
+  <script src="/static/vendor/xterm/xterm.js" defer></script>
+  <script src="/static/vendor/xterm/addon-fit.js" defer></script>
+  <script src="/static/terminal.js" defer></script>
+{% endblock %}
+{% block content %}
+<p class="small"><a href="/devices/{{ device.id }}">&larr; {{ device.name }}</a></p>
+<div class="heading">
+  <h1>{{ "Terminal" if live else "Terminal session" }} · {{ device.name }}</h1>
+  <div class="actions">
+    {% if live %}<button type="button" id="terminal-close" class="danger">Disconnect</button>
+    {% elif ts.recording %}<a class="button" href="/terminal/{{ ts.id }}/recording?download=1">Download recording</a>{% endif %}
+  </div>
+</div>
+{% if live %}
+<p id="terminal-status" class="terminal-status muted">Connecting...</p>
+{% else %}
+<dl class="inline-dl">
+  <dt>Opened by</dt><dd>{{ ts.username }}{% if ts.browser_ip %} <span class="muted">from {{ ts.browser_ip }}</span>{% endif %}</dd>
+  <dt>Approved</dt><dd>{{ ts.created_at|dt }}</dd>
+  <dt>Connected</dt><dd>{{ ts.connected_at|dt if ts.connected_at else "never" }}</dd>
+  <dt>Closed</dt><dd>{% if ts.closed_at %}{{ ts.closed_at|dt }} <span class="muted">{{ ts.close_reason }}</span>{% else %}{{ ts.status.value }}{% endif %}</dd>
+  <dt>Typed / received</dt><dd>{{ ts.bytes_in|bytes }} / {{ ts.bytes_out|bytes }}</dd>
+</dl>
+{% if not ts.connected_at %}<p class="muted">Nothing was recorded: the session never connected.</p>{% endif %}
+{% endif %}
+{% if live or ts.connected_at %}
+<div id="terminal" class="terminal" data-session="{{ ts.id }}" data-live="{{ 1 if live else 0 }}"
+     data-recording="/terminal/{{ ts.id }}/recording"></div>
+{% endif %}
+{% endblock %}

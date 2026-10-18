@@ -20,6 +20,7 @@ from ..config import Settings, get_settings
 from ..db import get_db
 from ..models import (
     Alert,
+    TerminalSession,
     AuditLog,
     Backup,
     Device,
@@ -440,6 +441,10 @@ def device_detail(
         policy_state=policy_state,
         policy_names={str(p.id): p.name for p in db.scalars(select(Policy))} if device.rolled_back_policies else {},
         latest_agent=_latest_agent_version(request),
+        terminal_sessions=db.scalars(
+            select(TerminalSession).where(TerminalSession.device_id == device.id)
+            .order_by(TerminalSession.created_at.desc()).limit(10)
+        ).all() if user.role == Role.admin else [],
         assignable=[
             p for p in db.scalars(select(Policy).order_by(Policy.name)) if p.id not in assigned_ids
         ],

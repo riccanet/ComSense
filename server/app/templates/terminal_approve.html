@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}Terminal · {{ device.name }}{% endblock %}
+{% block content %}
+<p class="small"><a href="/devices/{{ device.id }}">&larr; {{ device.name }}</a></p>
+<h1>Remote terminal</h1>
+<section class="card terminal-card">
+  {% if blocker == "totp" %}
+  <h2>Authenticator app required</h2>
+  <p>Every remote terminal session is approved with a code from your authenticator app. You have not set one up,
+  so terminal sessions are not available to you.</p>
+  <p><a class="button primary" href="/account#mfa">Set up an authenticator app</a></p>
+  {% elif blocker == "permission" %}
+  <h2>Not allowed on this firewall</h2>
+  <p>The remote terminal is off on {{ device.name }}. It can only be turned on at the firewall itself: sign in to
+  its web interface, open <strong>Services &gt; ComSense Agent</strong> and tick <strong>Remote terminal</strong>
+  (agent 0.2.0 or later). The firewall reports the change at its next check-in.</p>
+  {% elif blocker == "offline" %}
+  <h2>Firewall not connected</h2>
+  <p>{{ device.name }} is {{ device.status.value }}. A terminal can only be opened while the firewall is checking in.</p>
+  {% else %}
+  <h2>Approve with your authenticator app</h2>
+  <p>This opens a root shell on <strong>{{ device.name }}</strong>. Enter the current code from your
+  authenticator app to approve this session.</p>
+  <form method="post" action="/devices/{{ device.id }}/terminal" class="stack">
+    {{ csrf() }}
+    <label>Authenticator code
+      <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required autofocus>
+    </label>
+    <div><button class="primary">Approve and connect</button></div>
+  </form>
+  <p class="muted small">The firewall connects within a few seconds. The session is recorded and can be replayed
+  from the firewall's page; it closes after 15 minutes without input and after 2 hours in total. Each code
+  works once, so the code you signed in with cannot be used again: wait for the next one.</p>
+  {% endif %}
+</section>
+{% endblock %}
