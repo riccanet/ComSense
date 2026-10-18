@@ -23,7 +23,9 @@ The service appears under **Status > Services** as `comsense`. Logs go to the sy
 The package has no compiled code. **The server builds it itself** on every start from the agent source
 it ships with (`app/services/agentpkg.py`) and serves it from its `downloads` folder, so a normal install
 needs nothing else: the setup wizard and the *Enrollment keys* page show the install command and a
-download link. That package is marked `FreeBSD:*`, so the same file installs on pfSense CE and Plus.
+download link. That package is marked `FreeBSD:*`, so the same file installs on pfSense CE and Plus,
+on x86-64 (`amd64`) and ARM (`aarch64` Netgate appliances such as the 1100, 2100, 4200 and 6100, and
+32-bit `armv7` such as the SG-3100). The agent is PHP and shell only, with nothing CPU-specific.
 A package you copy into `downloads` under the same name yourself is kept as it is.
 
 To build it the classic way instead (anywhere `pkg(8)` exists):

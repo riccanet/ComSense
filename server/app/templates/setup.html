@@ -92,7 +92,7 @@
       <p>Or download it and copy it to the firewall yourself, then run <code>pkg-static add {{ package.name }}</code> there:</p>
       <p class="toolbar"><a class="button" href="/downloads/{{ package.name }}" download>Download {{ package.name }}</a></p>
       <p class="small muted">SHA-256 <span class="mono">{{ package.sha256 }}</span>. Built by this server from its own agent
-      source; installs on pfSense CE and pfSense Plus.</p>
+      source; the same package installs on pfSense CE and pfSense Plus, on x86 and ARM.</p>
       {% else %}
       <p class="flash warn">No agent package is available on this server. Build one with <code>agent/build-pkg.sh</code>
       and copy it into the server's <code>downloads</code> data folder (see docs/AGENT.md).</p>

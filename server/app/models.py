@@ -160,6 +160,8 @@ class Device(Base):
     product_version: Mapped[str] = mapped_column(String(64), default="")
     agent_version: Mapped[str] = mapped_column(String(32), default="")
     platform: Mapped[str] = mapped_column(String(128), default="")
+    # CPU architecture as the firewall reports it (uname -m): amd64, arm64, arm…
+    arch: Mapped[str] = mapped_column(String(32), default="", server_default="")
     serial: Mapped[str] = mapped_column(String(128), default="")
     wan_ip: Mapped[str] = mapped_column(String(64), default="")
     last_seen_ip: Mapped[str] = mapped_column(String(64), default="")

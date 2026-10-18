@@ -117,7 +117,14 @@ def _fmt_bytes(value) -> str:
     return f"{n:.1f} PiB"
 
 
+def _fmt_arch(value: str) -> str:
+    names = {"amd64": "x86-64", "x86_64": "x86-64", "i386": "x86 (32-bit)", "arm64": "ARM64", "aarch64": "ARM64",
+             "arm": "ARMv7", "armv7": "ARMv7", "armv6": "ARMv6"}
+    return names.get(value, value)
+
+
 TEMPLATES.env.filters["ago"] = _ago
+TEMPLATES.env.filters["arch"] = _fmt_arch
 TEMPLATES.env.filters["dt"] = _fmt_dt
 TEMPLATES.env.filters["bytes"] = _fmt_bytes
 TEMPLATES.env.filters["pretty_json"] = lambda v: json.dumps(v, indent=2, sort_keys=True)

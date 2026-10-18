@@ -16,6 +16,16 @@ function csfm_sysctl($name) {
 	return trim(implode("\n", $out));
 }
 
+/*
+ * A counter as a number. On 32-bit ARM (e.g. SG-3100) PHP integers stop at
+ * 2^31-1, which byte and tick counters pass quickly, and (int) would pin them
+ * there. Numeric strings + 0 give an int when it fits and a float otherwise,
+ * which stays exact up to 2^53.
+ */
+function csfm_num($value) {
+	return is_numeric($value) ? $value + 0 : 0;
+}
+
 function csfm_product_version() {
 	$v = @file_get_contents('/etc/version');
 	return $v === false ? '' : trim($v);
@@ -62,9 +72,9 @@ function csfm_cpu_usage() {
 	}
 	$total = 0;
 	for ($i = 0; $i < 5; $i++) {
-		$total += (int)$b[$i] - (int)$a[$i];
+		$total += csfm_num($b[$i]) - csfm_num($a[$i]);
 	}
-	$idle = (int)$b[4] - (int)$a[4];
+	$idle = csfm_num($b[4]) - csfm_num($a[4]);
 	return $total > 0 ? round(100 * ($total - $idle) / $total, 1) : null;
 }
 
@@ -139,11 +149,11 @@ function csfm_collect_interfaces() {
 			'gateway' => $info['gateway'] ?? '',
 			'media' => $info['media'] ?? '',
 			'macaddr' => $info['macaddr'] ?? '',
-			'inbytes' => (int)($info['inbytes'] ?? 0),
-			'outbytes' => (int)($info['outbytes'] ?? 0),
-			'inerrs' => (int)($info['inerrs'] ?? 0),
-			'outerrs' => (int)($info['outerrs'] ?? 0),
-			'collisions' => (int)($info['collisions'] ?? 0),
+			'inbytes' => csfm_num($info['inbytes'] ?? 0),
+			'outbytes' => csfm_num($info['outbytes'] ?? 0),
+			'inerrs' => csfm_num($info['inerrs'] ?? 0),
+			'outerrs' => csfm_num($info['outerrs'] ?? 0),
+			'collisions' => csfm_num($info['collisions'] ?? 0),
 		);
 	}
 	return $out;

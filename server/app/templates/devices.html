@@ -30,7 +30,7 @@
         <td><a href="/devices/{{ d.id }}">{{ d.name }}</a><div class="muted small">{{ d.hostname }}</div></td>
         <td>{% if d.organization %}<a href="/customers/{{ d.organization.id }}">{{ d.organization.name }}</a>{% else %}—{% endif %}</td>
         <td>{{ status_badge(d.status.value) }}</td>
-        <td>{{ "Plus" if d.edition == "plus" else "CE" if d.edition == "ce" else d.edition }} {{ d.product_version }}</td>
+        <td>{{ "Plus" if d.edition == "plus" else "CE" if d.edition == "ce" else d.edition }} {{ d.product_version }}{% if d.arch %} <span class="muted small">{{ d.arch|arch }}</span>{% endif %}</td>
         <td>{{ d.wan_ip }}</td>
         <td>{{ d.last_seen_at|ago }}</td>
         <td>{% if open_alerts.get(d.id) %}<span class="badge sev-warning">{{ open_alerts[d.id] }}</span>{% endif %}</td>

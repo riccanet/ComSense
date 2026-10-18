@@ -165,3 +165,33 @@ def test_agent_package_is_a_valid_pkg_archive(tmp_path):
     target.write_bytes(b"custom build")
     ensure_package(downloads)
     assert target.read_bytes() == b"custom build"
+
+
+def test_agent_package_installs_on_every_architecture():
+    # pkg accepts a package when strncasecmp or fnmatch(abi, system ABI) matches (libpkg utils.c is_valid_abi);
+    # fnmatch without FNM_PATHNAME lets "*" span the ":" separators, like Python's fnmatchcase.
+    from fnmatch import fnmatchcase
+
+    from app.services.agentpkg import ABI
+
+    systems = [
+        "FreeBSD:14:amd64",    # pfSense CE 2.7 / 2.8, Plus on x86
+        "FreeBSD:15:amd64",
+        "FreeBSD:16:amd64",
+        "FreeBSD:14:aarch64",  # Netgate 1100 / 2100 / 4200 / 6100 class ARM64 boxes
+        "FreeBSD:15:aarch64",
+        "FreeBSD:16:aarch64",
+        "FreeBSD:14:armv7",    # older 32-bit ARM appliances (SG-3100)
+    ]
+    for system in systems:
+        assert fnmatchcase(system, ABI), system
+
+
+def test_architecture_is_recorded_and_shown(client, db, agent):
+    from conftest import SYSTEM
+
+    login(client)
+    device = enroll(agent, make_key(db), system={**SYSTEM, "arch": "arm64"})
+    page = client.get(f"/devices/{device['device_id']}").text
+    assert "Architecture" in page and "ARM64" in page
+    assert "ARM64" in client.get("/devices").text

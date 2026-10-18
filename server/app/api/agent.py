@@ -106,6 +106,7 @@ def _apply_system_info(device: Device, data: dict[str, Any]) -> None:
     device.edition = _str(system.get("edition"), 32) or device.edition
     device.product_version = _str(system.get("version"), 64) or device.product_version
     device.platform = _str(system.get("platform"), 128) or device.platform
+    device.arch = _str(system.get("arch"), 32) or device.arch
     device.serial = _str(system.get("serial"), 128) or device.serial
     device.agent_version = _str(data.get("agent_version"), 32) or device.agent_version
     if "capabilities" in data and isinstance(data["capabilities"], list):

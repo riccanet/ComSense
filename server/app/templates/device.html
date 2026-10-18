@@ -32,6 +32,7 @@
       <dt>Edition</dt><dd>{{ "pfSense Plus" if device.edition == "plus" else "pfSense CE" if device.edition == "ce" else device.edition }}</dd>
       <dt>Version</dt><dd>{{ device.product_version }}</dd>
       <dt>Platform</dt><dd>{{ device.platform }}</dd>
+      <dt>Architecture</dt><dd>{{ device.arch|arch if device.arch else "unknown" }}</dd>
       <dt>Serial / ID</dt><dd>{{ device.serial or device.unique_id }}</dd>
       <dt>Agent</dt><dd>{{ device.agent_version }}</dd>
       <dt>WAN IP</dt><dd>{{ device.wan_ip }}</dd>
