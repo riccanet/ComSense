@@ -71,6 +71,8 @@ services:
       CSFM_BACKUP_RETENTION_COUNT: ${CSFM_BACKUP_RETENTION_COUNT:-5}
       CSFM_METRICS_RETENTION_DAYS: ${CSFM_METRICS_RETENTION_DAYS:-30}
       CSFM_TASK_RETENTION_DAYS: ${CSFM_TASK_RETENTION_DAYS:-90}
+      # true: allow configurations, upgrades, restores and reboots to be sent to firewalls.
+      CSFM_ENABLE_FIREWALL_CHANGES: ${CSFM_ENABLE_FIREWALL_CHANGES:-false}
     ports:
       - "${CSFM_AGENT_BIND:-0.0.0.0}:${CSFM_AGENT_PORT_PUBLIC:-10443}:10443"
     networks:
