@@ -1,0 +1,92 @@
+# ComSense Firewall Manager as a Portainer stack behind an existing reverse proxy
+# (Nginx Proxy Manager, Traefik, ...) that already owns ports 80/443.
+#
+# Portainer: Stacks > Add stack > Repository, compose path deploy/portainer-stack.yml,
+# and set the environment variables below. Portainer builds the app image from
+# server/ in this repository.
+#
+# The app publishes no host port. It joins the proxy's external network
+# (PROXY_NETWORK, default docker_network); point the proxy host for CSFM_DOMAIN at
+# http://comsense-app:8000 and enable SSL (Let's Encrypt) there. Firewalls connect
+# to https://CSFM_DOMAIN on 443.
+#
+# Required: CSFM_DOMAIN, POSTGRES_PASSWORD, CSFM_SECRET_KEY, CSFM_BACKUP_ENCRYPTION_KEY,
+#           CSFM_INITIAL_ADMIN_PASSWORD (first start only)
+# Generate keys with: python -m app.cli keygen
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: comsense-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: comsense
+      POSTGRES_USER: comsense
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - comsense-db:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U comsense -d comsense"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  app:
+    build: ../server
+    image: comsense-server:local
+    container_name: comsense-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      CSFM_DATABASE_URL: postgresql+psycopg://comsense:${POSTGRES_PASSWORD}@db:5432/comsense
+      CSFM_PUBLIC_URL: https://${CSFM_DOMAIN:?CSFM_DOMAIN is required}
+      CSFM_SECRET_KEY: ${CSFM_SECRET_KEY:?CSFM_SECRET_KEY is required}
+      CSFM_BACKUP_ENCRYPTION_KEY: ${CSFM_BACKUP_ENCRYPTION_KEY:?CSFM_BACKUP_ENCRYPTION_KEY is required}
+      CSFM_INITIAL_ADMIN_USER: ${CSFM_INITIAL_ADMIN_USER:-admin}
+      CSFM_INITIAL_ADMIN_PASSWORD: ${CSFM_INITIAL_ADMIN_PASSWORD:-}
+      CSFM_CHECKIN_INTERVAL: ${CSFM_CHECKIN_INTERVAL:-60}
+      CSFM_BACKUP_RETENTION_COUNT: ${CSFM_BACKUP_RETENTION_COUNT:-5}
+      CSFM_METRICS_RETENTION_DAYS: ${CSFM_METRICS_RETENTION_DAYS:-30}
+      CSFM_TASK_RETENTION_DAYS: ${CSFM_TASK_RETENTION_DAYS:-90}
+    volumes:
+      - comsense-data:/var/lib/comsense
+    networks:
+      - internal
+      - proxy
+    labels:
+      # Built locally, so there is nothing for Watchtower to pull.
+      com.centurylinklabs.watchtower.enable: "false"
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  comsense-db:
+  comsense-data:
+
+networks:
+  internal: {}
+  proxy:
+    name: ${PROXY_NETWORK:-docker_network}
+    external: true
