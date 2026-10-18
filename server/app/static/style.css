@@ -275,3 +275,5 @@ button:disabled:hover { border-color: var(--line); }
   .settings-nav a.active { border-bottom-color: var(--accent); }
   .settings-nav p { display: none; }
 }
+.qr-box { display: inline-block; background: #fff; padding: .4rem; border-radius: 8px; border: 1px solid var(--line); line-height: 0; }
+.qr-box svg { width: 200px; height: 200px; }

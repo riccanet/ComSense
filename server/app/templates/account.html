@@ -26,5 +26,68 @@
     <button>Save</button>
   </form>
 </section>
+
+<section class="card narrow" id="mfa">
+  <h2>Two-factor sign-in</h2>
+  {% if mfa_required %}<p class="flash {{ 'success' if mfa_active else 'warn' }}">Required for your account by your administrator.</p>{% endif %}
+  {% if not mfa_allowed %}<p class="muted">No two-factor method is available. An administrator can allow one under Settings &gt; Security.</p>{% endif %}
+
+  {% if new_codes %}
+  <div class="flash warn">
+    <strong>Your recovery codes.</strong> Each works once if you lose your phone. Store them somewhere safe now;
+    they are not shown again.
+    <pre class="mono">{{ new_codes|join("\n") }}</pre>
+  </div>
+  {% endif %}
+
+  {% if "totp" in mfa_allowed or user.totp_enabled %}
+  <h3>Authenticator app</h3>
+  {% if user.totp_enabled %}
+    <p><span class="badge s-running">on</span> {{ recovery_left }} recovery code{{ "" if recovery_left == 1 else "s" }} left.</p>
+    <form method="post" action="/account/mfa/recovery" class="toolbar">
+      {{ csrf() }}<input type="password" name="password" placeholder="your password" autocomplete="current-password" required>
+      <button>New recovery codes</button>
+    </form>
+    <form method="post" action="/account/mfa/totp/disable" class="toolbar">
+      {{ csrf() }}<input type="password" name="password" placeholder="your password" autocomplete="current-password" required>
+      <button class="danger">Turn off</button>
+    </form>
+  {% elif totp_setup %}
+    <p>Scan this with an authenticator app (Microsoft or Google Authenticator, 1Password, Bitwarden…), then
+    enter the 6-digit code it shows.</p>
+    <div class="qr-box">{{ totp_qr|safe }}</div>
+    <p class="small muted">Or enter this key by hand: <span class="mono">{{ totp_setup }}</span></p>
+    <form method="post" action="/account/mfa/totp/confirm" class="toolbar">
+      {{ csrf() }}<input name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" required>
+      <button class="primary">Turn on</button>
+    </form>
+    <form method="post" action="/account/mfa/totp/cancel" class="inline">{{ csrf() }}<button class="link">Cancel</button></form>
+  {% else %}
+    <p class="muted">Codes from an app on your phone.</p>
+    <form method="post" action="/account/mfa/totp/start">{{ csrf() }}<button>Set up</button></form>
+  {% endif %}
+  {% endif %}
+
+  {% if "email" in mfa_allowed or user.mfa_email_enabled %}
+  <h3>Email codes</h3>
+  {% if user.mfa_email_enabled %}
+    <p><span class="badge s-running">on</span> Codes go to {{ user.email }}.</p>
+    <form method="post" action="/account/mfa/email/disable" class="toolbar">
+      {{ csrf() }}<input type="password" name="password" placeholder="your password" autocomplete="current-password" required>
+      <button class="danger">Turn off</button>
+    </form>
+  {% elif email_setup %}
+    <form method="post" action="/account/mfa/email/confirm" class="toolbar">
+      {{ csrf() }}<input name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="code from the email" required>
+      <button class="primary">Turn on</button>
+    </form>
+  {% elif not user.email %}
+    <p class="muted">Add your email address above first.</p>
+  {% else %}
+    <p class="muted">A code is emailed to {{ user.email }} each time you sign in.</p>
+    <form method="post" action="/account/mfa/email/start">{{ csrf() }}<button>Send a code to set up</button></form>
+  {% endif %}
+  {% endif %}
+</section>
 {% endif %}
 {% endblock %}

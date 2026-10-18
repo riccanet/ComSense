@@ -24,6 +24,8 @@ EMAIL_KEY = "email"
 ALERT_EMAIL_KEY = "alert_email"
 AGENT_NETWORK_KEY = "agent_network"
 SITE_KEY = "site"
+SECURITY_KEY = "security"
+MFA_REQUIRED = ("off", "admins", "all")
 SMTP_SECURITY = ("starttls", "ssl", "none")
 SEVERITIES = ("warning", "critical")
 
@@ -64,6 +66,14 @@ class AgentNetworkSettings:
     # Address firewalls connect to (https://host:port), put into new enrollment codes.
     # Empty: the default from CSFM_AGENT_URL / the console's host name.
     agent_url: str = ""
+
+
+@dataclass
+class SecuritySettings:
+    # Who must use two-factor sign-in: nobody ("off"), admins, or everyone ("all").
+    mfa_required: str = "off"
+    allow_totp: bool = True
+    allow_email: bool = True
 
 
 @dataclass
@@ -207,3 +217,11 @@ def effective_console_url(db: Session, settings: Settings) -> str:
 
 def setup_pending(db: Session) -> bool:
     return not get_site_settings(db).setup_completed_at
+
+
+def get_security_settings(db: Session) -> SecuritySettings:
+    return _load(db, SECURITY_KEY, SecuritySettings)
+
+
+def save_security_settings(db: Session, value: SecuritySettings, actor: str) -> None:
+    _save(db, SECURITY_KEY, value, actor)

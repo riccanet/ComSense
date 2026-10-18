@@ -66,8 +66,24 @@ restores the previous configuration on its own, also after a reboot.
   email after the response, and is rate-limited per address.
 * The SMTP password is encrypted at rest with a key derived from `CSFM_SECRET_KEY`.
 
+## Two-factor sign-in
+
+* Users turn on an **authenticator app** (TOTP, RFC 6238: 6 digits, 30 s) and/or **email codes** on
+  their Account page. Each is confirmed with a first code before it is switched on. TOTP secrets are
+  encrypted with a key derived from `CSFM_SECRET_KEY`; a TOTP code is accepted once (its time step is
+  remembered). Ten one-time recovery codes are created with the app, stored hashed and shown once.
+* Email codes are 6 digits, single use, valid 10 minutes, kept hashed in the signed session; sending is
+  rate limited.
+* After a correct password the session holds only a pending sign-in (10 minutes). The second step allows
+  5 wrong codes before starting over, plus a per-user limit across sign-ins. Failures are audited.
+* **Settings → Security** requires two-factor sign-in for nobody, admins or everyone, and chooses the
+  allowed methods. Users who must use it but have not set it up can only reach their Account page until
+  they do. Turning off a method needs the password; the last one cannot be turned off while required.
+  Admins can reset a user's two-factor sign-in on the Users page (audited).
+
 ## Recommendations
 
+* Require two-factor sign-in under Settings → Security (at least for admins).
 * Restrict the web console (port 443) to admins: source allow-list, VPN, or SSO in your proxy.
   Firewalls never need it. Only the agent port has to be reachable from the internet.
 * Use short-lived, single-customer keys with approval for each rollout, and revoke them after.

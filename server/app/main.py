@@ -22,9 +22,9 @@ from .proxyproto import ClientAddressMiddleware
 from .scheduler import scheduler_loop
 from .security import generate_temporary_password, hash_password
 from .services.agentpkg import ensure_package
-from .web import account_routes, customer_routes, setup_routes
+from .web import account_routes, customer_routes, mfa_routes, setup_routes
 from .web import routes as web_routes
-from .web.auth import LoginRequired, PasswordChangeRequired
+from .web.auth import LoginRequired, MfaSetupRequired, PasswordChangeRequired
 
 log = logging.getLogger("comsense")
 
@@ -126,6 +126,11 @@ def create_web_app(settings: Settings) -> FastAPI:
     async def password_change_required(request: Request, exc: PasswordChangeRequired):
         return RedirectResponse("/account", status_code=303)
 
+    @app.exception_handler(MfaSetupRequired)
+    async def mfa_setup_required(request: Request, exc: MfaSetupRequired):
+        web_routes.flash(request, "Two-factor sign-in is required for your account. Set it up to continue.", "warn")
+        return RedirectResponse("/account#mfa", status_code=303)
+
     @app.exception_handler(StarletteHTTPException)
     async def http_error(request: Request, exc: StarletteHTTPException):
         return web_routes.render(
@@ -140,6 +145,7 @@ def create_web_app(settings: Settings) -> FastAPI:
     _mount_downloads(app, settings)
     app.include_router(account_routes.router)
     app.include_router(customer_routes.router)
+    app.include_router(mfa_routes.router)
     app.include_router(setup_routes.router)
     app.include_router(web_routes.router)
     return app

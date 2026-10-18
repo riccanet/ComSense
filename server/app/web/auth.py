@@ -19,8 +19,14 @@ class PasswordChangeRequired(Exception):
     """The signed-in user still has a temporary password."""
 
 
+class MfaSetupRequired(Exception):
+    """Settings > Security requires two-factor sign-in for this user, who has not set it up yet."""
+
+
 # Pages a user with a temporary password may still use.
 PASSWORD_CHANGE_PATHS = {"/account", "/account/password", "/logout"}
+# Pages a user who must set up two-factor sign-in may still use.
+MFA_SETUP_PATHS = {"/account", "/account/password", "/account/profile", "/logout"}
 
 
 def csrf_token(request: Request) -> str:
@@ -44,12 +50,27 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> User:
     user_id = request.session.get("uid")
     user = db.get(User, user_id) if user_id else None
     if user is None or not user.active or request.session.get("pwv") != user.password_hash[-16:]:
-        request.session.clear()
+        if user_id:
+            # A stale sign-in; a half-finished one (password done, second factor pending) is kept.
+            request.session.clear()
         raise LoginRequired()
     request.state.user = user
     if user.must_change_password and request.url.path not in PASSWORD_CHANGE_PATHS:
         raise PasswordChangeRequired()
+    path = request.url.path
+    if path not in MFA_SETUP_PATHS and not path.startswith("/account/mfa/") and _mfa_setup_needed(db, user):
+        raise MfaSetupRequired()
     return user
+
+
+def _mfa_setup_needed(db: Session, user: User) -> bool:
+    from ..services.appsettings import get_email_settings, get_security_settings
+    from ..services.mfa import mfa_required, user_methods
+
+    sec = get_security_settings(db)
+    if sec.mfa_required == "off" or not mfa_required(user, sec):
+        return False
+    return not user_methods(user, sec, get_email_settings(db).configured)
 
 
 def require(role: Role):

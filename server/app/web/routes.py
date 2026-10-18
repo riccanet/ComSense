@@ -203,9 +203,21 @@ def login(
         flash(request, "Invalid username or password.", "error")
         return render(request, "login.html", status_code=401)
     request.session.clear()
+    from .mfa_routes import begin_second_factor  # noqa: PLC0415 - avoids an import cycle
+
+    if begin_second_factor(request, db, user):
+        audit(db, user.username, "login.password_ok", detail="second factor required", ip=ip)
+        db.commit()
+        return redirect("/login/mfa")
+    return complete_login(request, db, user)
+
+
+def complete_login(request: Request, db: Session, user: User, method: str = "") -> RedirectResponse:
+    """Sign the user in (after the password and, if they use one, the second factor)."""
+    request.session.clear()
     request.session.update(uid=user.id, pwv=user.password_hash[-16:])
     user.last_login_at = utcnow()
-    audit(db, user.username, "login", ip=ip)
+    audit(db, user.username, "login", detail=f"mfa={method}" if method else "", ip=_ip(request))
     db.commit()
     if user.must_change_password:
         flash(request, "You signed in with a temporary password. Choose a new one to continue.", "warn")
@@ -217,11 +229,6 @@ def login(
 def logout(request: Request):
     request.session.clear()
     return redirect("/login")
-
-
-@router.get("/account", response_class=HTMLResponse)
-def account(request: Request, user: User = Depends(viewer)):
-    return render(request, "account.html")
 
 
 @router.post("/account/password")

@@ -89,6 +89,14 @@ class User(Base):
     email_alerts: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Set for generated or admin-assigned passwords; the user must choose a new one on first use.
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Two-factor sign-in (services/mfa.py). The TOTP secret is encrypted with CSFM_SECRET_KEY.
+    totp_secret: Mapped[str] = mapped_column(String(255), default="", server_default="")
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Last TOTP time step accepted, so a code cannot be used twice.
+    totp_last_step: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    mfa_email_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Hashes of unused one-time recovery codes.
+    recovery_codes: Mapped[list[str] | None] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

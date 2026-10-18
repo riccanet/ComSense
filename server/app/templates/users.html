@@ -21,6 +21,7 @@
       <td class="nowrap">
         <form method="post" action="/users/{{ u.id }}" id="{{ fid }}" class="inline">{{ csrf() }}<button class="small">Save</button></form>
         {% if u.email %}{{ post_button("/users/" ~ u.id ~ "/send-reset", "Email reset link", "small", "Email a password reset link to " ~ u.email ~ "?") }}{% endif %}
+        {% if u.totp_enabled or u.mfa_email_enabled %}{{ post_button("/users/" ~ u.id ~ "/mfa-reset", "Reset 2FA", "small", "Remove two-factor sign-in for " ~ u.username ~ "? They can set it up again.") }}{% endif %}
       </td>
     </tr>
   {% endfor %}

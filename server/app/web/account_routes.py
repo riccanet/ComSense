@@ -47,6 +47,7 @@ SETTINGS_SECTIONS = [
     ("/settings/email", "Email (SMTP)"),
     ("/settings/alerts", "Alert emails"),
     ("/settings/addresses", "Addresses"),
+    ("/settings/security", "Security"),
     ("/settings/setup", "Setup wizard"),
 ]
 # Pages the settings forms may return to: a settings section or a setup wizard step.

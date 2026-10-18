@@ -93,6 +93,25 @@
     <div><button class="primary">Save addresses</button></div>
   </form>
 </section>
+{% elif section == "/settings/security" %}
+<section class="card">
+  <h2>Two-factor sign-in</h2>
+  <p class="small muted">Users turn it on from their Account page. Required users who have not set it up are
+  taken there right after their password, before anything else.</p>
+  <form method="post" action="/settings/security" class="stack">
+    {{ csrf() }}
+    <label>Require two-factor sign-in for
+      <select name="mfa_required">
+        {% for level in mfa_levels %}<option value="{{ level }}"{% if sec.mfa_required == level %} selected{% endif %}>{{ {"off": "Nobody (optional)", "admins": "Admins", "all": "Everyone"}[level] }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" name="allow_totp" value="true"{% if sec.allow_totp %} checked{% endif %}> Authenticator app (TOTP)</label>
+    <label class="check"><input type="checkbox" name="allow_email" value="true"{% if sec.allow_email %} checked{% endif %}> Email codes</label>
+    {% if sec.allow_email and not email_ready %}<div class="flash warn">Email codes need outgoing email; set up <a href="/settings/email">Email (SMTP)</a> first.</div>{% endif %}
+    <p class="small muted">Lost phone or mailbox: an admin can reset a user's two-factor sign-in on the Users page.</p>
+    <div><button class="primary">Save</button></div>
+  </form>
+</section>
 {% else %}
 <section class="card">
   <h2>Setup wizard</h2>
