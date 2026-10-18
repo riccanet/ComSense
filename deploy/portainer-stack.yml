@@ -5,10 +5,12 @@
 # and set the environment variables below. Portainer builds the app image from
 # server/ in this repository.
 #
-# The app listens on CSFM_BIND_ADDRESS:CSFM_PORT (plain HTTP). Bind it to an
-# address only the proxy can reach, e.g. the host's NetBird IP, and point the proxy
-# at http://<that address>:<port>. TLS is terminated by the proxy; firewalls
-# connect to https://CSFM_DOMAIN on 443.
+# Two listeners:
+#   Web console  CSFM_BIND_ADDRESS:CSFM_PORT, plain HTTP. Bind it to an address only
+#                your proxy can reach (e.g. the host's NetBird IP) and protect it there.
+#   Agents       CSFM_AGENT_BIND:CSFM_AGENT_PORT_PUBLIC, TLS terminated by the app with
+#                a self-issued certificate that agents pin. Expose this one to the
+#                internet (or forward it through NAT); it serves only the agent API.
 #
 # Required: CSFM_DOMAIN, CSFM_BIND_ADDRESS, POSTGRES_PASSWORD, CSFM_SECRET_KEY,
 #           CSFM_BACKUP_ENCRYPTION_KEY, CSFM_INITIAL_ADMIN_PASSWORD (first start only)
@@ -53,6 +55,8 @@ services:
     environment:
       CSFM_DATABASE_URL: postgresql+psycopg://comsense:${POSTGRES_PASSWORD}@db:5432/comsense
       CSFM_PUBLIC_URL: https://${CSFM_DOMAIN:?CSFM_DOMAIN is required}
+      CSFM_AGENT_URL: https://${CSFM_AGENT_DOMAIN:-${CSFM_DOMAIN}}:${CSFM_AGENT_PORT_PUBLIC:-8443}
+      CSFM_AGENT_TLS_NAMES: ${CSFM_AGENT_TLS_NAMES:-}
       CSFM_SECRET_KEY: ${CSFM_SECRET_KEY:?CSFM_SECRET_KEY is required}
       CSFM_BACKUP_ENCRYPTION_KEY: ${CSFM_BACKUP_ENCRYPTION_KEY:?CSFM_BACKUP_ENCRYPTION_KEY is required}
       CSFM_INITIAL_ADMIN_USER: ${CSFM_INITIAL_ADMIN_USER:-admin}
@@ -63,6 +67,7 @@ services:
       CSFM_TASK_RETENTION_DAYS: ${CSFM_TASK_RETENTION_DAYS:-90}
     ports:
       - "${CSFM_BIND_ADDRESS:?CSFM_BIND_ADDRESS is required}:${CSFM_PORT:-3020}:8000"
+      - "${CSFM_AGENT_BIND:-0.0.0.0}:${CSFM_AGENT_PORT_PUBLIC:-8443}:8443"
     volumes:
       - comsense-data:/var/lib/comsense
     networks:

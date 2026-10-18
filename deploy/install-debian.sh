@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Install the ComSense server on Debian 12+ or Ubuntu 22.04+ without Docker:
-# PostgreSQL, the app under systemd, and Caddy for automatic HTTPS on port 443.
+# PostgreSQL, the app under systemd, Caddy for the web console on port 443, and the
+# agent listener (its own TLS) on CSFM_AGENT_PORT, default 8443. Open/forward both.
 #
 #   sudo ./deploy/install-debian.sh comsense.example.com admin@example.com
 #
@@ -80,4 +81,5 @@ systemctl enable --now comsense.service
 systemctl restart comsense.service
 systemctl reload caddy || systemctl restart caddy
 
-echo "ComSense is starting at https://${DOMAIN}"
+echo "ComSense is starting. Web console: https://${DOMAIN}  Agents: https://${DOMAIN}:8443"
+echo "Forward/open TCP 443 (console) and 8443 (agents). Restrict 443 to admins if you like."

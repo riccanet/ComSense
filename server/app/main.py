@@ -44,13 +44,23 @@ def bootstrap_admin(settings: Settings) -> None:
         log.warning("Created initial admin user '%s'. Change its password.", settings.initial_admin_user)
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
-    settings = settings or get_settings()
+def init_backend(settings: Settings) -> None:
+    """Validate settings, prepare storage and the database. Call once per process."""
     settings.validate()
     settings.backup_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    (settings.data_dir / "downloads").mkdir(parents=True, exist_ok=True)
     engine = init_engine(settings.database_url)
     Base.metadata.create_all(engine)
     bootstrap_admin(settings)
+
+
+def _mount_downloads(app: FastAPI, settings: Settings) -> None:
+    # Built agent packages placed here are offered to firewalls for installation.
+    app.mount("/downloads", StaticFiles(directory=settings.data_dir / "downloads"), name="downloads")
+
+
+def create_web_app(settings: Settings) -> FastAPI:
+    """The admin console. Plain HTTP; publish it only through an HTTPS reverse proxy."""
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -97,8 +107,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(request: Request, exc: StarletteHTTPException):
-        if request.url.path.startswith("/api/"):
-            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers)
         return web_routes.render(
             request, "error.html", status_code=exc.status_code, code=exc.status_code, message=exc.detail
         )
@@ -108,15 +116,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ok", "version": __version__}
 
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
-    # Built agent packages placed here can be installed with `pkg-static add <url>`.
-    downloads = settings.data_dir / "downloads"
-    downloads.mkdir(parents=True, exist_ok=True)
-    app.mount("/downloads", StaticFiles(directory=downloads), name="downloads")
-    app.include_router(agent_api.router)
+    _mount_downloads(app, settings)
     app.include_router(web_routes.router)
     return app
 
 
-def app_factory() -> FastAPI:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    return create_app()
+def create_agent_app(settings: Settings) -> FastAPI:
+    """The agent API, served on its own TLS port. Nothing else is reachable through it."""
+    app = FastAPI(
+        title="ComSense agent API",
+        version=__version__,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Cache-Control", "no-store")
+        return response
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(request: Request, exc: StarletteHTTPException):
+        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers)
+
+    @app.get("/healthz", include_in_schema=False)
+    def healthz() -> dict[str, str]:
+        return {"status": "ok"}
+
+    _mount_downloads(app, settings)
+    app.include_router(agent_api.router)
+    return app
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    """Initialise the backend and return the web console app (used by tests and tools)."""
+    settings = settings or get_settings()
+    init_backend(settings)
+    return create_web_app(settings)

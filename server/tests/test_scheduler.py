@@ -13,9 +13,9 @@ from app.scheduler import run_once
 CONFIG = b'<?xml version="1.0"?>\n<pfsense>\n<version>23.3</version>\n<n>{}</n>\n</pfsense>\n'
 
 
-def _upload(client, token, n=0):
+def _upload(agent, token, n=0):
     body = gzip.compress(CONFIG.replace(b"{}", str(n).encode()))
-    resp = client.post("/api/agent/v1/backups", content=body, headers=auth(token))
+    resp = agent.post("/api/agent/v1/backups", content=body, headers=auth(token))
     assert resp.status_code == 200, resp.text
     return resp.json()
 
@@ -26,9 +26,9 @@ def _backup_tasks(db, device_id):
     )
 
 
-def test_unchanged_config_is_not_backed_up_every_minute(client, db, settings):
-    creds = enroll(client, make_key(db))
-    _upload(client, creds["token"])
+def test_unchanged_config_is_not_backed_up_every_minute(client, db, settings, agent):
+    creds = enroll(agent, make_key(db))
+    _upload(agent, creds["token"])
     device = db.get(Device, creds["device_id"])
 
     # The only stored backup is two days old, but the firewall uploaded the same
@@ -49,9 +49,9 @@ def test_unchanged_config_is_not_backed_up_every_minute(client, db, settings):
 
     # ...and after the agent completes it with an identical config, none follow.
     task = db.scalar(select(Task).where(Task.type == TaskType.backup))
-    client.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"]))
-    _upload(client, creds["token"])
-    client.post(f"/api/agent/v1/tasks/{task.id}/result", json={"status": "success"}, headers=auth(creds["token"]))
+    agent.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"]))
+    _upload(agent, creds["token"])
+    agent.post(f"/api/agent/v1/tasks/{task.id}/result", json={"status": "success"}, headers=auth(creds["token"]))
     for _ in range(3):
         run_once(settings)
     db.expire_all()
@@ -59,15 +59,15 @@ def test_unchanged_config_is_not_backed_up_every_minute(client, db, settings):
     assert db.scalar(select(func.count()).select_from(Backup)) == 1
 
 
-def test_only_last_five_backups_are_kept_plus_pinned(client, db, settings):
+def test_only_last_five_backups_are_kept_plus_pinned(client, db, settings, agent):
     assert settings.backup_retention_count == 5
-    creds = enroll(client, make_key(db))
-    first = _upload(client, creds["token"], 0)
+    creds = enroll(agent, make_key(db))
+    first = _upload(agent, creds["token"], 0)
     pinned = db.get(Backup, first["backup_id"])
     pinned.pinned = True
     db.commit()
     for n in range(1, 9):
-        _upload(client, creds["token"], n)
+        _upload(agent, creds["token"], n)
     db.expire_all()
     backups = db.scalars(select(Backup).order_by(Backup.id)).all()
     assert len(backups) == 6
@@ -77,8 +77,8 @@ def test_only_last_five_backups_are_kept_plus_pinned(client, db, settings):
     assert len(files) == 6
 
 
-def test_old_finished_tasks_are_purged(client, db, settings):
-    creds = enroll(client, make_key(db))
+def test_old_finished_tasks_are_purged(client, db, settings, agent):
+    creds = enroll(agent, make_key(db))
     old = utcnow() - timedelta(days=settings.task_retention_days + 1)
     db.add_all(
         [

@@ -40,15 +40,6 @@ function csfm_enroll($settings, $key) {
 	return $resp;
 }
 
-function csfm_clear_enrollment_key() {
-	$settings = csfm_settings();
-	if (!empty($settings['enrollment_key'])) {
-		$settings['enrollment_key'] = '';
-		csfm_cfg_set(CSFM_CONFIG_PATH, $settings);
-		write_config('ComSense: enrollment complete, key removed');
-	}
-}
-
 function csfm_write_interval($seconds) {
 	csfm_ensure_db_dir();
 	$seconds = max(15, min(3600, (int)$seconds));
@@ -101,8 +92,12 @@ function csfm_cycle() {
 			return 'Not enrolled: enter an enrollment key in Services > ComSense Agent';
 		}
 		try {
-			csfm_enroll($settings, $settings['enrollment_key']);
-			csfm_clear_enrollment_key();
+			$key = csfm_apply_enrollment_code($settings, $settings['enrollment_key']);
+			csfm_enroll($settings, $key);
+			/* Keep the URL and pin that came with the code; drop the key. */
+			$settings['enrollment_key'] = '';
+			csfm_cfg_set(CSFM_CONFIG_PATH, $settings);
+			write_config('ComSense: enrollment complete, key removed');
 		} catch (Exception $e) {
 			csfm_record_error('Enrollment failed: ' . $e->getMessage());
 			return 'Enrollment failed';

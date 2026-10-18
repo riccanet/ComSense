@@ -44,6 +44,8 @@ TOKEN_MAX_AGE = timedelta(days=30)
 KNOWN_CAPABILITIES = {"backup", "policy", "upgrade", "packages", "services", "restore", "reboot"}
 
 enroll_limiter = RateLimiter(limit=10, window_seconds=600)
+# Addresses that keep presenting bad device tokens are refused for a while.
+auth_failure_limiter = RateLimiter(limit=20, window_seconds=600)
 
 
 def client_ip(request: Request) -> str:
@@ -71,16 +73,21 @@ def current_device(
     authorization: str = Header(default=""),
     db: Session = Depends(get_db),
 ) -> Device:
+    ip = client_ip(request)
+    if auth_failure_limiter.blocked(ip):
+        raise HTTPException(429, "Too many failed authentication attempts; try again later")
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token:
+        auth_failure_limiter.allow(ip)
         raise HTTPException(401, "Missing device token", headers={"WWW-Authenticate": "Bearer"})
     device = db.scalar(select(Device).where(Device.token_hash == hash_secret(token.strip())))
     if device is None:
+        auth_failure_limiter.allow(ip)
         raise HTTPException(401, "Unknown device token", headers={"WWW-Authenticate": "Bearer"})
     if device.status == DeviceStatus.disabled:
         raise HTTPException(403, "Device has been disabled on the management server")
     device.last_seen_at = utcnow()
-    device.last_seen_ip = client_ip(request)
+    device.last_seen_ip = ip
     return device
 
 

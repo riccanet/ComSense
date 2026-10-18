@@ -112,5 +112,15 @@ class RateLimiter:
         hits.append(now)
         return True
 
+    def blocked(self, key: str) -> bool:
+        """True when the key is at its limit, without recording a hit."""
+        now = time.monotonic()
+        hits = self._hits.get(key)
+        if not hits:
+            return False
+        while hits and now - hits[0] > self.window:
+            hits.popleft()
+        return len(hits) >= self.limit
+
     def reset(self) -> None:
         self._hits.clear()

@@ -100,6 +100,15 @@ class CsfmClient {
 			CURLOPT_SSLVERSION => CURL_SSLVERSION_TLSv1_2,
 			CURLOPT_CAINFO => is_readable(CSFM_CA_FILE) ? CSFM_CA_FILE : CSFM_SYSTEM_CA_BUNDLE,
 		);
+		if (!empty($this->settings['pin_sha256']) && !is_readable(CSFM_CA_FILE)) {
+			/*
+			 * The server issued its own certificate: trust exactly the pinned
+			 * public key instead of a certificate authority. curl enforces the
+			 * pin even with chain verification off, so any other key is refused.
+			 */
+			$opts[CURLOPT_SSL_VERIFYPEER] = false;
+			$opts[CURLOPT_SSL_VERIFYHOST] = 0;
+		}
 		if (!empty($this->settings['pin_sha256'])) {
 			$pins = array();
 			foreach (preg_split('/[\s,;]+/', trim($this->settings['pin_sha256'])) as $pin) {

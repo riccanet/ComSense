@@ -1,9 +1,21 @@
 # Agent protocol
 
-All endpoints are under `https://<server>/api/agent/v1`, exchange JSON (except backup bodies), and
+All endpoints are under `https://<server>:<agent port>/api/agent/v1` (port 8443 by default). The agent
+listener is separate from the web console and serves nothing else. Agents authenticate the server by
+pinning its public key (`CURLOPT_PINNEDPUBLICKEY`), or by CA verification when the operator installed
+their own certificate.
+
+Endpoints exchange JSON (except backup bodies), and
 except `/enroll` require `Authorization: Bearer <device token>`. Errors are `{"detail": "..."}` with
 a 4xx status. 401 means the token is unknown (the agent asks for re-enrollment); 403 means the device
-is disabled or still awaiting approval.
+is disabled or still awaiting approval; 429 means the source address sent 20 bad tokens within
+10 minutes and is refused until that window passes.
+
+## Enrollment codes
+
+`csfm1.` followed by base64url (no padding) of `{"url": "<agent URL>", "key": "<enrollment key>",
+"pin": "<base64 SHA-256 of the server SubjectPublicKeyInfo>"}`. `pin` is omitted when the agent
+listener uses an operator-supplied certificate.
 
 ## POST /enroll
 

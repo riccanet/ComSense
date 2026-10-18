@@ -191,6 +191,40 @@ function csfm_normalize_url($url) {
 	return $url;
 }
 
+/*
+ * Enrollment codes ("csfm1.<base64url JSON>") carry the agent server URL, the
+ * enrollment key and, for a self-issued server certificate, its public key pin.
+ * Returns array(url, key, pin) or false for a bare key.
+ */
+function csfm_parse_enrollment_code($code) {
+	$code = trim((string)$code);
+	if (strpos($code, 'csfm1.') !== 0) {
+		return false;
+	}
+	$b64 = strtr(substr($code, 6), '-_', '+/');
+	$json = base64_decode($b64 . str_repeat('=', (4 - strlen($b64) % 4) % 4), true);
+	$data = ($json === false) ? null : json_decode($json, true);
+	if (!is_array($data) || empty($data['url']) || empty($data['key'])) {
+		return null;
+	}
+	return array((string)$data['url'], (string)$data['key'], (string)($data['pin'] ?? ''));
+}
+
+/* Apply an enrollment code to a settings array; returns the bare key, or throws. */
+function csfm_apply_enrollment_code(&$settings, $value) {
+	$parsed = csfm_parse_enrollment_code($value);
+	if ($parsed === null) {
+		throw new Exception('The enrollment code is damaged; copy it again from the server.');
+	}
+	if ($parsed === false) {
+		return trim((string)$value);
+	}
+	list($url, $key, $pin) = $parsed;
+	$settings['server_url'] = $url;
+	$settings['pin_sha256'] = $pin;
+	return $key;
+}
+
 /* Run a command with a hard timeout; returns array(exit code, combined output). */
 function csfm_exec($cmd, $timeout = 600) {
 	$full = '/usr/bin/timeout ' . (int)$timeout . ' ' . $cmd . ' 2>&1';

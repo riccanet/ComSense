@@ -55,14 +55,14 @@
 			<fieldname>server_url</fieldname>
 			<type>input</type>
 			<size>60</size>
-			<description>HTTPS address of the management server, e.g. https://comsense.example.com (add :port if it is not 443). Plain HTTP is not accepted.</description>
+			<description>Filled in automatically from the enrollment code. The server's agent address, e.g. https://comsense.example.com:8443 (the agent port, not the web console). Plain HTTP is not accepted.</description>
 		</field>
 		<field>
-			<fielddescr>Enrollment key</fielddescr>
+			<fielddescr>Enrollment code</fielddescr>
 			<fieldname>enrollment_key</fieldname>
 			<type>password</type>
 			<size>60</size>
-			<description>One-time key created under Enrollment keys on the management server. The firewall exchanges it for its own credential on save, and the key is then erased. Leave blank once enrolled; enter a new key to re-enroll.</description>
+			<description>Paste the enrollment code shown on the server under Enrollment keys. It contains the server address, a one-time key and the server's certificate pin. The firewall enrolls when you save, then erases the key. Leave blank once enrolled; paste a new code to re-enroll.</description>
 		</field>
 		<field>
 			<fielddescr>Server CA certificate</fielddescr>
@@ -71,14 +71,14 @@
 			<encoding>base64</encoding>
 			<rows>6</rows>
 			<cols>65</cols>
-			<description>Optional. PEM certificate of the CA that signed the server certificate, if it is not publicly trusted. Leave blank for Let's Encrypt or other public CAs.</description>
+			<description>Optional, and rarely needed: the enrollment code's pin already covers the server's own certificate. Use this only for a server certificate from your private CA.</description>
 		</field>
 		<field>
 			<fielddescr>Public key pin</fielddescr>
 			<fieldname>pin_sha256</fieldname>
 			<type>input</type>
 			<size>60</size>
-			<description>Optional. Base64 SHA-256 of the server's public key; separate several with spaces. Connections to any other key are refused.</description>
+			<description>Filled in from the enrollment code when the server uses its own certificate. Base64 SHA-256 of the server's public key; connections to any other key are refused. Leave blank for a publicly trusted certificate.</description>
 		</field>
 		<field>
 			<name>Allowed remote actions</name>

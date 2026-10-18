@@ -3,33 +3,52 @@
 {% block title %}Enrollment keys{% endblock %}
 {% block content %}
 <h1>Enrollment keys</h1>
-<p class="muted">A firewall can only join this server by presenting a valid enrollment key. Paste the key into
-<strong>Services &gt; ComSense Agent</strong> on the firewall after installing the package. Once enrolled, the firewall
-receives its own device token and the key is erased from the firewall.</p>
+<p class="muted">A firewall can only join this server with a valid enrollment key. Each new key comes with an
+<strong>enrollment code</strong> that also carries the agent address and the server's certificate pin, so it is the
+only thing to paste on the firewall. Once enrolled, the firewall gets its own device token and the key is erased from it.</p>
 
 {% if new_key %}
 <section class="card highlight">
-  <h2>New enrollment key</h2>
-  <p>Copy it now. It is stored only as a hash and cannot be shown again.</p>
-  <div class="copyrow"><input class="mono" readonly value="{{ new_key }}" id="new-key"><button type="button" data-copy="new-key">Copy</button></div>
-  <dl>
-    <dt>Server URL</dt><dd class="mono">{{ public_url }}</dd>
-  </dl>
+  <h2>New enrollment code</h2>
+  <p>Copy it now. The key inside it is stored only as a hash and cannot be shown again.</p>
+  <div class="copyrow"><input class="mono" readonly value="{{ enrollment_code }}" id="new-code"><button type="button" data-copy="new-code">Copy</button></div>
+  <details>
+    <summary class="small">Enter the details separately instead</summary>
+    <dl>
+      <dt>Agent server URL</dt><dd class="mono">{{ agent_url }}</dd>
+      <dt>Enrollment key</dt><dd class="mono">{{ new_key }}</dd>
+      {% if agent_pin %}<dt>Public key pin</dt><dd class="mono">{{ agent_pin }}</dd>{% endif %}
+    </dl>
+  </details>
 </section>
 {% endif %}
+
+<section class="card">
+  <h2>Agent endpoint</h2>
+  <dl>
+    <dt>Firewalls connect to</dt><dd class="mono">{{ agent_url }}</dd>
+    <dt>Certificate</dt>
+    <dd>{% if agent_pin %}Issued by this server and pinned by each agent (valid until {{ agent_cert_expires|dt }}; renewed automatically with the same key).
+        <div class="mono small">sha256//{{ agent_pin }}</div>
+        {% else %}Provided certificate, verified by agents against public certificate authorities (valid until {{ agent_cert_expires|dt }}).{% endif %}</dd>
+  </dl>
+  <p class="small muted">Firewalls only need outbound access to this address and port. Forward that port to the server's agent listener;
+  the web console can stay behind your own proxy, VPN or allow-list.</p>
+</section>
 
 <section class="card">
   <h2>Connecting a firewall</h2>
   <ol>
     <li>Install the agent package from a shell on the firewall (Diagnostics &gt; Command Prompt or SSH):
-      {% if agent_packages %}
-      <pre>pkg-static add {{ public_url }}/downloads/{{ agent_packages[-1] }}</pre>
+      {% if package %}
+      <pre>fetch -o /tmp/comsense.pkg {% if agent_pin %}--no-verify-peer {% endif %}{{ agent_url }}/downloads/{{ package.name }} &amp;&amp; [ "$(sha256 -q /tmp/comsense.pkg)" = "{{ package.sha256 }}" ] &amp;&amp; pkg-static add /tmp/comsense.pkg</pre>
+      <span class="small muted">The SHA-256 check guarantees the package is the one on this server{% if agent_pin %}, even though fetch cannot verify the self-issued certificate{% endif %}.</span>
       {% else %}
       <pre>pkg-static add https://&lt;where you host it&gt;/pfSense-pkg-ComSense-&lt;version&gt;.pkg</pre>
-      <span class="small muted">Copy a built package into the server's <code>downloads</code> data folder to have it served from here. See docs/AGENT.md.</span>
+      <span class="small muted">Copy a built package into the server's <code>downloads</code> data folder to have it served from here with a ready-made install command. See docs/AGENT.md.</span>
       {% endif %}
     </li>
-    <li>Open <strong>Services &gt; ComSense Agent</strong>, tick <em>Enable</em>, enter the server URL <code>{{ public_url }}</code> and the enrollment key, choose which remote actions to allow, and save.</li>
+    <li>Open <strong>Services &gt; ComSense Agent</strong>, tick <em>Enable</em>, paste the enrollment code, choose which remote actions to allow, and save.</li>
     <li>The firewall appears under Firewalls (after approval, if the key requires it).</li>
   </ol>
 </section>

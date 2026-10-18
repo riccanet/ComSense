@@ -5,10 +5,11 @@ certificate verification, enrollment, check-in, backups, policies, tasks,
 restore) is the production code path.
 
 Run with:  python -m pytest agent/tests/test_e2e.py
-Needs: php (with curl), openssl, and the server requirements installed.
+Needs: php (with curl) and the server requirements installed.
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import shutil
@@ -25,9 +26,7 @@ AGENT_DIR = ROOT / "agent/pfSense-pkg-ComSense/files/usr/local/pkg/comsense"
 HARNESS = Path(__file__).with_name("harness.php")
 sys.path.insert(0, str(ROOT / "server"))
 
-pytestmark = pytest.mark.skipif(
-    not shutil.which("php") or not shutil.which("openssl"), reason="php and openssl are required"
-)
+pytestmark = pytest.mark.skipif(not shutil.which("php"), reason="php is required")
 
 
 def _free_port() -> int:
@@ -36,24 +35,23 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-def _make_certs(d: Path) -> None:
-    run = lambda *a: subprocess.run(a, check=True, capture_output=True)  # noqa: E731
-    run("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2",
-        "-subj", "/CN=ComSense Test CA", "-keyout", d / "ca.key", "-out", d / "ca.pem")
-    run("openssl", "req", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=localhost",
-        "-keyout", d / "server.key", "-out", d / "server.csr")
-    (d / "ext.cnf").write_text("subjectAltName=DNS:localhost,IP:127.0.0.1\n")
-    run("openssl", "x509", "-req", "-in", d / "server.csr", "-CA", d / "ca.pem", "-CAkey", d / "ca.key",
-        "-CAcreateserial", "-days", "2", "-extfile", d / "ext.cnf", "-out", d / "server.pem")
+def _wait_for(port: int, proc: subprocess.Popen) -> None:
+    for _ in range(150):
+        try:
+            socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
+            return
+        except OSError:
+            time.sleep(0.1)
+    proc.kill()
+    raise RuntimeError(proc.stdout.read().decode())
 
 
 @pytest.fixture(scope="module")
 def env(tmp_path_factory):
     d = tmp_path_factory.mktemp("e2e")
-    _make_certs(d)
     from app.security import generate_fernet_key
 
-    port = _free_port()
+    web_port, agent_port = _free_port(), _free_port()
     server_env = {
         **os.environ,
         "CSFM_DATABASE_URL": f"sqlite:///{d / 'server.db'}",
@@ -62,29 +60,30 @@ def env(tmp_path_factory):
         "CSFM_DATA_DIR": str(d / "data"),
         "CSFM_RUN_SCHEDULER": "false",
         "CSFM_INITIAL_ADMIN_PASSWORD": "e2e-admin-password",
+        "CSFM_PUBLIC_URL": "https://localhost",
+        "CSFM_WEB_HOST": "127.0.0.1",
+        "CSFM_WEB_PORT": str(web_port),
+        "CSFM_AGENT_HOST": "127.0.0.1",
+        "CSFM_AGENT_PORT": str(agent_port),
     }
+    # The production entry point: web console + agent listener with a self-issued, pinned certificate.
     proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app.main:app_factory", "--factory",
-         "--host", "127.0.0.1", "--port", str(port),
-         "--ssl-keyfile", str(d / "server.key"), "--ssl-certfile", str(d / "server.pem")],
+        [sys.executable, "-m", "app.serve"],
         cwd=ROOT / "server", env=server_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
     )
-    for _ in range(100):
-        try:
-            socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
-            break
-        except OSError:
-            time.sleep(0.1)
-    else:
-        proc.kill()
-        raise RuntimeError(proc.stdout.read().decode())
+    _wait_for(web_port, proc)
+    _wait_for(agent_port, proc)
+
+    from cryptography import x509
 
     from app.db import init_engine, session_factory
+    from app.tls import spki_pin
 
+    pin = spki_pin(x509.load_pem_x509_certificate((d / "data" / "tls" / "agent.pem").read_bytes()))
     init_engine(server_env["CSFM_DATABASE_URL"])
     fw = d / "firewall"
     (fw / "db").mkdir(parents=True)
-    yield {"dir": d, "fw": fw, "port": port, "db": session_factory()}
+    yield {"dir": d, "fw": fw, "web_port": web_port, "agent_port": agent_port, "pin": pin, "db": session_factory()}
     proc.terminate()
     proc.wait(timeout=10)
 
@@ -126,26 +125,49 @@ def test_full_lifecycle(env):
         db.add(EnrollmentKey(name="e2e", prefix=key_display_prefix(key), key_hash=hash_secret(key)))
         db.commit()
 
-    # comsense_resync() writes the CA; emulate it.
-    shutil.copy(env["dir"] / "ca.pem", env["fw"] / "db" / "server-ca.pem")
-    url = f"https://localhost:{env['port']}"
+    from app.enrollment import make_code
 
-    # 1. A wrong key is refused and nothing is stored.
-    set_fw_settings(env, enable="on", server_url=url, enrollment_key="csfm_enr_wrong",
-                    allow_backup="on", allow_policy="on", allow_services="on", allow_restore="on")
+    url = f"https://localhost:{env['agent_port']}"
+    caps = dict(allow_backup="on", allow_policy="on", allow_services="on", allow_restore="on")
+
+    # The web console port does not answer the agent API at all.
+    import httpx
+
+    web = httpx.get(f"http://127.0.0.1:{env['web_port']}/api/agent/v1/ping", trust_env=False)
+    assert web.status_code == 404
+
+    def last_error() -> str:
+        return json.loads(agent(env, "state"))["state"]["last_error"]["message"]
+
+    # 1. A wrong key is refused by the server and nothing is stored.
+    set_fw_settings(env, enable="on", enrollment_key=make_code(url, "csfm_enr_wrong", env["pin"]), **caps)
     assert agent(env, "run") == "Enrollment failed"
-    assert "403" in json.loads(agent(env, "state"))["state"]["last_error"]["message"]
+    assert "403" in last_error()
 
-    # 2. Without the CA, TLS verification fails (no silent downgrade).
-    set_fw_settings(env, enrollment_key=key)
-    (env["fw"] / "db" / "server-ca.pem").unlink()
+    # 2. A pin for some other key: the TLS connection is refused before anything is sent.
+    other_pin = base64.b64encode(b"x" * 32).decode()
+    set_fw_settings(env, enrollment_key=make_code(url, key, other_pin))
     assert agent(env, "run") == "Enrollment failed"
-    assert "reach" in json.loads(agent(env, "state"))["state"]["last_error"]["message"]
-    shutil.copy(env["dir"] / "ca.pem", env["fw"] / "db" / "server-ca.pem")
+    assert "reach" in last_error()
 
-    # 3. The right key enrolls, the key is wiped from config, and a backup is uploaded.
+    # 3. No pin and no CA: the self-issued certificate is not trusted (no silent downgrade).
+    set_fw_settings(env, enrollment_key=key, server_url=url, pin_sha256="")
+    assert agent(env, "run") == "Enrollment failed"
+    assert "reach" in last_error()
+
+    # A damaged code is reported as such.
+    set_fw_settings(env, enrollment_key="csfm1.not-base64!")
+    assert agent(env, "run") == "Enrollment failed"
+    assert "damaged" in last_error()
+
+    set_fw_settings(env, enrollment_key=make_code(url, key, env["pin"]))
+
+    # 3. The right code enrolls over the pinned connection. The key is wiped from
+    #    config; the URL and pin that came with it are kept. A backup is uploaded.
     assert agent(env, "run") == "Checked in; ran 0 task(s)"
-    assert fw_config(env)["installedpackages"]["comsense"]["config"][0]["enrollment_key"] == ""
+    pkg_settings = fw_config(env)["installedpackages"]["comsense"]["config"][0]
+    assert pkg_settings["enrollment_key"] == ""
+    assert pkg_settings["server_url"] == url and pkg_settings["pin_sha256"] == env["pin"]
     creds = json.loads(agent(env, "state"))["credentials"]
     with env["db"]() as db:
         device = db.get(Device, creds["device_id"])

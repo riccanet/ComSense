@@ -19,34 +19,34 @@ CONFIG_XML = b"""<?xml version="1.0"?>
 """
 
 
-def test_enroll_requires_valid_key(client, db):
+def test_enroll_requires_valid_key(client, db, agent):
     for body in ({}, {"enrollment_key": ""}, {"enrollment_key": "csfm_enr_wrong"}):
-        resp = client.post("/api/agent/v1/enroll", json=body)
+        resp = agent.post("/api/agent/v1/enroll", json=body)
         assert resp.status_code == 403
     assert db.scalar(select(Device)) is None
 
 
-def test_revoked_expired_and_used_up_keys_are_rejected(client, db):
+def test_revoked_expired_and_used_up_keys_are_rejected(client, db, agent):
     revoked = make_key(db, revoked=True)
     expired = make_key(db, expires_at=utcnow() - timedelta(minutes=1))
     single = make_key(db, max_uses=1)
     for key in (revoked, expired):
-        assert client.post("/api/agent/v1/enroll", json={"enrollment_key": key}).status_code == 403
-    enroll(client, single)
-    resp = client.post(
+        assert agent.post("/api/agent/v1/enroll", json={"enrollment_key": key}).status_code == 403
+    enroll(agent, single)
+    resp = agent.post(
         "/api/agent/v1/enroll",
         json={"enrollment_key": single, "system": {"unique_id": "other"}},
     )
     assert resp.status_code == 403
 
 
-def test_checkin_requires_token(client, db):
-    assert client.post("/api/agent/v1/checkin", json={}).status_code == 401
-    assert client.post("/api/agent/v1/checkin", json={}, headers=auth("csfm_dev_nope")).status_code == 401
+def test_checkin_requires_token(client, db, agent):
+    assert agent.post("/api/agent/v1/checkin", json={}).status_code == 401
+    assert agent.post("/api/agent/v1/checkin", json={}, headers=auth("csfm_dev_nope")).status_code == 401
 
 
-def test_enroll_and_checkin_records_inventory(client, db):
-    creds = enroll(client, make_key(db))
+def test_enroll_and_checkin_records_inventory(client, db, agent):
+    creds = enroll(agent, make_key(db))
     assert creds["token"].startswith("csfm_dev_")
     report = {
         "agent_version": "0.1.0",
@@ -58,7 +58,7 @@ def test_enroll_and_checkin_records_inventory(client, db):
         "metrics": {"cpu_pct": 12.5, "mem_pct": 40, "disk_pct": 95, "load": [0.2, 0.1, 0.1], "states": 120},
         "config": {"sha256": "f" * 64},
     }
-    resp = client.post("/api/agent/v1/checkin", json=report, headers=auth(creds["token"]))
+    resp = agent.post("/api/agent/v1/checkin", json=report, headers=auth(creds["token"]))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["status"] == "online"
@@ -74,13 +74,13 @@ def test_enroll_and_checkin_records_inventory(client, db):
 
     report["gateways"][0]["status"] = "online"
     report["metrics"]["disk_pct"] = 50
-    client.post("/api/agent/v1/checkin", json=report, headers=auth(creds["token"]))
+    agent.post("/api/agent/v1/checkin", json=report, headers=auth(creds["token"]))
     db.expire_all()
     assert db.scalars(select(Alert).where(Alert.resolved_at.is_(None))).all() == []
 
 
-def test_approval_gate(client, db):
-    creds = enroll(client, make_key(db, require_approval=True))
+def test_approval_gate(client, db, agent):
+    creds = enroll(agent, make_key(db, require_approval=True))
     device = db.get(Device, creds["device_id"])
     assert device.status == DeviceStatus.pending
     try:
@@ -88,22 +88,22 @@ def test_approval_gate(client, db):
         raise AssertionError("expected TaskError")
     except TaskError:
         pass
-    resp = client.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"]))
+    resp = agent.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"]))
     assert resp.json() == {**resp.json(), "status": "pending", "tasks": []}
     gz = gzip.compress(CONFIG_XML)
-    assert client.post("/api/agent/v1/backups", content=gz, headers=auth(creds["token"])).status_code == 403
+    assert agent.post("/api/agent/v1/backups", content=gz, headers=auth(creds["token"])).status_code == 403
 
 
-def test_disabled_device_is_rejected(client, db):
-    creds = enroll(client, make_key(db))
+def test_disabled_device_is_rejected(client, db, agent):
+    creds = enroll(agent, make_key(db))
     device = db.get(Device, creds["device_id"])
     device.status = DeviceStatus.disabled
     db.commit()
-    assert client.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"])).status_code == 403
+    assert agent.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"])).status_code == 403
 
 
-def test_task_round_trip_and_capability_check(client, db):
-    creds = enroll(client, make_key(db), capabilities=["backup"])
+def test_task_round_trip_and_capability_check(client, db, agent):
+    creds = enroll(agent, make_key(db), capabilities=["backup"])
     device = db.get(Device, creds["device_id"])
     try:
         queue_task(db, device, TaskType.reboot)
@@ -113,13 +113,13 @@ def test_task_round_trip_and_capability_check(client, db):
     task = queue_task(db, device, TaskType.check_updates)
     db.commit()
 
-    tasks = client.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"])).json()["tasks"]
+    tasks = agent.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"])).json()["tasks"]
     assert [t["type"] for t in tasks] == ["check_updates"]
     # Sent tasks are not handed out twice.
-    assert client.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"])).json()["tasks"] == []
+    assert agent.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"])).json()["tasks"] == []
 
     result = {"installed_version": "2.7.0", "version": "2.7.2", "update_available": True}
-    resp = client.post(
+    resp = agent.post(
         f"/api/agent/v1/tasks/{task.id}/result",
         json={"status": "success", "result": result, "output": "ok"},
         headers=auth(creds["token"]),
@@ -130,27 +130,27 @@ def test_task_round_trip_and_capability_check(client, db):
     assert db.get(Device, device.id).updates["update_available"] is True
 
 
-def test_task_results_are_scoped_to_device(client, db):
-    a = enroll(client, make_key(db))
-    b = enroll(client, make_key(db), system={"unique_id": "other-box"})
+def test_task_results_are_scoped_to_device(client, db, agent):
+    a = enroll(agent, make_key(db))
+    b = enroll(agent, make_key(db), system={"unique_id": "other-box"})
     task = queue_task(db, db.get(Device, a["device_id"]), TaskType.check_updates)
     db.commit()
-    resp = client.post(
+    resp = agent.post(
         f"/api/agent/v1/tasks/{task.id}/result", json={"status": "success"}, headers=auth(b["token"])
     )
     assert resp.status_code == 404
 
 
-def test_backup_upload_dedup_and_encryption(client, db, settings):
-    creds = enroll(client, make_key(db))
+def test_backup_upload_dedup_and_encryption(client, db, settings, agent):
+    creds = enroll(agent, make_key(db))
     digest = hashlib.sha256(CONFIG_XML).hexdigest()
     gz = gzip.compress(CONFIG_XML)
     headers = {**auth(creds["token"]), "X-CSFM-SHA256": digest, "X-CSFM-Reason": "config_change"}
 
-    first = client.post("/api/agent/v1/backups", content=gz, headers=headers)
+    first = agent.post("/api/agent/v1/backups", content=gz, headers=headers)
     assert first.status_code == 200, first.text
     assert first.json()["created"] is True
-    second = client.post("/api/agent/v1/backups", content=gz, headers=headers)
+    second = agent.post("/api/agent/v1/backups", content=gz, headers=headers)
     assert second.json() == {**first.json(), "created": False}
 
     backup = db.scalar(select(Backup))
@@ -159,11 +159,11 @@ def test_backup_upload_dedup_and_encryption(client, db, settings):
     assert stored.startswith(b"gAAAAA")  # Fernet token, not gzip or XML
     assert b"pfsense" not in stored
 
-    bad = client.post(
+    bad = agent.post(
         "/api/agent/v1/backups", content=gz, headers={**headers, "X-CSFM-SHA256": "0" * 64}
     )
     assert bad.status_code == 400
-    junk = client.post("/api/agent/v1/backups", content=gzip.compress(b"hello"), headers=headers)
+    junk = agent.post("/api/agent/v1/backups", content=gzip.compress(b"hello"), headers=headers)
     assert junk.status_code == 400
 
     # Operators can download the decrypted file through the web UI.
@@ -173,37 +173,37 @@ def test_backup_upload_dedup_and_encryption(client, db, settings):
     assert dl.content == CONFIG_XML
 
 
-def test_restore_download_requires_open_restore_task(client, db):
-    creds = enroll(client, make_key(db))
+def test_restore_download_requires_open_restore_task(client, db, agent):
+    creds = enroll(agent, make_key(db))
     gz = gzip.compress(CONFIG_XML)
-    backup_id = client.post("/api/agent/v1/backups", content=gz, headers=auth(creds["token"])).json()["backup_id"]
+    backup_id = agent.post("/api/agent/v1/backups", content=gz, headers=auth(creds["token"])).json()["backup_id"]
     url = f"/api/agent/v1/backups/{backup_id}"
-    assert client.get(url, headers=auth(creds["token"])).status_code == 403
+    assert agent.get(url, headers=auth(creds["token"])).status_code == 403
 
     queue_task(db, db.get(Device, creds["device_id"]), TaskType.restore_backup, {"backup_id": backup_id})
     db.commit()
-    client.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"]))
-    resp = client.get(url, headers=auth(creds["token"]))
+    agent.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"]))
+    resp = agent.get(url, headers=auth(creds["token"]))
     assert resp.status_code == 200
     assert gzip.decompress(resp.content) == CONFIG_XML
 
 
-def test_reenroll_same_hardware_reuses_device_and_rotates_token(client, db):
+def test_reenroll_same_hardware_reuses_device_and_rotates_token(client, db, agent):
     key = make_key(db)
-    first = enroll(client, key)
-    second = enroll(client, key)
+    first = enroll(agent, key)
+    second = enroll(agent, key)
     assert first["device_id"] == second["device_id"]
-    assert client.post("/api/agent/v1/checkin", json={}, headers=auth(first["token"])).status_code == 401
-    assert client.post("/api/agent/v1/checkin", json={}, headers=auth(second["token"])).status_code == 200
+    assert agent.post("/api/agent/v1/checkin", json={}, headers=auth(first["token"])).status_code == 401
+    assert agent.post("/api/agent/v1/checkin", json={}, headers=auth(second["token"])).status_code == 200
 
 
-def test_token_rotation(client, db):
-    creds = enroll(client, make_key(db))
+def test_token_rotation(client, db, agent):
+    creds = enroll(agent, make_key(db))
     device = db.get(Device, creds["device_id"])
     device.token_rotated_at = utcnow() - timedelta(days=31)
     db.commit()
-    body = client.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"])).json()
+    body = agent.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"])).json()
     assert body["rotate_token"] is True
-    new = client.post("/api/agent/v1/token/rotate", headers=auth(creds["token"])).json()["token"]
-    assert client.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"])).status_code == 401
-    assert "rotate_token" not in client.post("/api/agent/v1/checkin", json={}, headers=auth(new)).json()
+    new = agent.post("/api/agent/v1/token/rotate", headers=auth(creds["token"])).json()["token"]
+    assert agent.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"])).status_code == 401
+    assert "rotate_token" not in agent.post("/api/agent/v1/checkin", json={}, headers=auth(new)).json()

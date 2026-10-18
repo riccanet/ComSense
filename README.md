@@ -9,21 +9,30 @@
 
 ComSense Firewall Manager (ComSense for short) is self-hosted management and monitoring for fleets of **pfSense CE** and **pfSense Plus** firewalls.
 
-A small agent, installed on each firewall as a native pfSense package, calls out over HTTPS to a
+A small agent, installed on each firewall as a native pfSense package, calls out over TLS to a
 Linux-hosted management server. From the web console you can monitor health, push policies and
 settings, run updates and keep encrypted configuration backups. Firewalls never accept inbound
-connections for management. A firewall can join the server only after someone enters a one-time
-**enrollment key** in the package settings.
+connections for management. A firewall can join the server only after someone pastes a one-time
+**enrollment code** into the package settings.
+
+The server has two separate listeners, so it needs only two ports forwarded through NAT:
+
+| Port | Serves | Who reaches it |
+| --- | --- | --- |
+| **443** (via your reverse proxy) | Web console | Admins. Put it behind whatever protection you use: allow-list, WAF, SSO proxy, VPN. |
+| **8443** (configurable) | Agent API only, TLS terminated by the app | Firewalls. Each agent pins the server's key, so no public certificate is needed. |
 
 ```
- ┌────────────────────┐   outbound HTTPS (443)    ┌──────────────────────────────────────┐
- │ pfSense CE / Plus  │ ────────────────────────▶ │ Caddy (TLS, Let's Encrypt)           │
- │                    │   enroll · check-in ·     │   └─ ComSense app (FastAPI)          │
- │ pfSense-pkg-       │   task results · backups  │        ├─ web console (operators)    │
- │ ComSense agent     │ ◀──────────────────────── │        ├─ agent API  /api/agent/v1   │
- │  (PHP, rc service) │   tasks in the response   │        └─ scheduler                  │
- └────────────────────┘                           │  PostgreSQL · encrypted backup store │
-                                                  └──────────────────────────────────────┘
+                                                  ┌──────────────────────────────────────┐
+ ┌────────────────────┐   TLS :8443, pinned key   │ ComSense app                         │
+ │ pfSense CE / Plus  │ ────────────────────────▶ │   ├─ agent listener :8443 (own TLS)  │
+ │                    │   enroll · check-in ·     │   │    agent API only                │
+ │ pfSense-pkg-       │   task results · backups  │   ├─ web console :8000 (HTTP) ◀──┐   │
+ │ ComSense agent     │ ◀──────────────────────── │   └─ scheduler                   │   │
+ │  (PHP, rc service) │   tasks in the response   │  PostgreSQL · encrypted backups  │   │
+ └────────────────────┘                           └──────────────────────────────────┼───┘
+                                      admins ──▶ HTTPS :443 reverse proxy (Caddy, ─┘
+                                                 NPM, NetBird, WAF, allow-list…)
 ```
 
 ## Features
@@ -35,7 +44,7 @@ connections for management. A firewall can join the server only after someone en
 | **Policies** | Aliases, firewall rules, system settings (DNS, NTP, timezone, hostname/domain), package install/remove, and a restricted generic config setter. Assign to one firewall, an organization or all firewalls. Policies are applied idempotently, report compliance, and removing a policy removes only what it created. Rule, system and config changes are **rolled back automatically if the firewall can no longer reach the server**. |
 | **Updates** | Shows available pfSense and package updates; upgrade pfSense, upgrade packages, install/remove packages, restart services, reboot. |
 | **Organization** | Organizations (customers/sites), bulk actions, users with admin/operator/viewer roles, full audit log. Light, dark and automatic (follow the OS) themes. |
-| **Security** | One-time, expiring, revocable enrollment keys (optionally requiring approval); per-device tokens stored hashed and rotated every 30 days; strict TLS on the agent with optional private CA and public-key pinning; every remote action must also be allowed locally on the firewall. See [docs/SECURITY.md](docs/SECURITY.md). |
+| **Security** | Separate agent port serving only the agent API, with the server's own certificate pinned by every agent; failed-token lockout per address. One-time, expiring, revocable enrollment keys (optionally requiring approval); per-device tokens stored hashed and rotated every 30 days; strict TLS on the agent with optional private CA and public-key pinning; every remote action must also be allowed locally on the firewall. See [docs/SECURITY.md](docs/SECURITY.md). |
 
 ## Repository layout
 
@@ -72,15 +81,12 @@ docs/                        Server, agent, protocol, policy and security docume
    pfSense, or download it from the CI artifacts) and copy it into the server's `downloads` data
    folder so firewalls can fetch it.
 
-3. **Enroll a firewall**: in the console, go to **Enrollment keys** and create a key. On the firewall:
-
-   ```sh
-   pkg-static add https://comsense.example.com/downloads/pfSense-pkg-ComSense-0.1.0.pkg
-   ```
-
-   Then open **Services > ComSense Agent**, tick *Enable*, enter the server URL and the key, choose
-   which remote actions to allow, and save. The firewall enrolls immediately (errors are shown on
-   the page) and the key is erased from its configuration. Details in [docs/AGENT.md](docs/AGENT.md).
+3. **Enroll a firewall**: in the console, go to **Enrollment keys** and create a key. The page shows an
+   install command (it downloads the package from the agent port and checks its SHA-256) and an
+   **enrollment code**. On the firewall, run the install command, then open
+   **Services > ComSense Agent**, tick *Enable*, paste the code, choose which remote actions to allow,
+   and save. The firewall enrolls immediately (errors are shown on the page) and the key is erased
+   from its configuration. Details in [docs/AGENT.md](docs/AGENT.md).
 
 ## Development
 
@@ -96,7 +102,7 @@ Run the server locally against SQLite:
 cd server
 export CSFM_DATABASE_URL=sqlite:///./dev.db CSFM_DATA_DIR=./data CSFM_SECURE_COOKIES=false \
        CSFM_INITIAL_ADMIN_PASSWORD=change-me-please $(python -m app.cli keygen | xargs)
-uvicorn app.main:app_factory --factory --reload
+python -m app.serve        # web console on :8000, agent listener on :8443
 ```
 
 ## Status

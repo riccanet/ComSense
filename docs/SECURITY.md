@@ -17,10 +17,19 @@
 
 ## Transport
 
-* The agent only speaks HTTPS (TLS 1.2+), with certificate chain and hostname verification always on,
-  no redirects and no other protocols. HTTP URLs are rejected in the settings.
-* For private PKI, the CA certificate is configured explicitly; optional public-key pinning makes the
-  agent refuse any other server key, even one signed by a trusted CA.
+* Agents talk to a **dedicated listener** on its own port (8443 by default). It serves only the agent API
+  and package downloads; the web console is a different listener that should be reachable only through
+  your reverse proxy. Admins can therefore lock the console down completely (allow-lists, WAF, SSO,
+  VPN) while the fleet keeps working, and the internet-facing surface is limited to token-authenticated
+  agent endpoints.
+* The agent only speaks HTTPS (TLS 1.2+), with no redirects and no other protocols; HTTP URLs are
+  rejected in the settings.
+* By default the server issues its own certificate for the agent port and every agent **pins its
+  public key**, delivered inside the enrollment code. A connection to any other key is refused before
+  anything is sent, so neither a rogue certificate authority nor a mis-issued certificate can
+  intercept agents. The key is kept across renewals, so the pin never changes.
+* With an operator-supplied certificate, agents verify the chain and hostname instead.
+* Bad device tokens are counted per source address; after 20 in 10 minutes the address is refused.
 * All connections are outbound from the firewall. Nothing listens on the firewall for management.
 
 ## What the server can do to a firewall
@@ -47,8 +56,8 @@ afterwards and rolled back if the firewall loses contact with the server.
 
 ## Recommendations
 
-* Restrict access to the web console (VPN or source-IP allow-list in the proxy) if only the agent
-  API needs to be public; the agent only uses `/api/agent/v1/*` and `/downloads/*`.
+* Restrict the web console (port 443) to admins: source allow-list, VPN, or SSO in your proxy.
+  Firewalls never need it. Only the agent port has to be reachable from the internet.
 * Use short-lived, single-organization keys with approval for each rollout, and revoke them after.
 * Keep `CSFM_BACKUP_ENCRYPTION_KEY` and `CSFM_SECRET_KEY` in a secrets manager and back them up
   separately from the data.

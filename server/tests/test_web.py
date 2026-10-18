@@ -6,8 +6,10 @@ import re
 from conftest import ADMIN_PASSWORD, csrf_from, enroll, login, make_key
 from sqlalchemy import select
 
+from app.enrollment import parse_code
 from app.models import Device, EnrollmentKey, Policy, Role, Task, User
 from app.security import hash_password
+from app.tls import ensure_agent_tls
 
 
 def test_pages_require_login(client):
@@ -28,11 +30,11 @@ def test_post_without_csrf_is_rejected(client):
     assert resp.status_code == 403
 
 
-def test_all_pages_render(client, db):
+def test_all_pages_render(client, db, agent):
     csrf = login(client)
-    creds = enroll(client, make_key(db))
+    creds = enroll(agent, make_key(db))
     # A sparse report, as an agent on an unusual box might send, must still render.
-    client.post(
+    agent.post(
         "/api/agent/v1/checkin",
         json={
             "interfaces": [{"name": "lan"}, {"name": "wan", "inbytes": 5, "status": "up"}],
@@ -68,24 +70,29 @@ def test_all_pages_render(client, db):
         assert resp.status_code == 200, (path, resp.text[:500])
 
 
-def test_create_enrollment_key_shows_once_and_stores_hash(client, db):
+def test_create_enrollment_key_shows_once_and_stores_hash(client, db, agent, settings):
     csrf = login(client)
     resp = client.post(
         "/keys",
         data={"name": "rollout", "expires_days": "7", "max_uses": "", "require_approval": "true", "csrf_token": csrf},
     )
     assert resp.status_code == 200
-    key = re.search(r'value="(csfm_enr_[^"]+)"', resp.text).group(1)
+    code = re.search(r'value="(csfm1\.[^"]+)"', resp.text).group(1)
+    parsed = parse_code(code)
+    key = parsed["key"]
+    assert key.startswith("csfm_enr_")
+    assert parsed["url"] == "https://comsense.test:8443"
+    assert parsed["pin"] == ensure_agent_tls(settings).pin  # self-issued certificate is pinned
     assert key not in client.get("/keys").text
     stored = db.scalar(select(EnrollmentKey))
     assert stored.key_hash != key and key not in stored.key_hash
-    assert enroll(client, key)["status"] == "pending"  # checkbox is ticked by default in the form
+    assert enroll(agent, key)["status"] == "pending"  # checkbox is ticked by default in the form
 
 
-def test_viewer_cannot_operate(client, db):
+def test_viewer_cannot_operate(client, db, agent):
     db.add(User(username="viewer", password_hash=hash_password(ADMIN_PASSWORD), role=Role.viewer))
     db.commit()
-    creds = enroll(client, make_key(db))
+    creds = enroll(agent, make_key(db))
     csrf = login(client, "viewer")
     resp = client.post(
         f"/devices/{creds['device_id']}/tasks", data={"task_type": "reboot", "csrf_token": csrf}
@@ -94,9 +101,9 @@ def test_viewer_cannot_operate(client, db):
     assert db.scalar(select(Task)) is None
 
 
-def test_operator_queues_task_and_admin_approves(client, db):
+def test_operator_queues_task_and_admin_approves(client, db, agent):
     csrf = login(client)
-    creds = enroll(client, make_key(db, require_approval=True))
+    creds = enroll(agent, make_key(db, require_approval=True))
     device_url = f"/devices/{creds['device_id']}"
     client.post(f"{device_url}/status", data={"action": "approve", "csrf_token": csrf})
     db.expire_all()

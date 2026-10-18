@@ -3,7 +3,10 @@
 #   cp .env.example .env && edit .env
 #   docker compose up -d
 #
-# Only Caddy is published. Firewalls connect to https://$CSFM_DOMAIN (port 443).
+# Published ports (forward both through your NAT):
+#   443  -> Caddy -> web console. Protect it however you like (allow-list, WAF, VPN).
+#   8443 -> agent listener, TLS terminated by the app with a pinned certificate.
+#          Firewalls connect here (CSFM_AGENT_PORT_PUBLIC changes the outside port).
 services:
   db:
     image: postgres:16-alpine
@@ -30,6 +33,9 @@ services:
     environment:
       CSFM_DATABASE_URL: postgresql+psycopg://comsense:${POSTGRES_PASSWORD}@db:5432/comsense
       CSFM_PUBLIC_URL: https://${CSFM_DOMAIN:?set CSFM_DOMAIN in .env}
+      CSFM_AGENT_URL: https://${CSFM_DOMAIN}:${CSFM_AGENT_PORT_PUBLIC:-8443}
+    ports:
+      - "${CSFM_AGENT_PORT_PUBLIC:-8443}:8443"
     volumes:
       - app-data:/var/lib/comsense
 

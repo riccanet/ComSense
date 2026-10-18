@@ -9,7 +9,9 @@ User=comsense
 Group=comsense
 WorkingDirectory=/opt/comsense/server
 EnvironmentFile=/etc/comsense/comsense.env
-ExecStart=/opt/comsense/venv/bin/uvicorn app.main:app_factory --factory --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1
+# Web console on 127.0.0.1:8000 for Caddy; agent listener with its own TLS on CSFM_AGENT_PORT.
+Environment=CSFM_WEB_HOST=127.0.0.1 CSFM_FORWARDED_ALLOW_IPS=127.0.0.1
+ExecStart=/opt/comsense/venv/bin/python -m app.serve
 Restart=on-failure
 RestartSec=5
 

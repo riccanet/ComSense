@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.api import agent as agent_api  # noqa: E402
 from app.config import Settings  # noqa: E402
 from app.db import session_factory  # noqa: E402
-from app.main import create_app  # noqa: E402
+from app.main import create_agent_app, create_app  # noqa: E402
 from app.models import EnrollmentKey  # noqa: E402
 from app.security import (  # noqa: E402
     generate_enrollment_key,
@@ -44,8 +44,16 @@ def settings(tmp_path: Path) -> Settings:
 def client(settings: Settings):
     agent_api.enroll_limiter.reset()
     web_routes.login_limiter.reset()
+    agent_api.auth_failure_limiter.reset()
     app = create_app(settings)
     with TestClient(app, base_url="https://testserver") as c:
+        yield c
+
+
+@pytest.fixture
+def agent(client, settings):
+    """Client for the agent listener (a separate app on its own TLS port)."""
+    with TestClient(create_agent_app(settings), base_url="https://testserver:8443") as c:
         yield c
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import timedelta
@@ -46,10 +47,12 @@ from ..security import (
     key_display_prefix,
     verify_password,
 )
+from ..enrollment import make_code
 from ..services.backups import delete_backup_file, load_backup
 from ..services.policy_examples import EXAMPLES
 from ..services.policies import PolicyError, desired_policies, policy_hash, validate_policy
 from ..services.tasks import TASK_CAPABILITY, TaskError, queue_task
+from ..tls import ensure_agent_tls
 from .auth import csrf_token, current_user, flash, pop_flashes, require, verify_csrf
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
@@ -652,16 +655,27 @@ def keys_page(
     user: User = Depends(admin),
     db: Session = Depends(get_db),
 ):
+    tls = ensure_agent_tls(settings)
+    pin = tls.pin if tls.self_signed else None
+    new_key = request.session.pop("new_key", None)
+    packages = sorted(
+        (settings.data_dir / "downloads").glob("pfSense-pkg-ComSense-*.pkg"), key=lambda p: p.stat().st_mtime
+    )
+    package = None
+    if packages:
+        latest = packages[-1]
+        package = {"name": latest.name, "sha256": hashlib.sha256(latest.read_bytes()).hexdigest()}
     return render(
         request,
         "keys.html",
         keys=db.scalars(select(EnrollmentKey).order_by(EnrollmentKey.id.desc())).all(),
         orgs=db.scalars(select(Organization).order_by(Organization.name)).all(),
-        new_key=request.session.pop("new_key", None),
-        public_url=settings.public_url,
-        agent_packages=sorted(
-            p.name for p in (settings.data_dir / "downloads").glob("pfSense-pkg-ComSense-*.pkg")
-        ),
+        new_key=new_key,
+        enrollment_code=make_code(settings.agent_url, new_key, pin) if new_key else None,
+        agent_url=settings.agent_url,
+        agent_pin=pin,
+        agent_cert_expires=tls.not_after,
+        package=package,
         now=utcnow(),
     )
 

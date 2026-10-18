@@ -1,15 +1,40 @@
 # Management server
 
-The server is a single Python application (FastAPI) backed by PostgreSQL, published through a
-TLS-terminating reverse proxy. Firewalls connect to it on **HTTPS port 443** (or whatever port the
-proxy listens on). It needs a DNS name with a certificate the firewalls trust; with the provided
-Caddy configuration that is a free Let's Encrypt certificate obtained automatically.
+The server is a single Python process (FastAPI) backed by PostgreSQL, with two listeners:
+
+| Listener | Default | Protocol | Expose to |
+| --- | --- | --- | --- |
+| Web console | `:8000` | plain HTTP | Your HTTPS reverse proxy only (Caddy, Nginx Proxy Manager, NetBird, a WAF…), published on 443 |
+| Agent API | `:8443` | TLS, terminated by the app | The internet, or forwarded through NAT; serves nothing but `/api/agent/v1/*` and `/downloads/*` |
+
+So a deployment needs exactly two inbound ports: **443** for admins and **8443** (or any port you choose)
+for firewalls. Because agents never touch the web console, you can restrict 443 as tightly as you like
+(source allow-list, geo-blocking, CrowdSec, SSO in front, VPN only) without affecting the fleet.
+
+### Agent TLS
+
+By default the server issues its own certificate for the agent port, stored in
+`<CSFM_DATA_DIR>/tls/`. It is valid for about two years and renewed automatically, keeping the same key,
+when the server starts within 30 days of expiry. Every agent pins that key: the pin
+travels inside the enrollment code, and a connection to any other key is refused before anything is sent.
+No public DNS validation or Let's Encrypt is needed for the agent port.
+
+To use a certificate of your own instead (for example one from your PKI), set `CSFM_AGENT_TLS_CERT` and
+`CSFM_AGENT_TLS_KEY`. Agents then verify it against public CAs (or the CA pasted in their settings) and
+enrollment codes carry no pin. Avoid this with Let's Encrypt certificates whose key changes on renewal.
+
+### The agent address
+
+Firewalls use `CSFM_AGENT_URL`, which defaults to `https://<host of CSFM_PUBLIC_URL>:<CSFM_AGENT_PORT>`.
+Set it when the outside port or name differs because of NAT, e.g. `CSFM_AGENT_URL=https://fw-mgmt.example.com:9443`
+with the router forwarding 9443 to the server's 8443. Names and IPs in this URL go into the
+self-issued certificate; add more with `CSFM_AGENT_TLS_NAMES`.
 
 ## Requirements
 
 * Linux host (Debian 12, Ubuntu 22.04/24.04 or any distribution with Docker), 1 vCPU and 1 GB RAM
   covers hundreds of firewalls at the default 60 s check-in interval.
-* A DNS name, with inbound TCP 80 (certificate issuance) and 443 open to the firewalls and admins.
+* A DNS name. Inbound TCP 443 for admins (plus 80 if Caddy obtains the certificate) and TCP 8443 for firewalls.
 * PostgreSQL 13+ (bundled in both install methods).
 
 ## Option A: Docker Compose
@@ -44,10 +69,12 @@ initial admin password once. Re-running it upgrades the code and keeps data and 
 
 ## Using your own certificate or reverse proxy
 
-Any proxy works if it terminates TLS, forwards to the app on port 8000 and sets `X-Forwarded-For`.
-Allow request bodies of at least `CSFM_MAX_BACKUP_BYTES` (32 MiB by default) for backup uploads.
-If the certificate is from a private CA, paste that CA into *Server CA certificate* in each
-firewall's package settings.
+Any proxy works for the web console if it terminates TLS, forwards to the app's web port (8000) and sets
+`X-Forwarded-For`. Set `CSFM_FORWARDED_ALLOW_IPS` to the proxy's address if anything other than the proxy
+can reach port 8000. The agent port is not proxied: forward it straight to the app, so agents' real
+addresses are seen and per-address lockouts work.
+
+A Portainer stack for running behind an existing proxy is in `deploy/portainer-stack.yml`.
 
 ## Configuration
 
@@ -58,7 +85,13 @@ All settings are environment variables:
 | `CSFM_DATABASE_URL` | local PostgreSQL | SQLAlchemy URL |
 | `CSFM_SECRET_KEY` | *(required)* | Signs session cookies (32+ characters) |
 | `CSFM_BACKUP_ENCRYPTION_KEY` | *(required)* | Fernet key encrypting stored backups. **Back it up**: losing it makes all backups unreadable. |
-| `CSFM_PUBLIC_URL` | | URL shown to admins for enrolling firewalls |
+| `CSFM_PUBLIC_URL` | | Web console URL |
+| `CSFM_WEB_HOST` / `CSFM_WEB_PORT` | `0.0.0.0` / 8000 | Web console listener (plain HTTP, for the proxy) |
+| `CSFM_FORWARDED_ALLOW_IPS` | `*` | Proxies trusted for `X-Forwarded-For` on the web listener |
+| `CSFM_AGENT_HOST` / `CSFM_AGENT_PORT` | `0.0.0.0` / 8443 | Agent listener (TLS) |
+| `CSFM_AGENT_URL` | `https://<public host>:8443` | Address firewalls use, after NAT; put into enrollment codes |
+| `CSFM_AGENT_TLS_CERT` / `_KEY` | self-issued | Use your own certificate for the agent listener |
+| `CSFM_AGENT_TLS_NAMES` | | Extra DNS names / IPs for the self-issued certificate, comma separated |
 | `CSFM_DATA_DIR` | `/var/lib/comsense` | Backups (`backups/`) and agent packages (`downloads/`) |
 | `CSFM_INITIAL_ADMIN_USER` / `_PASSWORD` | `admin` / empty | First admin, created only when there are no users |
 | `CSFM_CHECKIN_INTERVAL` | 60 | Seconds between agent check-ins (sent to agents) |
@@ -71,8 +104,8 @@ All settings are environment variables:
 | `CSFM_SESSION_MAX_AGE` | 28800 | Web session lifetime in seconds |
 | `CSFM_SECURE_COOKIES` | true | Set false only for local HTTP development |
 
-Run the app with **one worker** (`--workers 1`, as shipped): the housekeeping scheduler and the
-login/enrollment rate limiters live in the process.
+Start it with `python -m app.serve` (as the provided Dockerfile and systemd unit do). Run **one process**:
+the housekeeping scheduler and the login, enrollment and failed-token limiters live in it.
 
 ## Administration
 
@@ -93,5 +126,6 @@ files are useless without `CSFM_BACKUP_ENCRYPTION_KEY`, so store that key separa
 
 ## Hosting the agent package
 
-Copy `pfSense-pkg-ComSense-<version>.pkg` into `<CSFM_DATA_DIR>/downloads/`. It is then served at
-`https://<server>/downloads/<file>` and the *Enrollment keys* page shows the exact install command.
+Copy `pfSense-pkg-ComSense-<version>.pkg` into `<CSFM_DATA_DIR>/downloads/`. It is then served on both
+listeners, and the *Enrollment keys* page shows an install command that fetches it from the agent port
+and checks its SHA-256 before installing, so it is safe even though `fetch` cannot verify the pinned certificate.

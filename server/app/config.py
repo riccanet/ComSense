@@ -8,6 +8,7 @@ import os
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 def _bool(name: str, default: bool) -> bool:
@@ -42,6 +43,27 @@ class Settings:
     public_url: str = field(
         default_factory=lambda: os.environ.get("CSFM_PUBLIC_URL", "https://comsense.example.com")
     )
+    # Listeners. The web console speaks plain HTTP and belongs behind an HTTPS
+    # reverse proxy; the agent listener terminates TLS itself on its own port so
+    # it can be exposed separately from the console.
+    web_host: str = field(default_factory=lambda: os.environ.get("CSFM_WEB_HOST", "0.0.0.0"))
+    web_port: int = field(default_factory=lambda: _int("CSFM_WEB_PORT", 8000))
+    # Proxies whose X-Forwarded-For the web listener trusts ("*" when only the
+    # proxy can reach the web port, as in the provided deployments).
+    forwarded_allow_ips: str = field(
+        default_factory=lambda: os.environ.get("CSFM_FORWARDED_ALLOW_IPS", "*")
+    )
+    agent_host: str = field(default_factory=lambda: os.environ.get("CSFM_AGENT_HOST", "0.0.0.0"))
+    agent_port: int = field(default_factory=lambda: _int("CSFM_AGENT_PORT", 8443))
+    # Address firewalls use to reach the agent listener (after NAT). Defaults to
+    # the public URL's host on the agent port.
+    agent_url_override: str = field(default_factory=lambda: os.environ.get("CSFM_AGENT_URL", ""))
+    # Optional certificate for the agent listener. Without one the server issues
+    # its own and agents pin its key.
+    agent_tls_cert: str = field(default_factory=lambda: os.environ.get("CSFM_AGENT_TLS_CERT", ""))
+    agent_tls_key: str = field(default_factory=lambda: os.environ.get("CSFM_AGENT_TLS_KEY", ""))
+    # Extra DNS names / IPs for the self-issued certificate, comma separated.
+    agent_tls_names: str = field(default_factory=lambda: os.environ.get("CSFM_AGENT_TLS_NAMES", ""))
     # Set to false only for local development over plain HTTP.
     secure_cookies: bool = field(default_factory=lambda: _bool("CSFM_SECURE_COOKIES", True))
     session_max_age: int = field(default_factory=lambda: _int("CSFM_SESSION_MAX_AGE", 8 * 3600))
@@ -75,6 +97,13 @@ class Settings:
     initial_admin_password: str = field(
         default_factory=lambda: os.environ.get("CSFM_INITIAL_ADMIN_PASSWORD", "")
     )
+
+    @property
+    def agent_url(self) -> str:
+        if self.agent_url_override:
+            return self.agent_url_override.rstrip("/")
+        host = urlsplit(self.public_url).hostname or "localhost"
+        return f"https://{host}:{self.agent_port}"
 
     @property
     def backup_dir(self) -> Path:

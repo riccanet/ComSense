@@ -33,13 +33,13 @@ def test_invalid_policies_rejected(ptype, content):
         validate_policy(ptype, content)
 
 
-def _checkin(client, token, applied=None):
+def _checkin(agent, token, applied=None):
     body = {"applied_policies": applied or {}}
-    return client.post("/api/agent/v1/checkin", json=body, headers=auth(token)).json()["tasks"]
+    return agent.post("/api/agent/v1/checkin", json=body, headers=auth(token)).json()["tasks"]
 
 
-def test_policy_reconciliation(client, db):
-    creds = enroll(client, make_key(db))
+def test_policy_reconciliation(client, db, agent):
+    creds = enroll(agent, make_key(db))
     device = db.get(Device, creds["device_id"])
     policy = Policy(name="aliases", type=PolicyType.aliases, content=EXAMPLES[PolicyType.aliases])
     db.add(policy)
@@ -47,47 +47,47 @@ def test_policy_reconciliation(client, db):
     db.add(PolicyAssignment(policy_id=policy.id, all_devices=True))
     db.commit()
 
-    tasks = _checkin(client, creds["token"])
+    tasks = _checkin(agent, creds["token"])
     assert [t["type"] for t in tasks] == ["apply_policy"]
     sent = tasks[0]
     digest = sent["payload"]["policy"]["hash"]
     # While in flight, nothing new is queued.
-    assert _checkin(client, creds["token"]) == []
+    assert _checkin(agent, creds["token"]) == []
 
-    client.post(f"/api/agent/v1/tasks/{sent['id']}/result", json={"status": "success"}, headers=auth(creds["token"]))
-    assert _checkin(client, creds["token"], {str(policy.id): digest}) == []
+    agent.post(f"/api/agent/v1/tasks/{sent['id']}/result", json={"status": "success"}, headers=auth(creds["token"]))
+    assert _checkin(agent, creds["token"], {str(policy.id): digest}) == []
 
     # Editing the policy produces a new apply task with the new hash.
     policy.content = {**policy.content, "remove_unlisted": False}
     db.commit()
-    tasks = _checkin(client, creds["token"], {str(policy.id): digest})
+    tasks = _checkin(agent, creds["token"], {str(policy.id): digest})
     assert len(tasks) == 1 and tasks[0]["payload"]["policy"]["hash"] != digest
-    client.post(f"/api/agent/v1/tasks/{tasks[0]['id']}/result", json={"status": "success"}, headers=auth(creds["token"]))
+    agent.post(f"/api/agent/v1/tasks/{tasks[0]['id']}/result", json={"status": "success"}, headers=auth(creds["token"]))
     new_digest = tasks[0]["payload"]["policy"]["hash"]
 
     # Removing the assignment asks the agent to clean up.
     db.query(PolicyAssignment).delete()
     db.commit()
-    tasks = _checkin(client, creds["token"], {str(policy.id): new_digest})
+    tasks = _checkin(agent, creds["token"], {str(policy.id): new_digest})
     assert [(t["type"], t["payload"]) for t in tasks] == [("remove_policy", {"policy_id": policy.id})]
 
     db.expire_all()
     assert db.get(Device, device.id).applied_policies == {str(policy.id): new_digest}
 
 
-def test_policy_needs_capability(client, db):
-    creds = enroll(client, make_key(db), capabilities=["backup"])
+def test_policy_needs_capability(client, db, agent):
+    creds = enroll(agent, make_key(db), capabilities=["backup"])
     policy = Policy(name="sys", type=PolicyType.system, content={"timezone": "UTC"})
     db.add(policy)
     db.flush()
     db.add(PolicyAssignment(policy_id=policy.id, device_id=creds["device_id"]))
     db.commit()
-    assert _checkin(client, creds["token"]) == []
+    assert _checkin(agent, creds["token"]) == []
     assert db.query(Task).filter(Task.type == TaskType.apply_policy).count() == 0
 
 
-def test_pending_task_superseded_by_new_revision(client, db):
-    creds = enroll(client, make_key(db))
+def test_pending_task_superseded_by_new_revision(client, db, agent):
+    creds = enroll(agent, make_key(db))
     device = db.get(Device, creds["device_id"])
     policy = Policy(name="sys", type=PolicyType.system, content={"timezone": "UTC"})
     db.add(policy)

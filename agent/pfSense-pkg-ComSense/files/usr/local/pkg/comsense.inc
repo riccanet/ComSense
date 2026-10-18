@@ -70,9 +70,15 @@ function comsense_validate_input(&$post, &$input_errors) {
 	if (empty($post['enable'])) {
 		return;
 	}
+	try {
+		$key = csfm_apply_enrollment_code($post, $post['enrollment_key'] ?? '');
+	} catch (Exception $e) {
+		$input_errors[] = gettext($e->getMessage());
+		return;
+	}
 	$url = csfm_normalize_url($post['server_url'] ?? '');
 	if ($url === false) {
-		$input_errors[] = gettext('The server URL must start with https:// and contain only a host, optional port and path.');
+		$input_errors[] = gettext('Paste the enrollment code from the server, or enter an https:// server URL (host and optional port).');
 		return;
 	}
 	$post['server_url'] = $url;
@@ -94,10 +100,9 @@ function comsense_validate_input(&$post, &$input_errors) {
 		}
 	}
 
-	$key = trim($post['enrollment_key'] ?? '');
 	if ($key === '') {
 		if (!csfm_is_enrolled()) {
-			$input_errors[] = gettext('Enter the enrollment key from the management server to connect this firewall.');
+			$input_errors[] = gettext('Paste the enrollment code from the management server to connect this firewall.');
 		}
 		return;
 	}
