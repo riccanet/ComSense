@@ -165,14 +165,14 @@ so the container only needs its start-up variables (below).
   `CSFM_SECRET_KEY`; if that key changes, enter the password again.
 * **Alert emails**: on/off, warnings and critical or critical only, whether to email when an alert
   clears, and extra recipients such as a NOC mailbox. Users opt in with *Email me firewall alerts* on
-  their Account page (admins can set it on the Users page). New alerts are sent once a minute as one
+  their Account page (admins can set it on Settings > Users). New alerts are sent once a minute as one
   summary email per recipient; each alert is emailed once when it opens and once when it clears.
   Alerts that existed before alert email was turned on are not sent. If the mail server is
   unreachable, pending alerts are retried on the next pass.
 * **Password reset by email**: with email set up, the sign-in page offers *Forgot password?*.
   Users enter their username or email; if the account has an email address it receives a link that
   works once and expires after an hour. The page answers the same way whether or not the account
-  exists. Admins can also send a reset link from the Users page. Links point at `CSFM_PUBLIC_URL`.
+  exists. Admins can also send a reset link from Settings > Users. Links point at `CSFM_PUBLIC_URL`.
 
 ## Configuration
 
@@ -226,5 +226,5 @@ files are useless without `CSFM_BACKUP_ENCRYPTION_KEY`, so store that key separa
 ## Hosting the agent package
 
 Copy `pfSense-pkg-ComSense-<version>.pkg` into `<CSFM_DATA_DIR>/downloads/`. It is then served on both
-listeners, and the *Enrollment keys* page shows an install command that fetches it from the agent port
+listeners, and *Settings > Enrollment keys* shows an install command that fetches it from the agent port
 and checks its SHA-256 before installing, so it is safe even though `fetch` cannot verify the pinned certificate.

@@ -24,7 +24,7 @@ The service appears under **Status > Services** as `comsense`. Logs go to the sy
 
 The package has no compiled code. **The server builds it itself** on every start from the agent source
 it ships with (`app/services/agentpkg.py`) and serves it from its `downloads` folder, so a normal install
-needs nothing else: the setup wizard and the *Enrollment keys* page show the install command and a
+needs nothing else: the setup wizard and *Settings > Enrollment keys* show the install command and a
 download link. That package is marked `FreeBSD:*`, so the same file installs on pfSense CE and Plus,
 on x86-64 (`amd64`) and ARM (`aarch64` Netgate appliances such as the 1100, 2100, 4200 and 6100, and
 32-bit `armv7` such as the SG-3100). The agent is PHP and shell only, with nothing CPU-specific.
@@ -50,7 +50,7 @@ To build it the classic way instead (anywhere `pkg(8)` exists):
 
 From **Diagnostics > Command Prompt** or an SSH shell:
 
-Copy the install command from the server's *Enrollment keys* page. It looks like:
+Copy the install command from the server's *Settings > Enrollment keys* page. It looks like:
 
 ```sh
 fetch -o /tmp/comsense.pkg --no-verify-peer --no-verify-hostname https://comsense.example.com:10443/downloads/pfSense-pkg-ComSense-0.2.0.pkg \
@@ -78,7 +78,7 @@ is kept so a reinstall keeps its identity; delete that directory to reset comple
 | Setting | |
 | --- | --- |
 | Enable | Runs the agent service. |
-| Enrollment code | Paste the code from the server's *Enrollment keys* page. It holds the agent address (`https://host:10443`), a one-time key and the server's public key pin. On **Save** the firewall enrolls immediately; a wrong code, address or pin is shown as an error on the page. On success the key is cleared from `config.xml` and replaced by a per-device token in `/var/db/comsense/credentials.json` (mode 0600), which is not part of config backups. Paste a new code at any time to re-enroll. A bare key also works if you fill in the fields below yourself. |
+| Enrollment code | Paste the code from the server's *Settings > Enrollment keys* page. It holds the agent address (`https://host:10443`), a one-time key and the server's public key pin. On **Save** the firewall enrolls immediately; a wrong code, address or pin is shown as an error on the page. On success the key is cleared from `config.xml` and replaced by a per-device token in `/var/db/comsense/credentials.json` (mode 0600), which is not part of config backups. Paste a new code at any time to re-enroll. A bare key also works if you fill in the fields below yourself. |
 | Server URL | Filled in from the code: the server's **agent** port, e.g. `https://comsense.example.com:10443`. HTTP URLs are rejected. |
 | Public key pin | Filled in from the code when the server uses its own certificate. The agent then trusts exactly this key and nothing else. Empty for a publicly trusted certificate. |
 | Server CA certificate | Rarely needed: only for an agent-port certificate issued by your private CA. |

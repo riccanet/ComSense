@@ -88,7 +88,7 @@ docs/                        Server, agent, protocol, policy and security docume
    gets your first firewall connected. The server builds the agent package itself, so there is nothing
    to build or copy.
 
-3. **Enroll more firewalls**: go to **Enrollment keys** and create a key. The page shows an
+3. **Enroll more firewalls**: go to **Settings > Enrollment keys** and create a key. The page shows an
    install command (it downloads the package from the agent port and checks its SHA-256) and an
    **enrollment code**. On the firewall, run the install command, then open
    **Services > ComSense Agent**, tick *Enable*, paste the code, choose which remote actions to allow,

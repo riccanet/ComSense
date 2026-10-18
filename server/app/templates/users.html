@@ -1,8 +1,8 @@
-{% extends "base.html" %}
+{% extends "settings_layout.html" %}
 {% from "macros.html" import csrf, post_button with context %}
 {% block title %}Users{% endblock %}
-{% block content %}
-<h1>Users</h1>
+{% block settings %}
+<h2>Users</h2>
 <p class="muted"><strong>Viewer</strong> can see everything. <strong>Operator</strong> can also run tasks, manage policies and download backups.
 <strong>Admin</strong> can also manage users, enrollment keys, restores and device deletion.</p>
 <table class="list">

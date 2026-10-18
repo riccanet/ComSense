@@ -7,3 +7,4 @@ python-multipart>=0.0.9
 itsdangerous>=2.2
 cryptography>=43
 segno>=1.6
+tzdata>=2024.1

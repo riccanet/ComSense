@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from ..config import Settings
 from ..models import Alert, PasswordResetToken, User, aware, utcnow
 from ..security import hash_secret
-from .appsettings import effective_console_url, get_alert_email_settings, get_email_settings
+from .appsettings import effective_console_url, format_dt, get_alert_email_settings, get_email_settings
 from .mailer import MailError, send_mail
 
 log = logging.getLogger("comsense.notifications")
@@ -28,7 +28,7 @@ def _where(alert: Alert) -> str:
 
 
 def _fmt(dt: datetime | None) -> str:
-    return aware(dt).strftime("%Y-%m-%d %H:%M UTC") if dt else ""
+    return format_dt(dt)
 
 
 def _html_page(title: str, body_html: str) -> str:

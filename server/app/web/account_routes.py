@@ -31,11 +31,14 @@ from ..services.appsettings import (
     save_alert_email_settings,
     save_email_settings,
     save_site_settings,
+    timezone_names,
+    valid_timezone,
+    format_dt,
 )
 from ..services.mailer import MailError, send_mail
 from ..services.notifications import create_reset_token, find_reset_token, send_reset_email
 from .auth import flash, require, verify_csrf
-from .routes import _ip, redirect, render, valid_email
+from .routes import TEMPLATES, _ip, redirect, render, valid_email
 
 router = APIRouter(dependencies=[Depends(verify_csrf)])
 admin = require(Role.admin)
@@ -44,12 +47,16 @@ forgot_limiter = RateLimiter(limit=5, window_seconds=900)
 
 # Settings sections: (path, label), shown as the navigation on the left of each settings page.
 SETTINGS_SECTIONS = [
+    ("/settings/general", "General"),
+    ("/users", "Users"),
+    ("/keys", "Enrollment keys"),
     ("/settings/email", "Email (SMTP)"),
     ("/settings/alerts", "Alert emails"),
     ("/settings/addresses", "Addresses"),
     ("/settings/security", "Security"),
     ("/settings/setup", "Setup wizard"),
 ]
+TEMPLATES.env.globals["settings_sections"] = SETTINGS_SECTIONS
 # Pages the settings forms may return to: a settings section or a setup wizard step.
 RETURN_PAGES = {path for path, _ in SETTINGS_SECTIONS} | {"/setup", "/setup/email", "/setup/agent"}
 
@@ -79,7 +86,29 @@ def settings_index(user: User = Depends(admin)):
 
 
 def _settings_page(request: Request, section: str, **ctx):
-    return render(request, "settings.html", section=section, sections=SETTINGS_SECTIONS, **ctx)
+    return render(request, "settings.html", section=section, **ctx)
+
+
+@router.get("/settings/general", response_class=HTMLResponse)
+def settings_general_page(request: Request, user: User = Depends(admin), db: Session = Depends(get_db)):
+    return _settings_page(request, "/settings/general", site=get_site_settings(db), timezones=timezone_names(),
+                          now_local=format_dt(utcnow()))
+
+
+@router.post("/settings/general")
+def settings_general_save(
+    request: Request, timezone: str = Form("UTC"), user: User = Depends(admin), db: Session = Depends(get_db)
+):
+    if not valid_timezone(timezone):
+        flash(request, "Choose a time zone from the list.", "error")
+        return redirect("/settings/general")
+    site = get_site_settings(db)
+    site.timezone = timezone
+    save_site_settings(db, site, user.username)
+    audit(db, user.username, "settings.general", detail=f"timezone={timezone}", ip=_ip(request))
+    db.commit()
+    flash(request, f"Time zone set to {timezone}.", "success")
+    return redirect("/settings/general")
 
 
 @router.get("/settings/email", response_class=HTMLResponse)

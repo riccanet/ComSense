@@ -153,6 +153,8 @@ def test_agent_package_is_a_valid_pkg_archive(tmp_path):
         assert b"%%" not in content, path
         # pfSense has pkg-static in /usr/local/sbin; /usr/sbin only holds FreeBSD's pkg bootstrap.
         assert b"/usr/sbin/pkg-static" not in content, path
+        # FreeBSD's ps takes everything after "=" as the column header: "-o pid=,user=" yields one column.
+        assert not re.search(rb"-o [a-z]+=,", content), path
     assert files["/usr/local/sbin/comsense-agentd"][0].mode == 0o755
     # Timestamps follow content (pfSense's opcache reloads a file only when its mtime changes),
     # are in the past, and differ between files with different content.

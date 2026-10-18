@@ -49,7 +49,7 @@ from ..security import (
 )
 from ..enrollment import make_code
 from ..services.agentpkg import agent_outdated, latest_package
-from ..services.appsettings import agent_tls_names, effective_agent_url, get_email_settings, setup_pending
+from ..services.appsettings import agent_tls_names, effective_agent_url, format_dt, get_email_settings, setup_pending
 from ..services.backups import delete_backup_file, load_backup
 from ..services.policy_examples import EXAMPLES
 from ..services.policies import PolicyError, desired_policies, policy_hash, validate_policy
@@ -110,7 +110,7 @@ def _ago(value) -> str:
 
 
 def _fmt_dt(value) -> str:
-    return aware(value).strftime("%Y-%m-%d %H:%M UTC") if value else ""
+    return format_dt(value)
 
 
 def _fmt_bytes(value) -> str:
@@ -135,7 +135,7 @@ def _fmt_arch(value: str) -> str:
 
 
 def _fmt_isodate(value) -> str:
-    """An ISO 8601 time reported by an agent, as '2026-10-18 19:40 UTC (2m ago)'."""
+    """An ISO 8601 time reported by an agent, as '2026-10-18 14:40 CDT (2m ago)'."""
     try:
         when = datetime.fromisoformat(str(value))
     except ValueError:
@@ -867,6 +867,7 @@ def keys_page(
     return render(
         request,
         "keys.html",
+        section="/keys",
         keys=db.scalars(select(EnrollmentKey).order_by(EnrollmentKey.id.desc())).all(),
         orgs=db.scalars(select(Organization).order_by(Organization.name)).all(),
         new_key=new_key,
@@ -1159,7 +1160,7 @@ def assignment_delete(
 
 @router.get("/users", response_class=HTMLResponse)
 def users_page(request: Request, user: User = Depends(admin), db: Session = Depends(get_db)):
-    return render(request, "users.html", users=db.scalars(select(User).order_by(User.username)).all())
+    return render(request, "users.html", section="/users", users=db.scalars(select(User).order_by(User.username)).all())
 
 
 @router.post("/users")

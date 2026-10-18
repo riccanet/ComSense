@@ -4,12 +4,13 @@ import re
 
 from conftest import login
 
-SECTIONS = ["/settings/email", "/settings/alerts", "/settings/addresses", "/settings/setup"]
+SECTIONS = ["/settings/general", "/users", "/keys", "/settings/email", "/settings/alerts", "/settings/addresses",
+            "/settings/setup"]
 
 
 def test_settings_sections_have_their_own_pages_with_left_navigation(client):
     csrf = login(client)
-    assert client.get("/settings", follow_redirects=False).headers["location"] == "/settings/email"
+    assert client.get("/settings", follow_redirects=False).headers["location"] == "/settings/general"
     for path in SECTIONS:
         page = client.get(path).text
         nav = re.search(r'<nav class="settings-nav".*?</nav>', page, re.S).group(0)
@@ -37,3 +38,31 @@ def test_settings_pages_are_admin_only(client, db):
     login(client, "op", "operator-password-1")
     for path in ["/settings", *SECTIONS]:
         assert client.get(path, follow_redirects=False).status_code == 403, path
+
+
+def test_users_and_keys_moved_to_settings(client):
+    login(client)
+    top = re.search(r'<header class="topbar">.*?<div class="who">', client.get("/devices").text, re.S).group(0)
+    assert 'href="/users"' not in top and 'href="/keys"' not in top
+    for path in ("/users", "/keys"):
+        page = client.get(path).text
+        assert 'class="icon-btn active"' in page, path  # the Settings gear is highlighted
+
+
+def test_time_zone_setting(client, db):
+    from datetime import datetime, timezone
+
+    from app.services.appsettings import format_dt, get_site_settings
+
+    csrf = login(client)
+    page = client.get("/settings/general").text
+    assert '<option value="America/Chicago"' in page and "UTC" in page
+    client.post("/settings/general", data={"timezone": "Mars/Base", "csrf_token": csrf}, follow_redirects=False)
+    db.expire_all()
+    assert get_site_settings(db).timezone == "UTC"
+    client.post("/settings/general", data={"timezone": "America/Chicago", "csrf_token": csrf})
+    db.expire_all()
+    assert get_site_settings(db).timezone == "America/Chicago"
+    assert format_dt(datetime(2026, 7, 1, 17, 30, tzinfo=timezone.utc)) == "2026-07-01 12:30 CDT"
+    assert format_dt(datetime(2026, 1, 1, 17, 30, tzinfo=timezone.utc)) == "2026-01-01 11:30 CST"
+    assert 'value="America/Chicago" selected' in client.get("/settings/general").text

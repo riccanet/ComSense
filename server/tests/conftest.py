@@ -152,3 +152,13 @@ def login(client, username="admin", password=ADMIN_PASSWORD) -> str:
     )
     assert resp.status_code == 303, resp.text
     return csrf_from(client.get("/").text)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_time_zone_cache():
+    """The display time zone is cached per process; each test starts from its own database."""
+    from app.services import appsettings
+
+    appsettings._tz_cache["at"] = float("-inf")
+    yield
+    appsettings._tz_cache["at"] = float("-inf")

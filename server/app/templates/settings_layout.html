@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Settings</h1>
+<div class="settings-layout">
+  <nav class="settings-nav" aria-label="Settings sections">
+    {% for href, label in settings_sections %}
+    <a href="{{ href }}"{% if href == section %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+    <p class="small muted">Saved in the database. The server's container settings only cover how it starts
+    (database, keys, listeners).</p>
+  </nav>
+  <div class="settings-body">
+{% block settings %}{% endblock %}
+  </div>
+</div>
+{% endblock %}

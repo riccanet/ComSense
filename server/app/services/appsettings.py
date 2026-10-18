@@ -10,15 +10,18 @@ from __future__ import annotations
 import base64
 import hashlib
 import ipaddress
+import time
 from dataclasses import asdict, dataclass, field, fields
+from datetime import datetime, tzinfo
 from typing import Any
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy.orm import Session
 
 from ..config import Settings
-from ..models import AppSetting, utcnow
+from ..models import AppSetting, aware, utcnow
 
 EMAIL_KEY = "email"
 ALERT_EMAIL_KEY = "alert_email"
@@ -86,6 +89,8 @@ class SiteSettings:
     # Set when an admin finishes (or skips) the first-run setup wizard.
     setup_completed_at: str = ""
     setup_completed_by: str = ""
+    # IANA time zone for times shown in the console and in emails (Settings > General).
+    timezone: str = "UTC"
 
 
 def _secret_box(secret_key: str) -> Fernet:
@@ -174,6 +179,45 @@ def get_site_settings(db: Session) -> SiteSettings:
 
 def save_site_settings(db: Session, value: SiteSettings, actor: str) -> None:
     _save(db, SITE_KEY, value, actor)
+    _tz_cache["at"] = float("-inf")  # show the new time zone right away
+
+
+# ------------------------------------------------------------------ time zone
+
+TZ_CACHE_SECONDS = 30
+_tz_cache: dict[str, Any] = {"at": float("-inf"), "tz": ZoneInfo("UTC")}
+
+
+def timezone_names() -> list[str]:
+    return sorted(n for n in available_timezones() if "/" in n and not n.startswith(("Etc/", "SystemV/"))) + ["UTC"]
+
+
+def valid_timezone(name: str) -> bool:
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return False
+    return True
+
+
+def display_timezone() -> tzinfo:
+    """The time zone set in Settings > General, cached for a few seconds (read on every page)."""
+    if time.monotonic() - _tz_cache["at"] > TZ_CACHE_SECONDS:
+        from ..db import session_factory
+
+        try:
+            with session_factory()() as db:
+                name = get_site_settings(db).timezone or "UTC"
+            _tz_cache["tz"] = ZoneInfo(name)
+        except Exception:  # noqa: BLE001 - no database yet or a bad value: keep the last one
+            pass
+        _tz_cache["at"] = time.monotonic()
+    return _tz_cache["tz"]
+
+
+def format_dt(value: datetime | None) -> str:
+    """'2026-10-18 14:40 CDT' in the configured time zone."""
+    return aware(value).astimezone(display_timezone()).strftime("%Y-%m-%d %H:%M %Z") if value else ""
 
 
 def _host_port(value: str) -> tuple[str, int | None]:

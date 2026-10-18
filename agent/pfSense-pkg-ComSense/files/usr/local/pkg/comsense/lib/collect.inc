@@ -351,11 +351,13 @@ define('CSFM_PROCESS_TOP', 25);
 define('CSFM_COMMAND_MAX', 160);
 
 function csfm_collect_processes() {
-	exec('/usr/bin/timeout 20 /bin/ps -axww -o pid=,user=,pcpu=,pmem=,rss=,time=,state=,command= 2>/dev/null', $lines, $rc);
+	/* One -o per column: FreeBSD's ps reads everything after "=" as the header, commas included. */
+	exec('/usr/bin/timeout 20 /bin/ps -axww -o pid= -o user= -o pcpu= -o pmem= -o rss= -o time= -o state= -o command='
+	    . ' 2>/dev/null', $lines, $rc);
 	$all = array();
 	foreach ($lines as $line) {
 		$f = preg_split('/\s+/', trim($line), 8);
-		if (count($f) < 8 || !ctype_digit($f[0]) || strpos($f[7], '/bin/ps -axww -o pid=') === 0) {
+		if (count($f) < 8 || !ctype_digit($f[0]) || strpos($f[7], '/bin/ps -axww -o pid= ') === 0) {
 			continue;  /* also skip this ps itself */
 		}
 		$all[] = array(

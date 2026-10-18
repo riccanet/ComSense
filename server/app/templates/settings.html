@@ -1,18 +1,23 @@
-{% extends "base.html" %}
+{% extends "settings_layout.html" %}
 {% from "macros.html" import csrf with context %}
 {% block title %}Settings{% endblock %}
-{% block content %}
-<h1>Settings</h1>
-<div class="settings-layout">
-  <nav class="settings-nav" aria-label="Settings sections">
-    {% for href, label in sections %}
-    <a href="{{ href }}"{% if href == section %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
-    {% endfor %}
-    <p class="small muted">Saved in the database. The server's container settings only cover how it starts
-    (database, keys, listeners).</p>
-  </nav>
-  <div class="settings-body">
-{% if section == "/settings/email" %}
+{% block settings %}
+{% if section == "/settings/general" %}
+<section class="card">
+  <h2>General</h2>
+  <form method="post" action="/settings/general" class="grid-form">
+    {{ csrf() }}
+    <label class="wide">Time zone
+      <select name="timezone">
+        {% for name in timezones %}<option value="{{ name }}"{% if site.timezone == name %} selected{% endif %}>{{ name|replace("_", " ") }}</option>{% endfor %}
+      </select>
+    </label>
+    <p class="small muted wide">Times in the console and in alert emails are shown in this time zone.
+    Right now it is {{ now_local }}.</p>
+    <div class="wide"><button class="primary">Save</button></div>
+  </form>
+</section>
+{% elif section == "/settings/email" %}
 <section class="card">
   <h2>Outgoing email (SMTP)</h2>
   <p class="small muted">Used for alert emails and password reset links.</p>
@@ -114,7 +119,7 @@
     <label class="check"><input type="checkbox" name="allow_totp" value="true"{% if sec.allow_totp %} checked{% endif %}> Authenticator app (TOTP)</label>
     <label class="check"><input type="checkbox" name="allow_email" value="true"{% if sec.allow_email %} checked{% endif %}> Email codes</label>
     {% if sec.allow_email and not email_ready %}<div class="flash warn">Email codes need outgoing email; set up <a href="/settings/email">Email (SMTP)</a> first.</div>{% endif %}
-    <p class="small muted">Lost phone or mailbox: an admin can reset a user's two-factor sign-in on the Users page.</p>
+    <p class="small muted">Lost phone or mailbox: an admin can reset a user's two-factor sign-in on <a href="/users">Settings &gt; Users</a>.</p>
     <div><button class="primary">Save</button></div>
   </form>
 </section>
@@ -124,10 +129,8 @@
   <p>Walks through the addresses, outgoing email and connecting a first firewall: the agent package and an
   enrollment code. It runs on its own after the first sign-in; run it again any time to review those settings.</p>
   <p class="small muted">{% if site.setup_completed_at %}Last finished by {{ site.setup_completed_by }} on
-  {{ site.setup_completed_at[:16]|replace("T", " ") }} UTC.{% else %}Not finished yet.{% endif %}</p>
+  {{ site.setup_completed_at|isodate }}.{% else %}Not finished yet.{% endif %}</p>
   <p><a class="button primary" href="/setup">Run the setup wizard</a></p>
 </section>
 {% endif %}
-  </div>
-</div>
 {% endblock %}

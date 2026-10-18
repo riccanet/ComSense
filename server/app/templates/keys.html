@@ -1,8 +1,8 @@
-{% extends "base.html" %}
+{% extends "settings_layout.html" %}
 {% from "macros.html" import csrf, post_button with context %}
 {% block title %}Enrollment keys{% endblock %}
-{% block content %}
-<h1>Enrollment keys</h1>
+{% block settings %}
+<h2>Enrollment keys</h2>
 <p class="muted">A firewall can only join this server with a valid enrollment key. Each new key comes with an
 <strong>enrollment code</strong> that also carries the agent address and the server's certificate pin, so it is the
 only thing to paste on the firewall. Once enrolled, the firewall gets its own device token and the key is erased from it.</p>

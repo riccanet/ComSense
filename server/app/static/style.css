@@ -111,7 +111,8 @@ footer { text-align: center; padding: 1rem; font-size: 12px; }
 .login .login-brand { display: flex; justify-content: center; margin: .5rem 0 .25rem; }
 .login .login-brand .brand-name { font-size: 1.5rem; }
 .login .login-brand .brand-tag { font-size: 1.2rem; }
-.login > p { text-align: center; margin-top: .25rem; }
+.login > p, .login > h2 { text-align: center; margin-top: .25rem; }
+.login > form.toolbar { justify-content: center; }
 /* Keep the menu on one line: drop "Firewall Manager" from the header when space is short. */
 @media (max-width: 1360px) {
   .topbar .brand-tag { display: none; }

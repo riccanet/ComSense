@@ -102,7 +102,7 @@ restores the previous configuration on its own, also after a reboot.
 * **Settings → Security** requires two-factor sign-in for nobody, admins or everyone, and chooses the
   allowed methods. Users who must use it but have not set it up can only reach their Account page until
   they do. Turning off a method needs the password; the last one cannot be turned off while required.
-  Admins can reset a user's two-factor sign-in on the Users page (audited).
+  Admins can reset a user's two-factor sign-in on Settings > Users (audited).
 
 ## Recommendations
 
