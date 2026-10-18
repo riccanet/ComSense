@@ -10,12 +10,29 @@ AGENT=/usr/local/pkg/comsense/agent.php
 INTERVAL_FILE=/var/db/comsense/interval
 LOCK=/var/run/comsense_agent.lock
 TERM_DIR=/var/db/comsense/terminal
+CHECKIN_NOW=/var/db/comsense/checkin-now
 
-# Spread check-ins from many firewalls that boot at the same time.
-sleep $(( $(/usr/bin/jot -r 1 0 20) ))
+# A cycle from an agent before 0.2.1 may still hold the lock: its timeout(1) waits
+# for everything the cycle started, including an agent update and this new agent.
+# Killing that timeout (not its children) releases the lock; nothing else stops.
+/bin/pkill -9 -f "^/usr/bin/timeout 3600 ${PHP} -f ${AGENT} run" 2>/dev/null
+
+if [ -f "${CHECKIN_NOW}" ]; then
+	# Restarted by an agent update: report the new version right away.
+	/bin/rm -f "${CHECKIN_NOW}"
+else
+	# Spread check-ins from many firewalls that boot at the same time.
+	sleep $(( $(/usr/bin/jot -r 1 0 20) ))
+fi
 
 while true; do
-	/usr/bin/lockf -s -t 0 "${LOCK}" /usr/bin/timeout 3600 "${PHP}" -f "${AGENT}" run >/dev/null 2>&1
+	# --foreground: time out the cycle itself only. Without it timeout(1) also waits for
+	# every process the cycle starts (an agent update, pfSense-upgrade) and keeps the lock.
+	/usr/bin/lockf -s -t 0 "${LOCK}" /usr/bin/timeout --foreground 3600 "${PHP}" -f "${AGENT}" run >/dev/null 2>&1
+	if [ $? -eq 75 ]; then
+		# Another cycle holds the lock (e.g. a manual check-in): do not spin on /wait.
+		sleep 5
+	fi
 	# Remote terminal sessions the cycle accepted (tasks.inc). Started here rather than in the
 	# cycle, whose timeout(1) would wait for them; daemon(8) detaches each one.
 	for REQ in "${TERM_DIR}"/*.request; do

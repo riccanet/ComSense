@@ -8,7 +8,7 @@
 {% set can_operate = user.role.value in ("operator", "admin") %}
 {% set is_admin = user.role.value == "admin" %}
 
-<div class="heading">
+<div class="heading" data-poll="/devices/{{ device.id }}/poll" data-poll-token="{{ page_token }}">
   <h1>{{ device.name }} {{ status_badge(device.status.value) }}</h1>
   <div class="actions">
     {% set agent_old = latest_agent and device.agent_version and device.agent_version|agent_outdated(latest_agent) %}

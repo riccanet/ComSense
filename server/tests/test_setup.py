@@ -156,6 +156,12 @@ def test_agent_package_is_a_valid_pkg_archive(tmp_path):
         # FreeBSD's ps takes everything after "=" as the column header: "-o pid=,user=" yields one column.
         assert not re.search(rb"-o [a-z]+=,", content), path
     assert files["/usr/local/sbin/comsense-agentd"][0].mode == 0o755
+    # FreeBSD's timeout(1) otherwise waits for every process a cycle starts (agent updates, upgrades)
+    # and keeps the agent's lock for up to an hour.
+    for daemon in ("/usr/local/sbin/comsense-agentd", "/usr/local/sbin/comsense-watchdogd"):
+        for line in files[daemon][1].decode().splitlines():
+            if "/usr/bin/lockf" in line:
+                assert "timeout --foreground" in line, (daemon, line)
     # Timestamps follow content (pfSense's opcache reloads a file only when its mtime changes),
     # are in the past, and differ between files with different content.
     import time as _time

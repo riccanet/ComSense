@@ -404,6 +404,7 @@ def test_full_lifecycle(env):
     assert staged.read_bytes() == (env["dir"] / "data" / "downloads" / package["name"]).read_bytes()
     actions = (env["fw"] / "actions.log").read_text()
     assert "mwexec: /usr/sbin/daemon -f /bin/sh -c " in actions and "pkg-static add" in actions
+    assert "checkin-now" in actions  # the restarted agent checks in at once
     agent(env, "run")  # pkg installed the new files: this is the new agent
     with env["db"]() as db:
         task = db.get(Task, task_id)

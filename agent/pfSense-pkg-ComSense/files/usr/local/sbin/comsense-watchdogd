@@ -14,7 +14,7 @@ GUARD=/cf/conf/comsense/guard.json
 
 while true; do
 	if [ -f "${GUARD}" ]; then
-		/usr/bin/lockf -s -t 0 "${LOCK}" /usr/bin/timeout 900 "${PHP}" -f "${AGENT}" watchdog >/dev/null 2>&1
+		/usr/bin/lockf -s -t 0 "${LOCK}" /usr/bin/timeout --foreground 900 "${PHP}" -f "${AGENT}" watchdog >/dev/null 2>&1
 	fi
 	sleep 30
 done

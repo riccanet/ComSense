@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 
 from conftest import auth, csrf_from, enroll, login, make_key
@@ -89,3 +90,21 @@ def test_bulk_check_now_and_update(client, db, agent):
     assert "queued on 1 firewall(s); skipped 1" in page
     assert len(_tasks(db, a["device_id"], TaskType.update_agent)) == 1
     assert all(t.status == TaskStatus.pending for t in _tasks(db, b["device_id"], TaskType.refresh_inventory))
+
+
+def test_device_page_follows_the_firewall(client, db, agent):
+    creds = enroll(agent, make_key(db))
+    csrf = login(client)
+    did = creds["device_id"]
+    page = client.get(f"/devices/{did}").text
+    token = re.search(r'data-poll-token="([0-9a-f]+)"', page).group(1)
+    assert client.get(f"/devices/{did}/poll").json() == {"token": token}
+    # A plain check-in does not change it (the page is not reloaded every minute)...
+    agent.post("/api/agent/v1/checkin", json={"system": {"hostname": "fw"}}, headers=auth(creds["token"]))
+    assert client.get(f"/devices/{did}/poll").json()["token"] == token
+    # ...a task moving on does, and so does a new agent version.
+    client.post(f"/devices/{did}/check-now", data={"csrf_token": csrf})
+    queued = client.get(f"/devices/{did}/poll").json()["token"]
+    assert queued != token
+    agent.post("/api/agent/v1/checkin", json={"system": {"hostname": "fw"}}, headers=auth(creds["token"]))
+    assert client.get(f"/devices/{did}/poll").json()["token"] != queued

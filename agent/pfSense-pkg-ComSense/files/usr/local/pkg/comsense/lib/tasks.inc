@@ -346,6 +346,7 @@ function csfm_task_update_agent($client, $id, $payload) {
 	csfm_report_result($client, $id, 'running', "Downloaded {$file} (sha256 verified); installing.");
 	$log = escapeshellarg(CSFM_AGENT_UPDATE_LOG);
 	$cmd = 'sleep 2; ' . CSFM_PKG . ' add ' . escapeshellarg(CSFM_AGENT_UPDATE_PKG) . " > {$log} 2>&1; "
+	    . 'touch ' . escapeshellarg(CSFM_DB_DIR . '/checkin-now') . '; '
 	    . "/usr/local/etc/rc.d/comsense.sh restart >> {$log} 2>&1";
 	/* daemon(8) detaches fully: the install survives the agent restart it triggers. */
 	mwexec('/usr/sbin/daemon -f /bin/sh -c ' . escapeshellarg($cmd));

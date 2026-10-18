@@ -112,4 +112,23 @@
     line("mem", style.getPropertyValue("--chart-mem"));
   }
   document.addEventListener("DOMContentLoaded", drawMetrics);
+  // Pages that follow the firewall (the device page) reload when the server says something changed,
+  // e.g. a task finished after "Check now". Not while the user is in the middle of a form.
+  var poller = document.querySelector("[data-poll]");
+  if (poller && window.fetch) {
+    var token = poller.getAttribute("data-poll-token");
+    var dirty = false;
+    document.addEventListener("input", function () { dirty = true; });
+    window.setInterval(function () {
+      if (document.hidden || dirty) return;
+      var active = document.activeElement;
+      if (active && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName)) return;
+      fetch(poller.getAttribute("data-poll"), { credentials: "same-origin", headers: { Accept: "application/json" } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (data && data.token && data.token !== token) window.location.reload();
+        })
+        .catch(function () {});
+    }, 4000);
+  }
 })();

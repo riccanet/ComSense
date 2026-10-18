@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import datetime, timedelta
@@ -441,6 +442,7 @@ def device_detail(
         policy_state=policy_state,
         policy_names={str(p.id): p.name for p in db.scalars(select(Policy))} if device.rolled_back_policies else {},
         latest_agent=_latest_agent_version(request),
+        page_token=_device_page_token(db, device),
         terminal_sessions=db.scalars(
             select(TerminalSession).where(TerminalSession.device_id == device.id)
             .order_by(TerminalSession.created_at.desc()).limit(10)
@@ -519,6 +521,24 @@ def _update_agent(db: Session, device: Device, actor: str, package: dict[str, st
     return queue_task(db, device, TaskType.update_agent, payload, actor=actor)
 
 
+def _device_page_token(db: Session, device: Device) -> str:
+    """Changes when something the firewall's page shows changes because of the firewall: a task
+    moves on, the agent version, status, capabilities or a check-in's inventory. Not on every
+    check-in, so an idle page is left alone."""
+    tasks = db.execute(
+        select(Task.id, Task.status).where(Task.device_id == device.id).order_by(Task.id.desc()).limit(30)
+    ).all()
+    parts = [str(device.agent_version), device.status.value, ",".join(device.capabilities or []),
+             str(device.product_version), ";".join(f"{t.id}:{t.status.value}" for t in tasks)]
+    return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
+
+
+@router.get("/devices/{device_id}/poll")
+def device_poll(device_id: str, user: User = Depends(viewer), db: Session = Depends(get_db)) -> dict[str, str]:
+    """Polled by the firewall's page (static/app.js), which reloads itself when the token changes."""
+    return {"token": _device_page_token(db, _get_device(db, device_id))}
+
+
 @router.post("/devices/{device_id}/check-now")
 def device_check_now(device_id: str, request: Request, user: User = Depends(operator), db: Session = Depends(get_db)):
     device = _get_device(db, device_id)
@@ -529,7 +549,7 @@ def device_check_now(device_id: str, request: Request, user: User = Depends(oper
         return redirect(f"/devices/{device_id}")
     audit(db, user.username, "device.check_now", target=device.id, ip=_ip(request))
     db.commit()
-    flash(request, "Check requested. A connected firewall reports back within a few seconds; refresh the page.", "success")
+    flash(request, "Check requested. A connected firewall reports back within a few seconds; this page updates when it does.", "success")
     return redirect(f"/devices/{device_id}")
 
 
