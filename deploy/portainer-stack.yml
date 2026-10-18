@@ -1,17 +1,17 @@
-# ComSense Firewall Manager as a Portainer stack behind an existing reverse proxy
-# (Nginx Proxy Manager, Traefik, ...) that already owns ports 80/443.
+# ComSense Firewall Manager as a Portainer stack behind an external HTTPS proxy
+# (NetBird reverse proxy, Nginx Proxy Manager, Traefik, ...).
 #
 # Portainer: Stacks > Add stack > Repository, compose path deploy/portainer-stack.yml,
 # and set the environment variables below. Portainer builds the app image from
 # server/ in this repository.
 #
-# The app publishes no host port. It joins the proxy's external network
-# (PROXY_NETWORK, default docker_network); point the proxy host for CSFM_DOMAIN at
-# http://comsense-app:8000 and enable SSL (Let's Encrypt) there. Firewalls connect
-# to https://CSFM_DOMAIN on 443.
+# The app listens on CSFM_BIND_ADDRESS:CSFM_PORT (plain HTTP). Bind it to an
+# address only the proxy can reach, e.g. the host's NetBird IP, and point the proxy
+# at http://<that address>:<port>. TLS is terminated by the proxy; firewalls
+# connect to https://CSFM_DOMAIN on 443.
 #
-# Required: CSFM_DOMAIN, POSTGRES_PASSWORD, CSFM_SECRET_KEY, CSFM_BACKUP_ENCRYPTION_KEY,
-#           CSFM_INITIAL_ADMIN_PASSWORD (first start only)
+# Required: CSFM_DOMAIN, CSFM_BIND_ADDRESS, POSTGRES_PASSWORD, CSFM_SECRET_KEY,
+#           CSFM_BACKUP_ENCRYPTION_KEY, CSFM_INITIAL_ADMIN_PASSWORD (first start only)
 # Generate keys with: python -m app.cli keygen
 
 services:
@@ -61,11 +61,12 @@ services:
       CSFM_BACKUP_RETENTION_COUNT: ${CSFM_BACKUP_RETENTION_COUNT:-5}
       CSFM_METRICS_RETENTION_DAYS: ${CSFM_METRICS_RETENTION_DAYS:-30}
       CSFM_TASK_RETENTION_DAYS: ${CSFM_TASK_RETENTION_DAYS:-90}
+    ports:
+      - "${CSFM_BIND_ADDRESS:?CSFM_BIND_ADDRESS is required}:${CSFM_PORT:-3020}:8000"
     volumes:
       - comsense-data:/var/lib/comsense
     networks:
       - internal
-      - proxy
     labels:
       # Built locally, so there is nothing for Watchtower to pull.
       com.centurylinklabs.watchtower.enable: "false"
@@ -87,6 +88,3 @@ volumes:
 
 networks:
   internal: {}
-  proxy:
-    name: ${PROXY_NETWORK:-docker_network}
-    external: true
