@@ -56,6 +56,8 @@ guarded on both sides:
   accepted. A code works once, and 5 wrong codes lock terminal approval for 15 minutes.
 * The approval is bound to the admin's browser session and must be used within 2 minutes; a session
   can be joined once and cannot be reattached after a disconnect.
+* The session starts in pfSense's console menu, as on the console or over SSH: option 8 opens a
+  root shell, option 0 ends the session.
 * The firewall still only connects out: its terminal helper opens a WebSocket to the agent port with
   the same certificate pin and device token as every other request.
 * Sessions end after 15 minutes without input and after 2 hours.

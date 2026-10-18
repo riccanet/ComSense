@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Configurations</h1>
+{% if not changes_enabled %}
+<div class="flash warn">Firewall changes are turned off on this server. Configurations can be built and assigned, but
+they are not sent to firewalls until changes are enabled.</div>
+{% endif %}
+<div class="settings-layout">
+  <nav class="settings-nav" aria-label="Configuration sections">
+    {% for href, label, _ in config_sections %}
+    <a href="/configurations/{{ href }}"{% if href == section %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+    <p class="small muted">Define once, then assign to a firewall, a firewall group, a customer or all firewalls.
+    Firewalls apply changes at their next check-in and undo a change that cuts them off from ComSense.</p>
+  </nav>
+  <div class="settings-body">
+{% block config %}{% endblock %}
+  </div>
+</div>
+{% endblock %}

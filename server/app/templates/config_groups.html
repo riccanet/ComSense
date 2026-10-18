@@ -1,0 +1,33 @@
+{% extends "config_layout.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}Firewall groups · Configurations{% endblock %}
+{% block config %}
+{% set can_edit = user.role.value != "viewer" %}
+<h2>Firewall groups</h2>
+<p class="muted">Named sets of firewalls, from any customers, such as "Branch offices" or "Retail sites". Assign aliases,
+rules and port forwards to a group and every firewall in it gets them; adding a firewall to the group later applies
+them there too.</p>
+<table class="list">
+  <thead><tr><th>Group</th><th>Firewalls</th><th>Configurations</th></tr></thead>
+  <tbody>
+  {% for g in groups %}
+    <tr>
+      <td><a href="/configurations/groups/{{ g.id }}"><strong>{{ g.name }}</strong></a>{% if g.description %}<div class="small muted">{{ g.description }}</div>{% endif %}</td>
+      <td>{{ g.devices|length }}</td>
+      <td>{{ assignment_counts[g.id] }}</td>
+    </tr>
+  {% else %}<tr><td colspan="3" class="muted">No groups yet.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% if can_edit %}
+<section class="card">
+  <h2>New group</h2>
+  <form method="post" action="/configurations/groups" class="grid-form">
+    {{ csrf() }}
+    <label>Name <input name="name" required maxlength="128"></label>
+    <label>Description <input name="description"></label>
+    <div class="wide"><button class="primary">Create group</button></div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

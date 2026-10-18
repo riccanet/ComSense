@@ -118,7 +118,7 @@ def test_full_lifecycle(env):
     from sqlalchemy import select
 
     from app.models import (
-        Backup, Device, EnrollmentKey, Policy, PolicyAssignment, PolicyType, Task, TaskStatus, TaskType,
+        Backup, Device, DeviceGroup, EnrollmentKey, Policy, PolicyAssignment, PolicyType, Task, TaskStatus, TaskType,
     )
     from app.security import generate_enrollment_key, hash_secret, key_display_prefix
     from app.services.tasks import queue_task
@@ -205,23 +205,35 @@ def test_full_lifecycle(env):
         aliases = Policy(name="aliases", type=PolicyType.aliases, content={"aliases": [
             {"name": "CSFM_E2E", "type": "host", "address": ["203.0.113.5"]}]})
         system = Policy(name="system", type=PolicyType.system, content={"timezone": "Etc/UTC", "dnsservers": ["9.9.9.9"]})
-        # Rules policy is created first on purpose: the agent must still apply aliases first.
-        db.add_all([rules, aliases, system])
+        forwards = Policy(name="forwards", type=PolicyType.port_forward, content={"rules": [{
+            "interface": "wan", "protocol": "tcp", "destination": {"network": "wanip", "port": "8443"},
+            "target": "CSFM_E2E", "local_port": "443", "descr": "Web server"}]})
+        # Rules and port forwards are created first on purpose: the agent must still apply aliases first.
+        db.add_all([rules, forwards, aliases, system])
+        db.flush()
+        # Port forwards go to a firewall group the firewall belongs to.
+        group = DeviceGroup(name="e2e-sites", devices=[device])
+        db.add(group)
         db.flush()
         for p in (rules, aliases, system):
             db.add(PolicyAssignment(policy_id=p.id, device_id=device.id))
+        db.add(PolicyAssignment(policy_id=forwards.id, group_id=group.id))
         queue_task(db, device, TaskType.restart_service, {"service": "unbound"}, actor="e2e", changes_enabled=True)
         queue_task(db, device, TaskType.check_updates, actor="e2e")
         db.commit()
         policy_ids = {p.name: p.id for p in (rules, aliases, system)}
 
-    assert agent(env, "run").startswith("Checked in; ran 5 task(s)")
+    assert agent(env, "run").startswith("Checked in; ran 6 task(s)")
     cfg = fw_config(env)
     assert [a["name"] for a in cfg["aliases"]["alias"]] == ["CSFM_E2E"]
     assert cfg["filter"]["rule"][0]["descr"] == "[CSFM] NOC to GUI"
+    (fwd,) = cfg["nat"]["rule"]
+    assert fwd["descr"] == "[CSFM] Web server" and fwd["target"] == "CSFM_E2E" and fwd["local-port"] == "443"
+    assert fwd["destination"] == {"network": "wanip", "port": "8443"} and fwd["associated-rule-id"] == "pass"
     assert cfg["system"]["timezone"] == "Etc/UTC" and cfg["system"]["dnsserver"] == ["9.9.9.9"]
     actions = (env["fw"] / "actions.log").read_text()
     assert actions.index("applied alias policy") < actions.index("applied firewall rule policy")
+    assert actions.index("applied alias policy") < actions.index("applied port forward policy")
     assert "restart unbound" in actions
 
     with env["db"]() as db:
@@ -231,13 +243,17 @@ def test_full_lifecycle(env):
     # Next check-in reports hashes, so nothing is re-applied.
     assert agent(env, "run") == "Checked in; ran 0 task(s)"
 
-    # 5. Unassigning removes rules before the alias they reference, and restores system values.
+    # 5. Unassigning removes rules and port forwards before the alias they reference, and restores
+    #    system values. Leaving the group is enough for the group's port forwards.
     with env["db"]() as db:
-        db.query(PolicyAssignment).delete()
+        db.scalars(select(DeviceGroup)).one().devices = []
+        db.query(PolicyAssignment).filter(PolicyAssignment.group_id.is_(None)).delete()
         db.commit()
-    assert agent(env, "run") == "Checked in; ran 3 task(s)"
+    assert agent(env, "run") == "Checked in; ran 4 task(s)"
     cfg = fw_config(env)
-    assert cfg["filter"]["rule"] == [] and cfg["aliases"]["alias"] == []
+    assert cfg["filter"]["rule"] == [] and cfg["aliases"]["alias"] == [] and cfg["nat"]["rule"] == []
+    actions = (env["fw"] / "actions.log").read_text()
+    assert actions.rindex("removed port forward policy") < actions.rindex("removed alias policy")
     assert "timezone" not in cfg["system"] and "dnsserver" not in cfg["system"]
     assert json.loads(agent(env, "state"))["state"]["policies"] == []
 

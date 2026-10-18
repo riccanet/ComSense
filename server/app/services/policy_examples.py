@@ -44,6 +44,20 @@ EXAMPLES = {
             },
         ],
     },
+    PolicyType.port_forward: {
+        "position": "top",
+        "rules": [
+            {
+                "interface": "wan",
+                "protocol": "tcp",
+                "source": {"any": True},
+                "destination": {"network": "wanip", "port": "443"},
+                "target": "192.168.1.10",
+                "local_port": "443",
+                "descr": "Web server",
+            },
+        ],
+    },
     PolicyType.system: {
         "timezone": "America/New_York",
         "timeservers": "0.pool.ntp.org 1.pool.ntp.org",

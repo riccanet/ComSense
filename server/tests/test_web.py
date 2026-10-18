@@ -15,7 +15,7 @@ from app.tls import ensure_agent_tls
 
 
 def test_pages_require_login(client):
-    for path in ("/", "/devices", "/policies", "/keys", "/users", "/audit"):
+    for path in ("/", "/devices", "/configurations/aliases", "/keys", "/users", "/audit"):
         resp = client.get(path, follow_redirects=False)
         assert resp.status_code == 303 and resp.headers["location"] == "/login", path
 
@@ -49,7 +49,7 @@ def test_all_pages_render(client, db, agent):
         headers={"Authorization": f"Bearer {creds['token']}"},
     )
     resp = client.post(
-        "/policies",
+        "/configurations",
         data={"name": "p1", "type": "system", "content": json.dumps({"timezone": "UTC"}), "csrf_token": csrf},
         follow_redirects=False,
     )
@@ -59,9 +59,13 @@ def test_all_pages_render(client, db, agent):
         "/",
         "/devices",
         f"/devices/{creds['device_id']}",
-        "/policies",
-        "/policies/new",
-        f"/policies/{policy_id}",
+        "/configurations/aliases",
+        "/configurations/rules",
+        "/configurations/nat",
+        "/configurations/groups",
+        "/configurations/advanced",
+        "/configurations/new?type=port_forward",
+        f"/configurations/{policy_id}",
         "/alerts",
         "/customers",
         "/keys",
@@ -120,7 +124,7 @@ def test_operator_queues_task_and_admin_approves(client, db, agent):
 def test_invalid_policy_shows_error(client):
     csrf = login(client)
     resp = client.post(
-        "/policies",
+        "/configurations",
         data={"name": "bad", "type": "system", "content": "{not json", "csrf_token": csrf},
     )
     assert resp.status_code == 400

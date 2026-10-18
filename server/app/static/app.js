@@ -35,6 +35,29 @@
     if (mq.addEventListener) { mq.addEventListener("change", onChange); } else if (mq.addListener) { mq.addListener(onChange); }
   }
 
+  // Repeated-row editors (Configurations): add a row from the table's <template>, remove a row.
+  var rowSeq = 0;
+  document.addEventListener("click", function (ev) {
+    var add = ev.target.closest ? ev.target.closest("[data-add-row]") : null;
+    if (add) {
+      var id = add.getAttribute("data-add-row");
+      var tpl = document.getElementById(id + "-template");
+      var body = document.getElementById(id);
+      if (tpl && body) {
+        rowSeq += 1;
+        body.insertAdjacentHTML("beforeend", tpl.innerHTML.replace(/__KEY__/g, "n" + Date.now() + rowSeq));
+        var first = body.lastElementChild && body.lastElementChild.querySelector("input:not([type=hidden]), select, textarea");
+        if (first) first.focus();
+      }
+      return;
+    }
+    var remove = ev.target.closest ? ev.target.closest("[data-remove-row]") : null;
+    if (remove) {
+      var row = remove.closest("tr");
+      if (row) row.remove();
+    }
+  });
+
   document.addEventListener("click", function (ev) {
     var themeBtn = ev.target.closest ? ev.target.closest("[data-theme-set]") : null;
     if (themeBtn) {

@@ -55,8 +55,8 @@ function csfm_record_error($message) {
 }
 
 /*
- * Rules can reference aliases, so rules must go before the aliases they use
- * are removed, and aliases must exist before rules that use them are loaded.
+ * Rules and port forwards can reference aliases, so they must go before the
+ * aliases they use are removed, and aliases must exist before they are loaded.
  */
 function csfm_order_tasks($tasks) {
 	$state = csfm_state();
@@ -64,11 +64,11 @@ function csfm_order_tasks($tasks) {
 		$p = $t['payload'] ?? array();
 		if ($t['type'] === 'remove_policy') {
 			$type = $state['policies'][(string)($p['policy_id'] ?? '')]['type'] ?? '';
-			return $type === 'firewall_rules' ? 0 : 1;
+			return in_array($type, array('firewall_rules', 'port_forward'), true) ? 0 : 1;
 		}
 		if ($t['type'] === 'apply_policy') {
 			$type = $p['policy']['type'] ?? '';
-			return $type === 'aliases' ? 2 : ($type === 'firewall_rules' ? 4 : 3);
+			return $type === 'aliases' ? 2 : (in_array($type, array('firewall_rules', 'port_forward'), true) ? 4 : 3);
 		}
 		return 5;
 	};

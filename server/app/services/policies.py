@@ -15,7 +15,16 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from ..models import Device, Policy, PolicyAssignment, PolicyType, Task, TaskStatus, TaskType
+from ..models import (
+    Device,
+    Policy,
+    PolicyAssignment,
+    PolicyType,
+    Task,
+    TaskStatus,
+    TaskType,
+    device_group_members,
+)
 
 ALIAS_NAME_RE = re.compile(r"^[A-Za-z0-9_]{1,31}$")
 IFACE_RE = re.compile(r"^(wan|lan|opt\d{1,3}|floating|ipsec|openvpn|wireguard|enc0)$")
@@ -46,6 +55,16 @@ CONFIG_SET_DENY_PREFIXES = (
     "ca",
     "installedpackages/comsense",
 )
+
+
+TYPE_LABELS = {
+    PolicyType.aliases: "Aliases",
+    PolicyType.firewall_rules: "Firewall rules",
+    PolicyType.port_forward: "Port forwards",
+    PolicyType.system: "System settings",
+    PolicyType.packages: "Packages",
+    PolicyType.config_set: "Config values",
+}
 
 
 class PolicyError(ValueError):
@@ -152,6 +171,38 @@ def _validate_rules(content: dict[str, Any]) -> None:
             )
 
 
+NAT_PROTOCOLS = {"tcp", "udp", "tcp/udp"}
+
+
+def _validate_port_forwards(content: dict[str, Any]) -> None:
+    rules = content.get("rules")
+    _require(isinstance(rules, list) and rules, "port_forward: 'rules' must be a non-empty list")
+    _require(content.get("position", "top") in {"top", "bottom"}, "position must be 'top' or 'bottom'")
+    for i, rule in enumerate(rules):
+        where = f"rules[{i}]"
+        _require(isinstance(rule, dict), f"{where} must be an object")
+        iface = rule.get("interface", "wan")
+        _require(isinstance(iface, str) and IFACE_RE.match(iface) and iface != "floating",
+                 f"{where}.interface is invalid")
+        _require(rule.get("protocol", "tcp") in NAT_PROTOCOLS, f"{where}.protocol must be tcp, udp or tcp/udp")
+        _require(rule.get("ipprotocol", "inet") in {"inet", "inet6"}, f"{where}.ipprotocol is invalid")
+        _validate_endpoint(rule.get("source", {"any": True}), f"{where}.source")
+        dest = rule.get("destination", {"network": "wanip"})
+        _validate_endpoint(dest, f"{where}.destination")
+        _require(bool(dest.get("port")), f"{where}.destination.port (the external port) is required")
+        target = rule.get("target", "")
+        _require(isinstance(target, str) and target, f"{where}.target (the internal address) is required")
+        if not ALIAS_NAME_RE.match(target):
+            try:
+                ipaddress.ip_address(target)
+            except ValueError as exc:
+                raise PolicyError(f"{where}.target must be an IP address or alias name") from exc
+        local = rule.get("local_port", "")
+        _require(isinstance(local, str) and PORT_RE.match(local), f"{where}.local_port must be a port or port alias")
+        _require(isinstance(rule.get("descr", ""), str), f"{where}.descr must be a string")
+        _require(isinstance(rule.get("disabled", False), bool), f"{where}.disabled must be a boolean")
+
+
 def _validate_system(content: dict[str, Any]) -> None:
     unknown = set(content) - SYSTEM_KEYS
     _require(not unknown, f"system: unknown keys {sorted(unknown)}")
@@ -212,6 +263,7 @@ _VALIDATORS = {
     PolicyType.system: _validate_system,
     PolicyType.packages: _validate_packages,
     PolicyType.config_set: _validate_config_set,
+    PolicyType.port_forward: _validate_port_forwards,
 }
 
 
@@ -221,7 +273,12 @@ def validate_policy(ptype: PolicyType, content: Any) -> None:
 
 
 def desired_policies(db: Session, device: Device) -> list[Policy]:
-    conds = [PolicyAssignment.device_id == device.id, PolicyAssignment.all_devices.is_(True)]
+    groups = select(device_group_members.c.group_id).where(device_group_members.c.device_id == device.id)
+    conds = [
+        PolicyAssignment.device_id == device.id,
+        PolicyAssignment.all_devices.is_(True),
+        PolicyAssignment.group_id.in_(groups),
+    ]
     if device.organization_id is not None:
         conds.append(PolicyAssignment.organization_id == device.organization_id)
     # A subquery rather than JOIN + DISTINCT: PostgreSQL cannot compare the JSON content column.

@@ -42,11 +42,6 @@ def test_web_refuses_change_actions(client, db, agent):
     assert "Coming soon" in resp.text
     resp = client.post(f"{device_url}/tasks", data={"task_type": "restart_service", "service": "x", "csrf_token": csrf})
     assert "Coming soon" in resp.text
-    resp = client.post(
-        "/policies",
-        data={"name": "p", "type": "system", "content": json.dumps({"timezone": "UTC"}), "csrf_token": csrf},
-    )
-    assert resp.status_code == 403 and "Coming soon" in resp.text
     backup_id = agent.post(
         "/api/agent/v1/backups", content=gzip.compress(CONFIG_XML), headers=auth(creds["token"])
     ).json()["backup_id"]
@@ -84,11 +79,10 @@ def test_pages_show_coming_soon(client, db, agent):
     assert "Reboot (coming soon)" in page and "Upgrade pfSense (reboots) (coming soon)" in page
     assert 'value="install_package"' not in page
     assert 'name="policy_id"' not in page
-    policies = client.get("/policies").text
-    assert "Coming soon" in policies and "/policies/new" not in policies
-    assert client.get("/policies/new", follow_redirects=False).headers["location"] == "/policies"
-    nav = client.get("/").text
-    assert 'class="nav-soon"' in nav
+    # Configurations can be built and assigned; the page says they are not sent to firewalls.
+    configs = client.get("/configurations/aliases").text
+    assert "Firewall changes are turned off" in configs and "/configurations/new?type=aliases" in configs
+    assert 'href="/configurations"' in client.get("/").text
 
 
 @pytest.mark.changes

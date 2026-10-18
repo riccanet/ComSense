@@ -48,6 +48,9 @@ function csfm_apply_policy($policy) {
 		case 'config_set':
 			$record = csfm_apply_config_set($pid, $content, $prev);
 			break;
+		case 'port_forward':
+			$record = csfm_apply_port_forwards($pid, $content);
+			break;
 		default:
 			throw new CsfmPolicyError("Unsupported policy type '{$type}'");
 	}
@@ -75,6 +78,9 @@ function csfm_remove_policy($pid) {
 			break;
 		case 'firewall_rules':
 			$summary = csfm_remove_rules($pid);
+			break;
+		case 'port_forward':
+			$summary = csfm_remove_port_forwards($pid);
 			break;
 		case 'system':
 		case 'config_set':
@@ -365,6 +371,56 @@ function csfm_remove_rules($pid) {
 	write_config("ComSense: removed firewall rule policy {$pid}");
 	csfm_reload(array('filter'));
 	return sprintf('Removed %d rule(s)', count($all) - count($rules));
+}
+
+/* ------------------------------------------------- port forwards (inbound NAT) */
+
+function csfm_build_port_forward($pid, $r) {
+	$nat = array(
+		'source' => csfm_rule_endpoint($r['source'] ?? array('any' => true)),
+		'destination' => csfm_rule_endpoint($r['destination'] ?? array('network' => 'wanip')),
+		'ipprotocol' => $r['ipprotocol'] ?? 'inet',
+		'protocol' => $r['protocol'] ?? 'tcp',
+		'target' => (string)$r['target'],
+		'local-port' => (string)$r['local_port'],
+		'interface' => $r['interface'] ?? 'wan',
+		'descr' => CSFM_RULE_PREFIX . ($r['descr'] ?? ''),
+		/* "Pass": the port forward lets its own traffic through; no separate filter rule to manage. */
+		'associated-rule-id' => 'pass',
+		'comsense_policy' => $pid,
+		'created' => array('time' => (string)time(), 'username' => 'ComSense'),
+		'updated' => array('time' => (string)time(), 'username' => 'ComSense'),
+	);
+	if (!empty($r['disabled'])) {
+		$nat['disabled'] = '';
+	}
+	return $nat;
+}
+
+function csfm_apply_port_forwards($pid, $content) {
+	$others = array_values(array_filter((array)csfm_cfg_get('nat/rule', array()), function ($r) use ($pid) {
+		return !csfm_is_policy_rule($r, $pid);
+	}));
+	$new = array();
+	foreach ($content['rules'] as $r) {
+		$new[] = csfm_build_port_forward($pid, $r);
+	}
+	$all = (($content['position'] ?? 'top') === 'bottom') ? array_merge($others, $new) : array_merge($new, $others);
+	csfm_cfg_set('nat/rule', $all);
+	write_config("ComSense: applied port forward policy {$pid}");
+	csfm_reload(array('filter'));
+	return array('items' => array(), 'summary' => sprintf('Installed %d port forward(s)', count($new)));
+}
+
+function csfm_remove_port_forwards($pid) {
+	$all = (array)csfm_cfg_get('nat/rule', array());
+	$kept = array_values(array_filter($all, function ($r) use ($pid) {
+		return !csfm_is_policy_rule($r, $pid);
+	}));
+	csfm_cfg_set('nat/rule', $kept);
+	write_config("ComSense: removed port forward policy {$pid}");
+	csfm_reload(array('filter'));
+	return sprintf('Removed %d port forward(s)', count($all) - count($kept));
 }
 
 /* ------------------------------------------------- system and config_set policies */

@@ -8,11 +8,13 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     Boolean,
+    Column,
     DateTime,
     Enum,
     ForeignKey,
     Integer,
     String,
+    Table,
     Text,
     UniqueConstraint,
     false,
@@ -76,6 +78,7 @@ class PolicyType(str, enum.Enum):
     system = "system"
     packages = "packages"
     config_set = "config_set"
+    port_forward = "port_forward"  # inbound NAT (fits the existing 14-character column)
 
 
 class User(Base):
@@ -296,8 +299,29 @@ class Policy(Base):
     )
 
 
+device_group_members = Table(
+    "device_group_members",
+    Base.metadata,
+    Column("group_id", ForeignKey("device_groups.id", ondelete="CASCADE"), primary_key=True),
+    Column("device_id", ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class DeviceGroup(Base):
+    """A named set of firewalls (any customers) that configurations can be assigned to."""
+
+    __tablename__ = "device_groups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    devices: Mapped[list[Device]] = relationship(secondary=device_group_members, order_by="Device.name")
+
+
 class PolicyAssignment(Base):
-    """Assigns a policy either to one device or to every device in an organization."""
+    """Assigns a policy to one device, a firewall group, every device of an organization, or all."""
 
     __tablename__ = "policy_assignments"
     __table_args__ = (
@@ -310,12 +334,14 @@ class PolicyAssignment(Base):
     organization_id: Mapped[int | None] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE")
     )
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("device_groups.id", ondelete="CASCADE"))
     # Applies to every device regardless of organization.
     all_devices: Mapped[bool] = mapped_column(Boolean, default=False)
 
     policy: Mapped[Policy] = relationship(back_populates="assignments")
     device: Mapped[Device | None] = relationship(back_populates="policy_assignments")
     organization: Mapped[Organization | None] = relationship()
+    group: Mapped[DeviceGroup | None] = relationship()
 
 
 class Alert(Base):

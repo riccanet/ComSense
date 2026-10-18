@@ -327,9 +327,17 @@ function csfm_terminal_request_file($sid) {
 	return CSFM_TERM_DIR . '/' . $sid . '.request';
 }
 
-/* The shell, on a pseudo-terminal provided by script(1). */
+/*
+ * What the session runs, on a pseudo-terminal provided by script(1): pfSense's
+ * console menu, as on the console or over SSH (option 8 opens a shell, 0 ends
+ * the session). Without it (not pfSense), a login shell.
+ */
 function csfm_terminal_command($cols, $rows, $ttyFile) {
-	$shell = is_executable('/bin/tcsh') ? '/bin/tcsh -l' : '/bin/sh -l';
+	if (is_file('/etc/rc.initial')) {
+		$shell = '/bin/sh /etc/rc.initial';
+	} else {
+		$shell = is_executable('/bin/tcsh') ? '/bin/tcsh -l' : '/bin/sh -l';
+	}
 	$inner = 'tty > ' . escapeshellarg($ttyFile) . '; stty rows ' . (int)$rows . ' columns ' . (int)$cols
 	    . ' 2>/dev/null; cd; exec ' . $shell;
 	if (PHP_OS_FAMILY === 'Linux') {

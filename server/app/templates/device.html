@@ -44,7 +44,7 @@ reach ComSense by then, it restores its previous configuration automatically.</d
   They are not sent again until you clear them here, or until the policy gets a new revision.</p>
   <ul>
     {% for pid, what in device.rolled_back_policies.items() %}
-    <li>{% if policy_names.get(pid) %}<a href="/policies/{{ pid }}">{{ policy_names[pid] }}</a>{% else %}Policy #{{ pid }}{% endif %}:
+    <li>{% if policy_names.get(pid) %}<a href="/configurations/{{ pid }}">{{ policy_names[pid] }}</a>{% else %}Policy #{{ pid }}{% endif %}:
       {{ "removal" if what == "remove" else "revision " ~ what[:12] }}</li>
     {% endfor %}
   </ul>
@@ -214,32 +214,29 @@ reach ComSense by then, it restores its previous configuration automatically.</d
 </section>
 
 <section class="card">
-  <h2>Policies{% if not changes_enabled %} <span class="h-badge">{{ coming_soon() }}</span>{% endif %}</h2>
-  {% if not changes_enabled %}
-  <p class="muted">Push aliases, firewall rules, DNS/NTP settings and packages to firewalls from reusable policies.
-  This is coming soon; for now ComSense monitors firewalls and backs them up without changing them.</p>
-  {% else %}
+  <h2>Configurations</h2>
+  {% if not changes_enabled %}<p class="small muted">Firewall changes are turned off on this server, so configurations are not sent to firewalls yet.</p>{% endif %}
   <table>
-    <thead><tr><th>Policy</th><th>Type</th><th>State</th><th></th></tr></thead>
+    <thead><tr><th>Configuration</th><th>Type</th><th>State</th><th></th></tr></thead>
     <tbody>
     {% for ps in policy_state %}
       <tr>
-        <td><a href="/policies/{{ ps.policy.id }}">{{ ps.policy.name }}</a> <span class="muted small">rev {{ ps.policy.revision }}</span></td>
-        <td>{{ ps.policy.type.value }}</td>
+        <td><a href="/configurations/{{ ps.policy.id }}">{{ ps.policy.name }}</a> <span class="muted small">rev {{ ps.policy.revision }}</span></td>
+        <td>{{ type_labels.get(ps.policy.type, ps.policy.type.value) }}</td>
         <td>{{ status_badge("in sync" if ps.in_sync else "pending") }}</td>
-        <td>{% if can_operate and ps.direct %}{{ post_button("/devices/" ~ device.id ~ "/policies/" ~ ps.policy.id ~ "/unassign", "Unassign", "small") }}{% elif not ps.direct %}<span class="muted small">via org/global</span>{% endif %}</td>
+        <td>{% if can_operate and ps.direct %}{{ post_button("/devices/" ~ device.id ~ "/policies/" ~ ps.policy.id ~ "/unassign", "Unassign", "small") }}{% elif not ps.direct %}<span class="muted small">via group, customer or all</span>{% endif %}</td>
       </tr>
-    {% else %}<tr><td colspan="4" class="muted">No policies assigned.</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="4" class="muted">No configurations assigned.</td></tr>{% endfor %}
     </tbody>
   </table>
-  {% if "policy" not in device.capabilities %}<p class="small muted">Policy management is turned off on this firewall.</p>{% endif %}
+  {% if device_groups %}<p class="small">Groups: {% for g in device_groups %}<a href="/configurations/groups/{{ g.id }}">{{ g.name }}</a>{{ ", " if not loop.last }}{% endfor %}</p>{% endif %}
+  {% if "policy" not in device.capabilities %}<p class="small muted">Policies are not allowed on this firewall (Services &gt; ComSense Agent), so nothing is applied.</p>{% endif %}
   {% if can_operate and assignable %}
   <form method="post" action="/devices/{{ device.id }}/policies" class="toolbar">
     {{ csrf() }}
-    <select name="policy_id">{% for p in assignable %}<option value="{{ p.id }}">{{ p.name }} ({{ p.type.value }})</option>{% endfor %}</select>
+    <select name="policy_id">{% for p in assignable %}<option value="{{ p.id }}">{{ p.name }} ({{ type_labels.get(p.type, p.type.value) }})</option>{% endfor %}</select>
     <button>Assign</button>
   </form>
-  {% endif %}
   {% endif %}
 </section>
 </div>

@@ -20,6 +20,7 @@ from ..audit import audit
 from ..config import Settings, get_settings
 from ..db import get_db
 from ..models import (
+    DeviceGroup,
     Alert,
     TerminalSession,
     AuditLog,
@@ -31,7 +32,6 @@ from ..models import (
     Organization,
     Policy,
     PolicyAssignment,
-    PolicyType,
     Role,
     Task,
     TaskStatus,
@@ -52,8 +52,7 @@ from ..enrollment import make_code
 from ..services.agentpkg import agent_outdated, latest_package
 from ..services.appsettings import agent_tls_names, effective_agent_url, format_dt, get_email_settings, setup_pending
 from ..services.backups import delete_backup_file, load_backup
-from ..services.policy_examples import EXAMPLES
-from ..services.policies import PolicyError, desired_policies, policy_hash, validate_policy
+from ..services.policies import TYPE_LABELS, desired_policies, policy_hash
 from ..services.tasks import COMING_SOON, SAFE_TASKS, TASK_CAPABILITY, TaskError, queue_task
 from ..tls import ensure_agent_tls
 from .auth import csrf_token, current_user, flash, pop_flashes, require, verify_csrf
@@ -443,6 +442,10 @@ def device_detail(
         policy_names={str(p.id): p.name for p in db.scalars(select(Policy))} if device.rolled_back_policies else {},
         latest_agent=_latest_agent_version(request),
         page_token=_device_page_token(db, device),
+        device_groups=db.scalars(
+            select(DeviceGroup).where(DeviceGroup.devices.any(Device.id == device.id)).order_by(DeviceGroup.name)
+        ).all(),
+        type_labels=TYPE_LABELS,
         terminal_sessions=db.scalars(
             select(TerminalSession).where(TerminalSession.device_id == device.id)
             .order_by(TerminalSession.created_at.desc()).limit(10)
@@ -689,7 +692,7 @@ def device_delete(
     return redirect("/devices")
 
 
-@router.post("/devices/{device_id}/policies", dependencies=CHANGES)
+@router.post("/devices/{device_id}/policies")
 def device_assign_policy(
     device_id: str,
     request: Request,
@@ -708,7 +711,7 @@ def device_assign_policy(
     return redirect(f"/devices/{device_id}")
 
 
-@router.post("/devices/{device_id}/policies/{policy_id}/unassign", dependencies=CHANGES)
+@router.post("/devices/{device_id}/policies/{policy_id}/unassign")
 def device_unassign_policy(
     device_id: str,
     policy_id: int,
@@ -965,214 +968,6 @@ def keys_revoke(key_id: int, request: Request, user: User = Depends(admin), db: 
     db.commit()
     flash(request, "Key revoked. Firewalls already enrolled keep working.", "success")
     return redirect("/keys")
-
-
-# ----------------------------------------------------------------------- policies
-
-
-@router.get("/policies", response_class=HTMLResponse)
-def policies_page(request: Request, user: User = Depends(viewer), db: Session = Depends(get_db)):
-    return render(
-        request,
-        "policies.html",
-        policies=db.scalars(select(Policy).order_by(Policy.name)).all(),
-    )
-
-
-@router.get("/policies/new", response_class=HTMLResponse)
-def policy_new(
-    request: Request,
-    type: str = "aliases",
-    settings: Settings = Depends(get_settings),
-    user: User = Depends(operator),
-):
-    if not settings.enable_firewall_changes:
-        return redirect("/policies")
-    ptype = PolicyType(type) if type in PolicyType.__members__ else PolicyType.aliases
-    return render(
-        request,
-        "policy_edit.html",
-        policy=None,
-        ptype=ptype,
-        content=json.dumps(EXAMPLES[ptype], indent=2),
-        types=list(PolicyType),
-        examples={t.value: json.dumps(EXAMPLES[t], indent=2) for t in PolicyType},
-    )
-
-
-def _parse_policy_form(ptype_raw: str, content_raw: str) -> tuple[PolicyType, dict[str, Any]]:
-    try:
-        ptype = PolicyType(ptype_raw)
-    except ValueError as exc:
-        raise PolicyError("Unknown policy type") from exc
-    try:
-        content = json.loads(content_raw)
-    except json.JSONDecodeError as exc:
-        raise PolicyError(f"Content is not valid JSON: {exc}") from exc
-    validate_policy(ptype, content)
-    return ptype, content
-
-
-@router.post("/policies", dependencies=CHANGES)
-def policy_create(
-    request: Request,
-    name: str = Form(...),
-    type: str = Form(...),
-    description: str = Form(""),
-    content: str = Form(...),
-    user: User = Depends(operator),
-    db: Session = Depends(get_db),
-):
-    try:
-        ptype, doc = _parse_policy_form(type, content)
-    except PolicyError as exc:
-        flash(request, str(exc), "error")
-        return render(
-            request,
-            "policy_edit.html",
-            status_code=400,
-            policy=None,
-            ptype=PolicyType(type) if type in PolicyType.__members__ else PolicyType.aliases,
-            content=content,
-            name=name,
-            description=description,
-            types=list(PolicyType),
-            examples={},
-        )
-    policy = Policy(name=name.strip()[:128], type=ptype, description=description, content=doc, updated_by=user.username)
-    db.add(policy)
-    try:
-        db.flush()
-    except IntegrityError:
-        db.rollback()
-        flash(request, "A policy with that name already exists.", "error")
-        return redirect("/policies/new")
-    audit(db, user.username, "policy.created", target=policy.name, ip=_ip(request))
-    db.commit()
-    flash(request, "Policy created. Assign it to firewalls or customers below.", "success")
-    return redirect(f"/policies/{policy.id}")
-
-
-@router.get("/policies/{policy_id}", response_class=HTMLResponse)
-def policy_detail(
-    policy_id: int,
-    request: Request,
-    settings: Settings = Depends(get_settings),
-    user: User = Depends(viewer),
-    db: Session = Depends(get_db),
-):
-    if not settings.enable_firewall_changes:
-        return redirect("/policies")
-    policy = db.get(Policy, policy_id)
-    if policy is None:
-        raise HTTPException(404, "Policy not found")
-    digest = policy_hash(policy)
-    targets = []
-    for device in db.scalars(select(Device).order_by(Device.name)):
-        if any(p.id == policy.id for p in desired_policies(db, device)):
-            targets.append((device, (device.applied_policies or {}).get(str(policy.id)) == digest))
-    return render(
-        request,
-        "policy_edit.html",
-        policy=policy,
-        ptype=policy.type,
-        content=json.dumps(policy.content, indent=2),
-        types=list(PolicyType),
-        examples={},
-        targets=targets,
-        orgs=db.scalars(select(Organization).order_by(Organization.name)).all(),
-        devices=db.scalars(select(Device).order_by(Device.name)).all(),
-    )
-
-
-@router.post("/policies/{policy_id}", dependencies=CHANGES)
-def policy_update(
-    policy_id: int,
-    request: Request,
-    name: str = Form(...),
-    description: str = Form(""),
-    content: str = Form(...),
-    enabled: bool = Form(False),
-    user: User = Depends(operator),
-    db: Session = Depends(get_db),
-):
-    policy = db.get(Policy, policy_id)
-    if policy is None:
-        raise HTTPException(404, "Policy not found")
-    try:
-        _, doc = _parse_policy_form(policy.type.value, content)
-    except PolicyError as exc:
-        flash(request, str(exc), "error")
-        return redirect(f"/policies/{policy_id}")
-    if doc != policy.content:
-        policy.revision += 1
-    policy.name = name.strip()[:128] or policy.name
-    policy.description = description
-    policy.content = doc
-    policy.enabled = enabled
-    policy.updated_at = utcnow()
-    policy.updated_by = user.username
-    audit(db, user.username, "policy.updated", target=policy.name, detail=f"rev={policy.revision}", ip=_ip(request))
-    db.commit()
-    flash(request, f"Saved revision {policy.revision}. Assigned devices update at their next check-in.", "success")
-    return redirect(f"/policies/{policy_id}")
-
-
-@router.post("/policies/{policy_id}/delete", dependencies=CHANGES)
-def policy_delete(policy_id: int, request: Request, user: User = Depends(operator), db: Session = Depends(get_db)):
-    policy = db.get(Policy, policy_id)
-    if policy is None:
-        raise HTTPException(404, "Policy not found")
-    audit(db, user.username, "policy.deleted", target=policy.name, ip=_ip(request))
-    db.delete(policy)
-    db.commit()
-    flash(request, "Policy deleted. Devices remove what it created at their next check-in.", "success")
-    return redirect("/policies")
-
-
-@router.post("/policies/{policy_id}/assign", dependencies=CHANGES)
-def policy_assign(
-    policy_id: int,
-    request: Request,
-    target: str = Form(...),
-    user: User = Depends(operator),
-    db: Session = Depends(get_db),
-):
-    policy = db.get(Policy, policy_id)
-    if policy is None:
-        raise HTTPException(404, "Policy not found")
-    kind, _, ident = target.partition(":")
-    if kind == "all":
-        assignment = PolicyAssignment(policy_id=policy.id, all_devices=True)
-    elif kind == "org" and ident.isdigit() and db.get(Organization, int(ident)):
-        assignment = PolicyAssignment(policy_id=policy.id, organization_id=int(ident))
-    elif kind == "device" and db.get(Device, ident):
-        assignment = PolicyAssignment(policy_id=policy.id, device_id=ident)
-    else:
-        raise HTTPException(400, "Invalid assignment target")
-    db.add(assignment)
-    try:
-        audit(db, user.username, "policy.assigned", target=policy.name, detail=target, ip=_ip(request))
-        db.commit()
-        flash(request, "Assignment added.", "success")
-    except IntegrityError:
-        db.rollback()
-        flash(request, "That assignment already exists.", "error")
-    return redirect(f"/policies/{policy_id}")
-
-
-@router.post("/assignments/{assignment_id}/delete", dependencies=CHANGES)
-def assignment_delete(
-    assignment_id: int, request: Request, user: User = Depends(operator), db: Session = Depends(get_db)
-):
-    assignment = db.get(PolicyAssignment, assignment_id)
-    if assignment is None:
-        raise HTTPException(404, "Assignment not found")
-    policy_id = assignment.policy_id
-    db.delete(assignment)
-    audit(db, user.username, "policy.unassigned", target=str(policy_id), ip=_ip(request))
-    db.commit()
-    return redirect(f"/policies/{policy_id}")
 
 
 # -------------------------------------------------------------------------- users

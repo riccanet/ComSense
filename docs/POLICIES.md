@@ -1,9 +1,18 @@
-# Policies
+# Configurations (policies)
 
-> **Coming soon.** Policies, like every other feature that changes a firewall, are switched off unless the
-> server runs with `CSFM_ENABLE_FIREWALL_CHANGES=true`. They are documented here for testing and preview.
+The console's **Configurations** area manages aliases, firewall rules and inbound NAT (port forwards)
+with forms; system settings, packages and raw config values are JSON documents under *Advanced*. Each
+one is stored as a policy of the type below.
 
-A policy is a typed JSON document. Assign it to a firewall, a customer (all of its firewalls) or all firewalls; each
+> Configurations can always be built and assigned, but they are only sent to firewalls while the server
+> runs with `CSFM_ENABLE_FIREWALL_CHANGES=true` and the firewall allows *Policies* in Services >
+> ComSense Agent.
+
+**Firewall groups** (Configurations > Firewall groups) are named sets of firewalls from any customers.
+A configuration assigned to a group applies to every firewall in it; adding or removing a firewall
+from the group applies or removes the group's configurations at its next check-in.
+
+A policy is a typed JSON document. Assign it to a firewall, a firewall group, a customer (all of its firewalls) or all firewalls; each
 assigned firewall applies it at its next check-in and reports a hash of what it applied, which the
 console shows as *in sync* or *pending*. Editing a policy creates a new revision that is pushed again.
 Unassigning or deleting it makes the firewall remove what that policy created (and restore values
@@ -63,6 +72,34 @@ restored, the console raises an alert and that revision is not sent again until 
 * `position`: `top` (before the interface's existing rules, default) or `bottom`.
 * Managed rules carry `[CSFM] ` at the start of their description and are replaced as a block on every
   revision. Edits made to them in the pfSense GUI are overwritten by the next revision.
+
+## port_forward
+
+Inbound NAT (Firewall > NAT > Port Forward). Each entry lets its own traffic through ("Pass"
+filter rule association), so no separate firewall rule is needed. Entries are marked `[CSFM]` and
+placed at the top (default) or bottom of the firewall's port forwards.
+
+```json
+{
+  "position": "top",
+  "rules": [
+    {
+      "interface": "wan",
+      "protocol": "tcp",
+      "source": {"any": true},
+      "destination": {"network": "wanip", "port": "443"},
+      "target": "192.168.1.10",
+      "local_port": "443",
+      "descr": "Web server",
+      "disabled": false
+    }
+  ]
+}
+```
+
+`protocol`: `tcp`, `udp` or `tcp/udp`. `destination.port` (the external port) is required; it and
+`local_port` take a port, a range (`8000:8100`) or a port alias. `target` is an IP address or a host
+alias. `source` and `destination` take the same forms as in firewall rules.
 
 ## system
 

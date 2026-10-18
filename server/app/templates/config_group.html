@@ -1,0 +1,53 @@
+{% extends "config_layout.html" %}
+{% from "macros.html" import csrf, post_button, status_badge with context %}
+{% block title %}{{ group.name }} · Firewall groups{% endblock %}
+{% block config %}
+{% set can_edit = user.role.value != "viewer" %}
+<p class="small"><a href="/configurations/groups">&larr; Firewall groups</a></p>
+<h2>{{ group.name }}</h2>
+<form method="post" action="/configurations/groups/{{ group.id }}" class="stack">
+  {{ csrf() }}
+  <fieldset class="plain"{% if not can_edit %} disabled{% endif %}>
+  <section class="card">
+    <div class="grid-form">
+      <label>Name <input name="name" value="{{ group.name }}" required maxlength="128"></label>
+      <label>Description <input name="description" value="{{ group.description }}"></label>
+    </div>
+  </section>
+  <section class="card">
+    <h2>Firewalls in this group</h2>
+    <table class="list">
+      <thead><tr><th class="center"><input type="checkbox" data-select-all="device_ids" aria-label="Select all"></th><th>Firewall</th><th>Customer</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for d in devices %}
+        <tr>
+          <td class="center"><input type="checkbox" name="device_ids" value="{{ d.id }}"{% if d.id in members %} checked{% endif %} aria-label="{{ d.name }}"></td>
+          <td><a href="/devices/{{ d.id }}">{{ d.name }}</a></td>
+          <td>{{ d.organization.name if d.organization else "" }}</td>
+          <td>{{ status_badge(d.status.value) }}</td>
+        </tr>
+      {% else %}<tr><td colspan="4" class="muted">No firewalls enrolled yet.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </section>
+  </fieldset>
+  {% if can_edit %}<div><button class="primary">Save group</button></div>{% endif %}
+</form>
+
+<section class="card">
+  <h2>Configurations assigned to this group</h2>
+  <table>
+    <tbody>
+    {% for a in assignments %}
+      <tr>
+        <td><a href="/configurations/{{ a.policy.id }}">{{ a.policy.name }}</a> <span class="muted small">{{ type_labels[a.policy.type] }}</span></td>
+        <td>{% if can_edit %}{{ post_button("/assignments/" ~ a.id ~ "/delete", "Remove", "small") }}{% endif %}</td>
+      </tr>
+    {% else %}<tr><td class="muted">None. Open a configuration and assign it to this group.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% if can_edit %}
+<p>{{ post_button("/configurations/groups/" ~ group.id ~ "/delete", "Delete group", "danger", "Delete " ~ group.name ~ "? Its firewalls remove the group's configurations at their next check-in.") }}</p>
+{% endif %}
+{% endblock %}

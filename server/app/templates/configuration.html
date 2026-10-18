@@ -1,0 +1,164 @@
+{% extends "config_layout.html" %}
+{% from "macros.html" import csrf, post_button, status_badge with context %}
+{% block title %}{{ policy.name if policy else "New " ~ type_labels[ptype]|lower }} · Configurations{% endblock %}
+{% block config %}
+{% set can_edit = user.role.value != "viewer" %}
+<p class="small"><a href="/configurations/{{ section }}">&larr; {{ type_labels[ptype] }}</a></p>
+<h2>{{ policy.name if policy else "New " ~ type_labels[ptype]|lower }}</h2>
+
+{% macro endpoint_hint() %}any, an address or network, an alias, "lan net", "wan address", "this firewall"; "!" to negate{% endmacro %}
+
+{% macro alias_row(key, r) %}
+<tr>
+  <td><input type="hidden" name="a_row" value="{{ key }}"><input name="a_name" value="{{ r.name }}" placeholder="Office_Hosts" pattern="[A-Za-z0-9_]{1,31}" aria-label="Alias name"></td>
+  <td><select name="a_type" aria-label="Type">{% for t in alias_types %}<option value="{{ t }}"{% if r.type == t %} selected{% endif %}>{{ t }}</option>{% endfor %}</select></td>
+  <td><textarea name="a_address" rows="3" placeholder="one per line, e.g.&#10;10.0.0.5 Office printer&#10;192.0.2.0/24" aria-label="Entries">{{ r.address }}</textarea></td>
+  <td><input name="a_descr" value="{{ r.descr }}" aria-label="Description"></td>
+  <td><button type="button" class="small" data-remove-row title="Remove">&times;</button></td>
+</tr>
+{% endmacro %}
+
+{% macro rule_row(key, r) %}
+<tr>
+  <td><input type="hidden" name="r_row" value="{{ key }}"><input name="r_interface" value="{{ r.interface }}" list="ifaces" size="6" aria-label="Interface"></td>
+  <td><select name="r_type" aria-label="Action">{% for t in ("pass", "block", "reject") %}<option{% if r.type == t %} selected{% endif %}>{{ t }}</option>{% endfor %}</select></td>
+  <td><select name="r_ipprotocol" aria-label="IP version">{% for v, l in (("inet", "IPv4"), ("inet6", "IPv6"), ("inet46", "IPv4+6")) %}<option value="{{ v }}"{% if r.ipprotocol == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></td>
+  <td><select name="r_protocol" aria-label="Protocol">{% for p in rule_protocols %}<option{% if r.protocol == p %} selected{% endif %}>{{ p }}</option>{% endfor %}</select></td>
+  <td><input name="r_src" value="{{ r.src }}" placeholder="any" title="{{ endpoint_hint() }}" aria-label="Source"></td>
+  <td><input name="r_srcport" value="{{ r.srcport }}" size="6" placeholder="any" aria-label="Source port"></td>
+  <td><input name="r_dst" value="{{ r.dst }}" placeholder="any" title="{{ endpoint_hint() }}" aria-label="Destination"></td>
+  <td><input name="r_dstport" value="{{ r.dstport }}" size="6" placeholder="any" aria-label="Destination port"></td>
+  <td><input name="r_descr" value="{{ r.descr }}" aria-label="Description"></td>
+  <td class="center"><input type="checkbox" name="r_log" value="{{ key }}"{% if r.log %} checked{% endif %} aria-label="Log"></td>
+  <td class="center"><input type="checkbox" name="r_disabled" value="{{ key }}"{% if r.disabled %} checked{% endif %} aria-label="Disabled"></td>
+  <td><button type="button" class="small" data-remove-row title="Remove">&times;</button></td>
+</tr>
+{% endmacro %}
+
+{% macro nat_row(key, r) %}
+<tr>
+  <td><input type="hidden" name="n_row" value="{{ key }}"><input name="n_interface" value="{{ r.interface or 'wan' }}" list="ifaces" size="6" aria-label="Interface"></td>
+  <td><select name="n_protocol" aria-label="Protocol">{% for p in nat_protocols %}<option{% if r.protocol == p %} selected{% endif %}>{{ p }}</option>{% endfor %}</select></td>
+  <td><input name="n_src" value="{{ r.src }}" placeholder="any" title="{{ endpoint_hint() }}" aria-label="Source"></td>
+  <td><input name="n_dst" value="{{ r.dst or 'wan address' }}" title="{{ endpoint_hint() }}" aria-label="Destination"></td>
+  <td><input name="n_dstport" value="{{ r.dstport }}" size="7" placeholder="443" aria-label="External port"></td>
+  <td><input name="n_target" value="{{ r.target }}" size="12" placeholder="192.168.1.10" aria-label="Internal address"></td>
+  <td><input name="n_localport" value="{{ r.localport }}" size="7" placeholder="same" aria-label="Internal port"></td>
+  <td><input name="n_descr" value="{{ r.descr }}" aria-label="Description"></td>
+  <td class="center"><input type="checkbox" name="n_disabled" value="{{ key }}"{% if r.disabled %} checked{% endif %} aria-label="Disabled"></td>
+  <td><button type="button" class="small" data-remove-row title="Remove">&times;</button></td>
+</tr>
+{% endmacro %}
+
+<form method="post" action="{{ '/configurations/' ~ policy.id if policy else '/configurations' }}" class="stack">
+  {{ csrf() }}
+  <fieldset class="plain"{% if not can_edit %} disabled{% endif %}>
+  <section class="card">
+    <div class="grid-form">
+      <label>Name <input name="name" value="{{ policy.name if policy else (name or '') }}" required></label>
+      {% if policy or ptype not in advanced_types %}<input type="hidden" name="type" value="{{ ptype.value }}">
+      {% else %}<label>Type <select name="type">{% for t in advanced_types %}<option value="{{ t.value }}"{% if t == ptype %} selected{% endif %}>{{ type_labels[t] }}</option>{% endfor %}</select></label>{% endif %}
+      <label class="wide">Description <input name="description" value="{{ policy.description if policy else (description or '') }}"></label>
+      {% if policy %}<label class="check"><input type="checkbox" name="enabled" value="true"{% if policy.enabled %} checked{% endif %}> Enabled (off: removed from firewalls)</label>{% endif %}
+    </div>
+  </section>
+
+  <datalist id="ifaces">{% for i in interfaces %}<option value="{{ i }}">{% endfor %}</datalist>
+
+  {% if ptype.value == "aliases" %}
+  <section class="card">
+    <div class="table-scroll"><table class="rows-table">
+      <thead><tr><th>Name</th><th>Type</th><th>Entries <span class="muted small">(value, then an optional note)</span></th><th>Description</th><th></th></tr></thead>
+      <tbody id="rows">{% for r in rows %}{{ alias_row(loop.index, r) }}{% endfor %}</tbody>
+    </table></div>
+    <template id="rows-template">{{ alias_row("__KEY__", {"type": "host"}) }}</template>
+    <p><button type="button" data-add-row="rows">Add alias</button></p>
+    <label class="check"><input type="checkbox" name="adopt_existing" value="true"{% if content.get("adopt_existing") %} checked{% endif %}>
+      Take over aliases of the same name that already exist on a firewall (otherwise the firewall refuses)</label>
+  </section>
+  {% elif ptype.value == "firewall_rules" %}
+  <section class="card">
+    <label class="inline-choice">Place these rules at the
+      <select name="position"><option value="top"{% if content.get("position", "top") == "top" %} selected{% endif %}>top</option><option value="bottom"{% if content.get("position") == "bottom" %} selected{% endif %}>bottom</option></select>
+      of each interface's rules</label>
+    <div class="table-scroll"><table class="rows-table">
+      <thead><tr><th>Interface</th><th>Action</th><th>IP</th><th>Protocol</th><th>Source</th><th>Port</th><th>Destination</th><th>Port</th><th>Description</th><th>Log</th><th>Off</th><th></th></tr></thead>
+      <tbody id="rows">{% for r in rows %}{{ rule_row(loop.index, r) }}{% endfor %}</tbody>
+    </table></div>
+    <template id="rows-template">{{ rule_row("__KEY__", {"interface": "wan", "type": "pass", "ipprotocol": "inet", "protocol": "tcp"}) }}</template>
+    <p><button type="button" data-add-row="rows">Add rule</button></p>
+    <p class="small muted">Source and destination: {{ endpoint_hint() }}. Ports: a number, a range (8000:8100) or a port alias.</p>
+  </section>
+  {% elif ptype.value == "port_forward" %}
+  <section class="card">
+    <label class="inline-choice">Place these port forwards at the
+      <select name="position"><option value="top"{% if content.get("position", "top") == "top" %} selected{% endif %}>top</option><option value="bottom"{% if content.get("position") == "bottom" %} selected{% endif %}>bottom</option></select>
+      of the firewall's port forwards</label>
+    <div class="table-scroll"><table class="rows-table">
+      <thead><tr><th>Interface</th><th>Protocol</th><th>Source</th><th>Destination</th><th>External port</th><th>Internal IP</th><th>Internal port</th><th>Description</th><th>Off</th><th></th></tr></thead>
+      <tbody id="rows">{% for r in rows %}{{ nat_row(loop.index, r) }}{% endfor %}</tbody>
+    </table></div>
+    <template id="rows-template">{{ nat_row("__KEY__", {"protocol": "tcp"}) }}</template>
+    <p><button type="button" data-add-row="rows">Add port forward</button></p>
+    <p class="small muted">Traffic to the external port on the destination (usually "wan address") goes to the internal IP and
+    port; leave the internal port empty to keep the same one. Each port forward lets its traffic through itself, so no
+    separate firewall rule is needed. The internal IP may also be an alias.</p>
+  </section>
+  {% else %}
+  <section class="card">
+    <label>Content (JSON) - see docs/POLICIES.md
+      <textarea name="content" rows="20" class="mono" spellcheck="false">{{ raw_content or content_json }}</textarea>
+    </label>
+  </section>
+  {% endif %}
+  </fieldset>
+  {% if can_edit %}<div><button class="primary">{{ "Save" if policy else "Create" }}</button></div>{% endif %}
+  {% if policy %}<p class="small muted">Revision {{ policy.revision }}, updated {{ policy.updated_at|dt }} by {{ policy.updated_by }}</p>{% endif %}
+</form>
+
+{% if policy %}
+<div class="grid2">
+<section class="card">
+  <h2>Assigned to</h2>
+  <table>
+    <tbody>
+    {% for a in policy.assignments %}
+      <tr>
+        <td>{% if a.all_devices %}All firewalls{% elif a.group %}Group: <a href="/configurations/groups/{{ a.group.id }}">{{ a.group.name }}</a>{% elif a.organization %}Customer: <a href="/customers/{{ a.organization.id }}">{{ a.organization.name }}</a>{% elif a.device %}Firewall: <a href="/devices/{{ a.device.id }}">{{ a.device.name }}</a>{% endif %}</td>
+        <td>{% if can_edit %}{{ post_button("/assignments/" ~ a.id ~ "/delete", "Remove", "small") }}{% endif %}</td>
+      </tr>
+    {% else %}<tr><td class="muted">Not assigned.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if can_edit %}
+  <form method="post" action="/configurations/{{ policy.id }}/assign" class="toolbar">
+    {{ csrf() }}
+    <select name="target" aria-label="Assign to">
+      <optgroup label="Firewalls">{% for d in devices %}<option value="device:{{ d.id }}">{{ d.name }}</option>{% endfor %}</optgroup>
+      {% if groups %}<optgroup label="Firewall groups">{% for g in groups %}<option value="group:{{ g.id }}">{{ g.name }}</option>{% endfor %}</optgroup>{% endif %}
+      {% if orgs %}<optgroup label="Customers (all their firewalls)">{% for o in orgs %}<option value="org:{{ o.id }}">{{ o.name }}</option>{% endfor %}</optgroup>{% endif %}
+      <optgroup label="Everything"><option value="all:">All firewalls</option></optgroup>
+    </select>
+    <button>Assign</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Firewalls</h2>
+  <table>
+    <thead><tr><th>Firewall</th><th>State</th></tr></thead>
+    <tbody>
+    {% for d, ok in targets %}
+      <tr><td><a href="/devices/{{ d.id }}">{{ d.name }}</a></td><td>{{ status_badge("in sync" if ok else ("pending" if changes_enabled and "policy" in (d.capabilities or []) else "not sent")) }}</td></tr>
+    {% else %}<tr><td colspan="2" class="muted">No firewalls receive this yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <p class="small muted">"Not sent": firewall changes are off on this server, or the firewall does not allow policies.</p>
+</section>
+</div>
+{% if can_edit %}
+<p>{{ post_button("/configurations/" ~ policy.id ~ "/delete", "Delete", "danger", "Delete " ~ policy.name ~ "? Firewalls remove what it created at their next check-in.") }}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

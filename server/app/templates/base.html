@@ -21,10 +21,10 @@
   <nav>
     {% for href, label, admin_only in [
       ("/", "Dashboard", False), ("/customers", "Customers", False), ("/devices", "Firewalls", False),
-      ("/policies", "Policies", False), ("/alerts", "Alerts", False),
+      ("/configurations", "Configurations", False), ("/alerts", "Alerts", False),
       ("/audit", "Audit log", True)] %}
       {% if not admin_only or user.role == Role.admin %}
-      <a href="{{ href }}"{% if path == href or (href != "/" and path.startswith(href)) %} class="active" aria-current="page"{% endif %}>{{ label }}{% if href == "/policies" and not changes_enabled %} <span class="nav-soon">soon</span>{% endif %}</a>
+      <a href="{{ href }}"{% if path == href or (href != "/" and path.startswith(href)) %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
       {% endif %}
     {% endfor %}
   </nav>
