@@ -134,6 +134,9 @@ switch ($argv[1] ?? 'run') {
 	case 'run':
 		echo csfm_cycle() . "\n";
 		break;
+	case 'check-updates':
+		echo json_encode(csfm_check_updates()) . "\n";
+		break;
 	case 'watchdog':
 		echo csfm_guard_watchdog() . "\n";
 		break;

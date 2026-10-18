@@ -9,6 +9,8 @@
 require_once(__DIR__ . '/common.inc');
 
 define('CSFM_UPDATE_CHECK_INTERVAL', 6 * 3600);
+/* Update information lives in its own file: it is refreshed in the background, outside the cycle. */
+define('CSFM_UPDATES_FILE', CSFM_DB_DIR . '/updates.json');
 
 function csfm_sysctl($name) {
 	$out = array();
@@ -220,7 +222,7 @@ function csfm_collect_carp() {
 
 function csfm_collect_packages() {
 	$out = array();
-	exec("/usr/sbin/pkg-static query -x '%n\t%v' '^pfSense-pkg-' 2>/dev/null", $lines);
+	exec("/usr/bin/timeout 60 /usr/sbin/pkg-static query -x '%n\t%v' '^pfSense-pkg-' 2>/dev/null", $lines);
 	foreach ($lines as $line) {
 		$parts = explode("\t", $line);
 		if (count($parts) === 2) {
@@ -233,7 +235,7 @@ function csfm_collect_packages() {
 /* Package upgrades available from the configured repository. */
 function csfm_outdated_packages() {
 	$out = array();
-	exec("/usr/sbin/pkg-static version -vRl '<' 2>/dev/null", $lines);
+	exec("/usr/bin/timeout 300 /usr/sbin/pkg-static version -vRl '<' 2>/dev/null", $lines);
 	foreach ($lines as $line) {
 		if (preg_match('/^(\S+)-([^-\s]+)\s+<\s+needs updating \(remote has ([^)]+)\)/', $line, $m)) {
 			if (strpos($m[1], 'pfSense-pkg-') === 0) {
@@ -244,12 +246,27 @@ function csfm_outdated_packages() {
 	return $out;
 }
 
-function csfm_check_updates($force = false) {
-	$state = csfm_state();
-	$cached = $state['updates'] ?? null;
-	if (!$force && is_array($cached) && (time() - (int)($cached['checked_ts'] ?? 0)) < CSFM_UPDATE_CHECK_INTERVAL) {
-		return $cached;
+/* Last known update information (never queries the repository). */
+function csfm_cached_updates() {
+	$cached = csfm_read_json(CSFM_UPDATES_FILE, null);
+	if (!is_array($cached)) {
+		/* Agent 0.1.1 and earlier kept it in state.json. */
+		$cached = csfm_state()['updates'] ?? null;
 	}
+	return is_array($cached) ? $cached : null;
+}
+
+function csfm_updates_stale() {
+	$cached = csfm_cached_updates();
+	return !is_array($cached) || (time() - (int)($cached['checked_ts'] ?? 0)) >= CSFM_UPDATE_CHECK_INTERVAL;
+}
+
+/*
+ * Query the update repository. This can take minutes, or wait on pkg's lock, so
+ * the agent cycle never calls it: the cycle starts it in the background after
+ * checking in (csfm_schedule_update_check) and reports the result next time.
+ */
+function csfm_check_updates() {
 	$info = array(
 		'installed_version' => csfm_product_version(),
 		'version' => '',
@@ -269,9 +286,25 @@ function csfm_check_updates($force = false) {
 		}
 	}
 	$info['packages'] = csfm_outdated_packages();
-	$state['updates'] = $info;
-	csfm_save_state($state);
+	csfm_ensure_db_dir();
+	csfm_write_json(CSFM_UPDATES_FILE, $info);
 	return $info;
+}
+
+function csfm_forget_updates() {
+	@unlink(CSFM_UPDATES_FILE);
+	$state = csfm_state();
+	unset($state['updates']);
+	csfm_save_state($state);
+}
+
+/* Start a time-limited update check in the background unless the cached one is fresh. */
+function csfm_schedule_update_check($force = false) {
+	if (!$force && !csfm_updates_stale()) {
+		return;
+	}
+	mwexec_bg('/usr/bin/lockf -s -t 0 /var/run/comsense_updates.lock /usr/bin/timeout 600 '
+	    . '/usr/local/bin/php -f /usr/local/pkg/comsense/agent.php check-updates');
 }
 
 function csfm_config_file() {
@@ -309,7 +342,7 @@ function csfm_collect_report() {
 			'deadline' => gmdate('c', (int)$guard['deadline']),
 		);
 	}
-	$updates = csfm_check_updates(false);
+	$updates = csfm_cached_updates();
 	if (is_array($updates)) {
 		$report['updates'] = $updates;
 	}

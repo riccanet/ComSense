@@ -166,6 +166,13 @@ def test_full_lifecycle(env):
     # 3. The right code enrolls over the pinned connection. The key is wiped from
     #    config; the URL and pin that came with it are kept. A backup is uploaded.
     assert agent(env, "run") == "Checked in; ran 0 task(s)"
+    # The update check never runs inside a cycle: it is started in the background afterwards
+    # (a slow package repository must not hold up check-ins) and reported next time.
+    assert "agent.php check-updates" in (env["fw"] / "actions.log").read_text()
+    with env["db"]() as db:
+        assert not db.get(Device, json.loads(agent(env, "state"))["credentials"]["device_id"]).updates
+    agent(env, "check-updates")
+    assert agent(env, "run") == "Checked in; ran 0 task(s)"
     pkg_settings = fw_config(env)["installedpackages"]["comsense"]["config"][0]
     assert pkg_settings["enrollment_key"] == ""
     assert pkg_settings["server_url"] == url and pkg_settings["pin_sha256"] == env["pin"]

@@ -6,6 +6,7 @@
  *   php /usr/local/pkg/comsense/agent.php status   print enrollment and last check-in
  *   php /usr/local/pkg/comsense/agent.php backup   upload config.xml now
  *   php /usr/local/pkg/comsense/agent.php unenroll forget this firewall's device token
+ *   php /usr/local/pkg/comsense/agent.php check-updates  query the update repository (run in the background)
  *   php /usr/local/pkg/comsense/agent.php watchdog roll back an unconfirmed change whose time is up
  *   php /usr/local/pkg/comsense/agent.php confirm  keep the change on probation (no rollback)
  *   php /usr/local/pkg/comsense/agent.php rollback undo the change on probation now
@@ -50,6 +51,9 @@ switch ($cmd) {
 			'last_rollback' => $state['last_rollback'] ?? null,
 		), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
 		break;
+	case 'check-updates':
+		echo json_encode(csfm_check_updates(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+		break;
 	case 'watchdog':
 		echo csfm_guard_watchdog() . "\n";
 		break;
@@ -74,6 +78,6 @@ switch ($cmd) {
 		echo "Credentials removed. Enter a new enrollment key to reconnect.\n";
 		break;
 	default:
-		fwrite(STDERR, "Usage: agent.php run|status|backup|unenroll|watchdog|confirm|rollback [-v]\n");
+		fwrite(STDERR, "Usage: agent.php run|status|backup|unenroll|check-updates|watchdog|confirm|rollback [-v]\n");
 		exit(2);
 }

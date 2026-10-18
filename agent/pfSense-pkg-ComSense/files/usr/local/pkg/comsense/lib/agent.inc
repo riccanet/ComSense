@@ -173,5 +173,7 @@ function csfm_cycle() {
 	foreach (csfm_order_tasks($tasks) as $task) {
 		csfm_run_task($client, $task);
 	}
+	/* After checking in, so a slow or unreachable update repository never delays it. */
+	csfm_schedule_update_check();
 	return sprintf('Checked in; ran %d task(s)', count($tasks));
 }

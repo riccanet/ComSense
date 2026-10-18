@@ -164,7 +164,8 @@ function csfm_task_backup($client, $id, $payload) {
 }
 
 function csfm_task_check_updates($client, $id, $payload) {
-	$info = csfm_check_updates(true);
+	/* Asked for by an operator, so it runs now (bounded by the cycle's own time limit). */
+	$info = csfm_check_updates();
 	$msg = !empty($info['update_available'])
 	    ? "Update available: {$info['installed_version']} -> {$info['version']}"
 	    : "System is up to date ({$info['installed_version']})";
@@ -173,10 +174,9 @@ function csfm_task_check_updates($client, $id, $payload) {
 }
 
 function csfm_task_refresh_inventory($client, $id, $payload) {
-	$state = csfm_state();
-	unset($state['updates']);
-	csfm_save_state($state);
-	return array('output' => 'Full inventory is sent with every check-in; update cache cleared.');
+	csfm_forget_updates();
+	csfm_schedule_update_check(true);
+	return array('output' => 'Full inventory is sent with every check-in; update check restarted.');
 }
 
 function csfm_task_apply_policy($client, $id, $payload) {
@@ -226,7 +226,7 @@ function csfm_task_upgrade_packages($client, $id, $payload) {
 	}
 	$names = array_map(function ($p) { return escapeshellarg($p['name']); }, $outdated);
 	list($rc, $out) = csfm_exec('/usr/sbin/pkg-static upgrade -y ' . implode(' ', $names), 3000);
-	csfm_check_updates(true);
+	csfm_schedule_update_check(true);
 	if ($rc !== 0) {
 		throw new Exception("pkg upgrade exited with {$rc}\n" . csfm_truncate($out));
 	}
@@ -294,8 +294,10 @@ function csfm_finish_inflight_upgrade($client) {
 		csfm_report_result($client, $up['task_id'], 'failed', "Version is still {$now}\n" . csfm_truncate($log, 8000));
 	}
 	$state = csfm_state();
-	unset($state['inflight_upgrade'], $state['updates']);
+	unset($state['inflight_upgrade']);
 	csfm_save_state($state);
+	csfm_forget_updates();
+	csfm_schedule_update_check(true);
 }
 
 function csfm_task_restore_backup($client, $id, $payload) {
