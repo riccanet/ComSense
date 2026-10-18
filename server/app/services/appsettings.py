@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import ipaddress
 from dataclasses import asdict, dataclass, field, fields
 from typing import Any
+from urllib.parse import urlsplit
 
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy.orm import Session
 
+from ..config import Settings
 from ..models import AppSetting, utcnow
 
 EMAIL_KEY = "email"
@@ -57,6 +60,9 @@ class AgentNetworkSettings:
     # Networks allowed to send a PROXY protocol header on the agent port (CIDRs),
     # e.g. a NetBird or HAProxy pass-through proxy. Empty: headers are refused.
     trusted_proxies: list[str] = field(default_factory=list)
+    # Address firewalls connect to (https://host:port), put into new enrollment codes.
+    # Empty: the default from CSFM_AGENT_URL / the console's host name.
+    agent_url: str = ""
 
 
 def _secret_box(secret_key: str) -> Fernet:
@@ -117,3 +123,38 @@ def get_agent_network_settings(db: Session) -> AgentNetworkSettings:
 
 def save_agent_network_settings(db: Session, value: AgentNetworkSettings, actor: str) -> None:
     _save(db, AGENT_NETWORK_KEY, value, actor)
+
+
+def normalize_agent_url(value: str, default_port: int) -> str:
+    """Turn 'host', 'host:port' or 'https://host[:port]' into 'https://host:port'. Empty stays empty."""
+    value = value.strip().rstrip("/")
+    if not value:
+        return ""
+    if "://" not in value:
+        value = "https://" + value
+    parts = urlsplit(value)
+    if parts.scheme != "https":
+        raise ValueError("Firewalls only connect over HTTPS")
+    if parts.path or parts.query or parts.fragment or parts.username or parts.password:
+        raise ValueError("Enter only a host name and an optional port")
+    host = parts.hostname or ""
+    try:
+        port = parts.port or default_port
+    except ValueError:
+        raise ValueError("Port must be a number from 1 to 65535") from None
+    try:
+        ip = ipaddress.ip_address(host)
+        host = f"[{ip}]" if ip.version == 6 else str(ip)
+    except ValueError:
+        labels = host.split(".")
+        if not host or len(host) > 253 or not all(
+            label and len(label) <= 63 and label.replace("-", "").isalnum() and not label.startswith("-")
+            for label in labels
+        ):
+            raise ValueError(f"Not a valid host name: {host or value}") from None
+    return f"https://{host}:{port}"
+
+
+def effective_agent_url(db: Session, settings: Settings) -> str:
+    """Address firewalls use: the Settings page value, else the environment default."""
+    return get_agent_network_settings(db).agent_url or settings.agent_url

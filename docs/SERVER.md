@@ -25,10 +25,13 @@ enrollment codes carry no pin. Avoid this with Let's Encrypt certificates whose 
 
 ### The agent address
 
-Firewalls use `CSFM_AGENT_URL`, which defaults to `https://<host of CSFM_PUBLIC_URL>:<CSFM_AGENT_PORT>`.
-Set it when the outside port or name differs because of NAT, e.g. `CSFM_AGENT_URL=https://fw-mgmt.example.com:9443`
-with the router forwarding 9443 to the server's 10443. Names and IPs in this URL go into the
-self-issued certificate; add more with `CSFM_AGENT_TLS_NAMES`.
+Firewalls use the address in their enrollment code: `https://<CSFM_DOMAIN>:10443` by default (outside
+Docker, `CSFM_AGENT_URL`, defaulting to `https://<host of CSFM_PUBLIC_URL>:<CSFM_AGENT_PORT>`).
+When firewalls reach the agent port under another name or port, for example a separate proxy host name
+or a NAT port forward (router port 9443 to the server's 10443), enter it under **Settings → Agent port →
+Address firewalls connect to**, e.g. `fw-mgmt.example.com:9443`. It applies to enrollment codes created
+afterwards; firewalls already enrolled keep their address. Agents pin the certificate's key rather than
+checking its name, so the address can change without a new certificate.
 
 ## Requirements
 
@@ -92,13 +95,13 @@ otherwise a LAN or VPN address). If anything other than the proxy can reach that
 
 Do **not** route the agent port through the proxy: forward it straight to the server, so the app's
 pinned certificate reaches the firewalls and their real addresses are seen. If `CSFM_DOMAIN` points at
-the proxy or a CDN, give the agent port its own DNS name with `CSFM_AGENT_DOMAIN`.
+the proxy or a CDN, give the agent port its own DNS name and enter it under **Settings → Agent port**.
 
 If the agent port has to go through a proxy anyway (for example NetBird's reverse proxy), use a TCP
 pass-through service, never TLS termination, so the pinned certificate still reaches the firewalls.
 To keep the firewalls' real addresses, turn on PROXY protocol for that service (NetBird: target option
 `proxy_protocol: true`; HAProxy: `send-proxy-v2`) and list the proxy's addresses under **Settings →
-Agent port behind a pass-through proxy** (NetBird: `100.64.0.0/10`). The agent port accepts PROXY
+Agent port → Trusted proxy addresses** (NetBird: `100.64.0.0/10`). The agent port accepts PROXY
 protocol v1 and v2 only from those networks; a header from anywhere else closes the connection, and
 connections without a header keep working as before.
 
@@ -170,7 +173,7 @@ All settings are environment variables:
 | `CSFM_WEB_HOST` / `CSFM_WEB_PORT` | `0.0.0.0` / 8000 | Web console listener (plain HTTP, for the proxy) |
 | `CSFM_FORWARDED_ALLOW_IPS` | `*` | Proxies trusted for `X-Forwarded-For` on the web listener |
 | `CSFM_AGENT_HOST` / `CSFM_AGENT_PORT` | `0.0.0.0` / 10443 | Agent listener (TLS) |
-| `CSFM_AGENT_URL` | `https://<public host>:10443` | Address firewalls use, after NAT; put into enrollment codes |
+| `CSFM_AGENT_URL` | `https://<public host>:10443` | Default address firewalls use; the Settings page can override it |
 | `CSFM_AGENT_TLS_CERT` / `_KEY` | self-issued | Use your own certificate for the agent listener |
 | `CSFM_AGENT_TLS_NAMES` | | Extra DNS names / IPs for the self-issued certificate, comma separated |
 | `CSFM_DATA_DIR` | `/var/lib/comsense` | Backups (`backups/`) and agent packages (`downloads/`) |

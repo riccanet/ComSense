@@ -48,7 +48,7 @@ from ..security import (
     verify_password,
 )
 from ..enrollment import make_code
-from ..services.appsettings import get_email_settings
+from ..services.appsettings import effective_agent_url, get_email_settings
 from ..services.backups import delete_backup_file, load_backup
 from ..services.policy_examples import EXAMPLES
 from ..services.policies import PolicyError, desired_policies, policy_hash, validate_policy
@@ -694,6 +694,7 @@ def keys_page(
     tls = ensure_agent_tls(settings)
     pin = tls.pin if tls.self_signed else None
     new_key = request.session.pop("new_key", None)
+    agent_url = effective_agent_url(db, settings)
     packages = sorted(
         (settings.data_dir / "downloads").glob("pfSense-pkg-ComSense-*.pkg"), key=lambda p: p.stat().st_mtime
     )
@@ -707,8 +708,8 @@ def keys_page(
         keys=db.scalars(select(EnrollmentKey).order_by(EnrollmentKey.id.desc())).all(),
         orgs=db.scalars(select(Organization).order_by(Organization.name)).all(),
         new_key=new_key,
-        enrollment_code=make_code(settings.agent_url, new_key, pin) if new_key else None,
-        agent_url=settings.agent_url,
+        enrollment_code=make_code(agent_url, new_key, pin) if new_key else None,
+        agent_url=agent_url,
         agent_pin=pin,
         agent_cert_expires=tls.not_after,
         preselect=customer,

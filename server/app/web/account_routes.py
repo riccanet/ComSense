@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -22,6 +23,7 @@ from ..services.appsettings import (
     get_agent_network_settings,
     get_alert_email_settings,
     get_email_settings,
+    normalize_agent_url,
     save_agent_network_settings,
     save_alert_email_settings,
     save_email_settings,
@@ -53,7 +55,12 @@ def _send_reset_in_background(settings: Settings, user_id: int, token: str, by_a
 
 
 @router.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request, user: User = Depends(admin), db: Session = Depends(get_db)):
+def settings_page(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    user: User = Depends(admin),
+    db: Session = Depends(get_db),
+):
     alert_cfg = get_alert_email_settings(db)
     recipients = db.scalar(
         select(func.count()).select_from(User).where(
@@ -69,6 +76,7 @@ def settings_page(request: Request, user: User = Depends(admin), db: Session = D
         severities=SEVERITIES,
         opted_in_users=recipients,
         agent_network=get_agent_network_settings(db),
+        default_agent_url=settings.agent_url,
     )
 
 
@@ -178,10 +186,17 @@ def settings_alerts(
 @router.post("/settings/agent-network")
 def settings_agent_network(
     request: Request,
+    agent_url: str = Form(""),
     trusted_proxies: str = Form(""),
+    settings: Settings = Depends(get_settings),
     user: User = Depends(admin),
     db: Session = Depends(get_db),
 ):
+    try:
+        url = normalize_agent_url(agent_url, urlsplit(settings.agent_url).port or settings.agent_port)
+    except ValueError as exc:
+        flash(request, f"Agent address: {exc}", "error")
+        return redirect("/settings")
     entries = [e for e in re.split(r"[\s,;]+", trusted_proxies.strip()) if e]
     networks = []
     for entry in entries:
@@ -190,10 +205,18 @@ def settings_agent_network(
         except ValueError:
             flash(request, f"Not an IP address or network: {entry}", "error")
             return redirect("/settings")
-    save_agent_network_settings(db, AgentNetworkSettings(trusted_proxies=networks), user.username)
-    audit(db, user.username, "settings.agent_network_updated", detail=", ".join(networks) or "none", ip=_ip(request))
+    save_agent_network_settings(
+        db, AgentNetworkSettings(trusted_proxies=networks, agent_url=url), user.username
+    )
+    audit(
+        db,
+        user.username,
+        "settings.agent_network_updated",
+        detail=f"address={url or 'default'} trusted={', '.join(networks) or 'none'}",
+        ip=_ip(request),
+    )
     db.commit()
-    flash(request, "Agent port settings saved. They take effect within 15 seconds.", "success")
+    flash(request, "Agent port settings saved. Trusted proxies take effect within 15 seconds.", "success")
     return redirect("/settings")
 
 

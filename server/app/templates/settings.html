@@ -62,14 +62,21 @@
 </div>
 
 <section class="card">
-  <h2>Agent port behind a pass-through proxy</h2>
-  <p class="small muted">If firewalls reach the agent port through a TCP or TLS pass-through proxy (for example
-  NetBird's reverse proxy in TCP mode, or HAProxy), have the proxy send a <strong>PROXY protocol</strong> header
-  (v1 or v2) and list its addresses here. ComSense then sees each firewall's real address, which it uses for
-  per-address lockouts and shows as "checks in from". Connections that send a PROXY header from any other
-  address are dropped, so the address cannot be faked. Leave empty when firewalls connect directly.</p>
+  <h2>Agent port</h2>
   <form method="post" action="/settings/agent-network" class="stack">
     {{ csrf() }}
+    <label>Address firewalls connect to (host name, optionally with :port)
+      <input name="agent_url" value="{{ agent_network.agent_url }}" placeholder="{{ default_agent_url }}">
+    </label>
+    <p class="small muted">Goes into new enrollment codes. Use it when firewalls reach the agent port under a
+    different name or port than the console, such as a separate proxy host name or a NAT port. Leave empty for the
+    default, <span class="mono">{{ default_agent_url }}</span>. Firewalls already enrolled keep the address they
+    were enrolled with.</p>
+    <p class="small muted">If firewalls reach the agent port through a TCP or TLS pass-through proxy (for example
+    NetBird's reverse proxy in TCP mode, or HAProxy), have the proxy send a <strong>PROXY protocol</strong> header
+    (v1 or v2) and list its addresses below. ComSense then sees each firewall's real address, which it uses for
+    per-address lockouts and shows as "checks in from". Connections that send a PROXY header from any other
+    address are dropped, so the address cannot be faked. Leave empty when firewalls connect directly.</p>
     <label>Trusted proxy addresses (IP or CIDR, separated by spaces or commas)
       <textarea name="trusted_proxies" rows="2" placeholder="100.64.0.0/10">{{ agent_network.trusted_proxies|join(", ") }}</textarea>
     </label>
