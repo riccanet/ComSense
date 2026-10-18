@@ -48,6 +48,7 @@ from ..security import (
     verify_password,
 )
 from ..enrollment import make_code
+from ..services.appsettings import get_email_settings
 from ..services.backups import delete_backup_file, load_backup
 from ..services.policy_examples import EXAMPLES
 from ..services.policies import PolicyError, desired_policies, policy_hash, validate_policy
@@ -122,6 +123,13 @@ TEMPLATES.env.filters["bytes"] = _fmt_bytes
 TEMPLATES.env.filters["pretty_json"] = lambda v: json.dumps(v, indent=2, sort_keys=True)
 
 
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def valid_email(value: str) -> bool:
+    return bool(EMAIL_RE.match(value)) and len(value) <= 255
+
+
 THEMES = ("light", "dark", "auto")
 THEME_COOKIE = "csfm_theme"
 
@@ -166,8 +174,8 @@ def _get_device(db: Session, device_id: str) -> Device:
 
 
 @router.get("/login", response_class=HTMLResponse)
-def login_form(request: Request):
-    return render(request, "login.html")
+def login_form(request: Request, db: Session = Depends(get_db)):
+    return render(request, "login.html", email_ready=get_email_settings(db).configured)
 
 
 @router.post("/login")
@@ -1021,11 +1029,17 @@ def users_create(
     username: str = Form(...),
     password: str = Form(...),
     role: str = Form("viewer"),
+    email: str = Form(""),
+    email_alerts: bool = Form(False),
     user: User = Depends(admin),
     db: Session = Depends(get_db),
 ):
     if len(password) < 12:
         flash(request, "Passwords need at least 12 characters.", "error")
+        return redirect("/users")
+    email = email.strip()
+    if email and not valid_email(email):
+        flash(request, "That is not a valid email address.", "error")
         return redirect("/users")
     # Passwords set by an admin are temporary: the user picks their own at first sign-in.
     db.add(
@@ -1033,6 +1047,8 @@ def users_create(
             username=username.strip()[:64],
             password_hash=hash_password(password),
             role=Role(role),
+            email=email,
+            email_alerts=email_alerts and bool(email),
             must_change_password=True,
         )
     )
@@ -1053,6 +1069,8 @@ def users_update(
     role: str = Form(...),
     active: bool = Form(False),
     password: str = Form(""),
+    email: str = Form(""),
+    email_alerts: bool = Form(False),
     user: User = Depends(admin),
     db: Session = Depends(get_db),
 ):
@@ -1062,8 +1080,14 @@ def users_update(
     if target.id == user.id and (Role(role) != Role.admin or not active):
         flash(request, "You cannot demote or deactivate your own account.", "error")
         return redirect("/users")
+    email = email.strip()
+    if email and not valid_email(email):
+        flash(request, "That is not a valid email address.", "error")
+        return redirect("/users")
     target.role = Role(role)
     target.active = active
+    target.email = email
+    target.email_alerts = email_alerts and bool(email)
     if password:
         if len(password) < 12:
             flash(request, "Passwords need at least 12 characters.", "error")

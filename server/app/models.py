@@ -84,6 +84,9 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(Enum(Role, native_enum=False), default=Role.viewer)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    email: Mapped[str] = mapped_column(String(255), default="", server_default="")
+    # Receive alert emails (when alert email is turned on in Settings).
+    email_alerts: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Set for generated or admin-assigned passwords; the user must choose a new one on first use.
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -308,8 +311,34 @@ class Alert(Base):
     opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     acknowledged_by: Mapped[str] = mapped_column(String(64), default="")
+    # When the alert was included in an email, and when its resolution was.
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     device: Mapped[Device] = relationship(back_populates="alerts")
+
+
+class AppSetting(Base):
+    """Server settings edited in the web console (Settings page), stored as JSON per key."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(64), default="")
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    requested_ip: Mapped[str] = mapped_column(String(64), default="")
 
 
 class AuditLog(Base):

@@ -116,6 +116,25 @@ Lost the admin password? `python -m app.cli create-user admin` (in the container
 Data lives in the volumes `comsense-db` (PostgreSQL) and `comsense-data` (encrypted backups, agent
 certificate, `downloads`), plus `caddy-data` (certificates) for option 1.
 
+## Settings page, email and alerts
+
+Day-to-day settings are edited by admins under **Settings** in the console and stored in the database,
+so the container only needs its start-up variables (below).
+
+* **Outgoing email (SMTP)**: server, port, STARTTLS / SSL, username, password and From address, with
+  a *Send test email* button. The SMTP password is stored encrypted with a key derived from
+  `CSFM_SECRET_KEY`; if that key changes, enter the password again.
+* **Alert emails**: on/off, warnings and critical or critical only, whether to email when an alert
+  clears, and extra recipients such as a NOC mailbox. Users opt in with *Email me firewall alerts* on
+  their Account page (admins can set it on the Users page). New alerts are sent once a minute as one
+  summary email per recipient; each alert is emailed once when it opens and once when it clears.
+  Alerts that existed before alert email was turned on are not sent. If the mail server is
+  unreachable, pending alerts are retried on the next pass.
+* **Password reset by email**: with email set up, the sign-in page offers *Forgot password?*.
+  Users enter their username or email; if the account has an email address it receives a link that
+  works once and expires after an hour. The page answers the same way whether or not the account
+  exists. Admins can also send a reset link from the Users page. Links point at `CSFM_PUBLIC_URL`.
+
 ## Configuration
 
 All settings are environment variables:

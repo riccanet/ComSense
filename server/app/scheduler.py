@@ -11,6 +11,7 @@ from .config import Settings
 from .db import session_factory
 from .models import Device, DeviceStatus, Metric, Task, TaskStatus, TaskType, aware, utcnow
 from .services import alerts as alert_svc
+from .services.notifications import send_alert_notifications
 from .services.tasks import TaskError, expire_stale_tasks, has_open_task, queue_task
 
 log = logging.getLogger("comsense.scheduler")
@@ -28,6 +29,11 @@ def run_once(settings: Settings) -> None:
                 alert_svc.raise_offline(db, device)
 
         expire_stale_tasks(db, now)
+        db.flush()
+        try:
+            send_alert_notifications(db, settings)
+        except Exception:  # email trouble must never stop housekeeping
+            log.exception("Sending alert emails failed")
 
         if settings.scheduled_backup_hours > 0:
             due = now - timedelta(hours=settings.scheduled_backup_hours)

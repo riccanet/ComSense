@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "macros.html" import brand_lockup with context %}
+{% block title %}Set a new password{% endblock %}
+{% block content %}
+<section class="card narrow login">
+  <div class="login-brand">{{ brand_lockup(44, "login") }}</div>
+  <h2>Set a new password for {{ username }}</h2>
+  <form method="post" action="/reset/{{ token }}" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>New password (12+ characters) <input type="password" name="new" minlength="12" autocomplete="new-password" required autofocus></label>
+    <label>Confirm new password <input type="password" name="confirm" minlength="12" autocomplete="new-password" required></label>
+    <button class="primary">Set password</button>
+  </form>
+</section>
+{% endblock %}

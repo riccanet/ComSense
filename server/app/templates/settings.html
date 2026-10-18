@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<p class="muted">Saved in the database. The server's container settings only cover how it starts (database, keys, addresses).</p>
+
+<div class="grid2">
+<section class="card">
+  <h2>Outgoing email (SMTP)</h2>
+  <p class="small muted">Used for alert emails and password reset links.</p>
+  <form method="post" action="/settings/email" class="grid-form">
+    {{ csrf() }}
+    <label class="check wide"><input type="checkbox" name="enabled" value="true"{% if email.enabled %} checked{% endif %}> Send email</label>
+    <label>SMTP server <input name="host" value="{{ email.host }}" placeholder="smtp.office365.com"></label>
+    <label>Port <input name="port" type="number" min="1" max="65535" value="{{ email.port }}"></label>
+    <label>Security
+      <select name="security">
+        {% for s in securities %}<option value="{{ s }}"{% if email.security == s %} selected{% endif %}>{{ {"starttls": "STARTTLS (usually port 587)", "ssl": "SSL/TLS (usually port 465)", "none": "None (not recommended)"}[s] }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Username <input name="username" value="{{ email.username }}" autocomplete="off"></label>
+    <label>Password
+      <input name="password" type="password" autocomplete="new-password" placeholder="{{ 'saved; leave blank to keep' if email.password_encrypted else '' }}">
+    </label>
+    {% if email.password_encrypted %}<label class="check"><input type="checkbox" name="clear_password" value="true"> Remove saved password</label>{% endif %}
+    <label>From address <input name="from_address" type="email" value="{{ email.from_address }}" placeholder="comsense@example.com"></label>
+    <label>From name <input name="from_name" value="{{ email.from_name }}"></label>
+    <div class="wide"><button class="primary">Save email settings</button></div>
+  </form>
+  <form method="post" action="/settings/email/test" class="toolbar">
+    {{ csrf() }}
+    <input name="to" type="email" value="{{ user.email }}" placeholder="send test to…">
+    <button{% if not email.configured %} disabled title="Save working email settings first"{% endif %}>Send test email</button>
+  </form>
+  <p class="small muted">The SMTP password is stored encrypted.</p>
+</section>
+
+<section class="card">
+  <h2>Alert emails</h2>
+  <p class="small muted">New alerts are collected and sent once a minute as one summary email per recipient.
+  Each alert is emailed once when it opens and, if you choose, once when it clears.</p>
+  <form method="post" action="/settings/alerts" class="stack">
+    {{ csrf() }}
+    <label class="check"><input type="checkbox" name="enabled" value="true"{% if alerts.enabled %} checked{% endif %}> Email alerts</label>
+    <label>Send
+      <select name="min_severity">
+        <option value="warning"{% if alerts.min_severity == "warning" %} selected{% endif %}>Warnings and critical alerts</option>
+        <option value="critical"{% if alerts.min_severity == "critical" %} selected{% endif %}>Critical alerts only</option>
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" name="notify_resolved" value="true"{% if alerts.notify_resolved %} checked{% endif %}> Also email when an alert clears</label>
+    <label>Additional recipients
+      <textarea name="extra_recipients" rows="3" placeholder="noc@example.com, oncall@example.com">{{ alerts.extra_recipients|join(", ") }}</textarea>
+    </label>
+    <p class="small muted">Plus {{ opted_in_users }} user{{ "" if opted_in_users == 1 else "s" }} who turned on alert emails
+    (each user's <a href="/account">Account</a> page, or <a href="/users">Users</a> for admins).</p>
+    {% if alerts.enabled and not email.configured %}<div class="flash warn">Alert emails are on, but outgoing email is not set up yet.</div>{% endif %}
+    <div><button class="primary">Save alert settings</button></div>
+  </form>
+</section>
+</div>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "macros.html" import brand_lockup with context %}
+{% block title %}Reset password{% endblock %}
+{% block content %}
+<section class="card narrow login">
+  <div class="login-brand">{{ brand_lockup(44, "login") }}</div>
+  <h2>Reset your password</h2>
+  {% if email_ready %}
+  <p class="muted">Enter your username or email address. If the account has an email address, we will send it a link to set a new password.</p>
+  <form method="post" action="/forgot" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Username or email <input name="identifier" autocomplete="username" required autofocus></label>
+    <button class="primary">Send reset link</button>
+  </form>
+  {% else %}
+  <p class="muted">Email is not set up on this server, so reset links cannot be sent. Ask an administrator to reset your password.</p>
+  {% endif %}
+  <p class="small"><a href="/login">Back to sign in</a></p>
+</section>
+{% endblock %}

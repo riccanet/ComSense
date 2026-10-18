@@ -15,4 +15,16 @@
     <button class="primary">{{ "Set password" if user.must_change_password else "Change password" }}</button>
   </form>
 </section>
+{% if not user.must_change_password %}
+<section class="card narrow">
+  <h2>Email</h2>
+  <form method="post" action="/account/profile" class="stack">
+    {{ csrf() }}
+    <label>Email address <input type="email" name="email" value="{{ user.email }}" autocomplete="email"></label>
+    <label class="check"><input type="checkbox" name="email_alerts" value="true"{% if user.email_alerts %} checked{% endif %}> Email me firewall alerts</label>
+    <p class="small muted">Your email address is also where password reset links are sent.</p>
+    <button>Save</button>
+  </form>
+</section>
+{% endif %}
 {% endblock %}

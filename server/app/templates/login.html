@@ -11,5 +11,6 @@
     <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
     <button class="primary">Sign in</button>
   </form>
+  {% if email_ready %}<p class="small forgot-link"><a href="/forgot">Forgot password?</a></p>{% endif %}
 </section>
 {% endblock %}

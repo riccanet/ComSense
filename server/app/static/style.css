@@ -228,3 +228,4 @@ h1 .badge.soon, h2 .badge.soon { margin-left: .35rem; }
 .soon-card li { margin: .25rem 0; }
 button:disabled { opacity: .5; cursor: not-allowed; }
 button:disabled:hover { border-color: var(--line); }
+.forgot-link { text-align: center; margin: .75rem 0 0; }

@@ -54,6 +54,14 @@ afterwards and rolled back if the firewall loses contact with the server.
   cookies; every form is CSRF-protected; pages are served with a strict Content Security Policy,
   `X-Frame-Options: DENY` and HSTS.
 
+## Email and password resets
+
+* Reset links carry a 256-bit random token stored only as a hash, expire after one hour, work once,
+  and revoke any earlier link for the same user. Setting a new password ends that user's existing sessions.
+* *Forgot password?* gives the same answer for unknown accounts and accounts without email, sends the
+  email after the response, and is rate-limited per address.
+* The SMTP password is encrypted at rest with a key derived from `CSFM_SECRET_KEY`.
+
 ## Recommendations
 
 * Restrict the web console (port 443) to admins: source allow-list, VPN, or SSO in your proxy.

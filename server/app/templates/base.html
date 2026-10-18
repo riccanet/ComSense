@@ -21,7 +21,8 @@
     {% for href, label, admin_only in [
       ("/", "Dashboard", False), ("/devices", "Firewalls", False), ("/policies", "Policies", False),
       ("/alerts", "Alerts", False), ("/organizations", "Organizations", False),
-      ("/keys", "Enrollment keys", True), ("/users", "Users", True), ("/audit", "Audit log", True)] %}
+      ("/keys", "Enrollment keys", True), ("/users", "Users", True), ("/audit", "Audit log", True),
+      ("/settings", "Settings", True)] %}
       {% if not admin_only or user.role == Role.admin %}
       <a href="{{ href }}"{% if path == href or (href != "/" and path.startswith(href)) %} class="active" aria-current="page"{% endif %}>{{ label }}{% if href == "/policies" and not changes_enabled %} <span class="nav-soon">soon</span>{% endif %}</a>
       {% endif %}
