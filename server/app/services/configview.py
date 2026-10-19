@@ -99,6 +99,8 @@ def port_forwards_from_xml(xml: bytes) -> list[dict[str, Any]]:
             "interface": text("interface") or "wan",
             "protocol": text("protocol") or "any",
             "source": src + (f":{src_port}" if src_port else ""),
+            "src": src,  # the parts, to fill in the edit form
+            "src_port": src_port,
             "destination": dst,
             "port": dst_port,
             "target": text("target"),

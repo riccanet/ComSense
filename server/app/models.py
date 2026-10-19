@@ -73,6 +73,7 @@ class TaskType(str, enum.Enum):
     # Single changes from the firewall's page (names fit the existing 16-character column).
     nat_add = "nat_add"
     nat_remove = "nat_remove"
+    nat_edit = "nat_edit"
     notifications = "notifications"
 
 

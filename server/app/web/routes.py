@@ -399,7 +399,8 @@ async def devices_bulk(
 
 @router.get("/devices/{device_id}", response_class=HTMLResponse)
 def device_detail(
-    device_id: str, request: Request, user: User = Depends(viewer), db: Session = Depends(get_db)
+    device_id: str, request: Request, edit_nat: str = "", user: User = Depends(viewer),
+    db: Session = Depends(get_db),
 ):
     device = _get_device(db, device_id)
     nat_backup = current_backup(db, device)
@@ -413,9 +414,10 @@ def device_detail(
     open_states = (TaskStatus.pending, TaskStatus.sent, TaskStatus.running)
     queued = db.scalars(select(Task).where(
         Task.device_id == device.id, Task.status.in_(open_states),
-        Task.type.in_((TaskType.nat_add, TaskType.nat_remove, TaskType.notifications)))).all()
+        Task.type.in_((TaskType.nat_add, TaskType.nat_remove, TaskType.nat_edit, TaskType.notifications)))).all()
     nat_removing = {t.payload.get("fingerprint") for t in queued if t.type == TaskType.nat_remove}
     nat_adding = [t.payload.get("rule", {}) for t in queued if t.type == TaskType.nat_add]
+    nat_editing = {t.payload.get("fingerprint") for t in queued if t.type == TaskType.nat_edit}
     smtp_pending = next((t.payload.get("smtp") for t in queued if t.type == TaskType.notifications), None)
     since = utcnow() - timedelta(hours=24)
     metrics = db.scalars(
@@ -465,6 +467,8 @@ def device_detail(
         nat_error=nat_error,
         nat_removing=nat_removing,
         nat_adding=nat_adding,
+        nat_editing=nat_editing,
+        edit_nat=edit_nat,
         smtp=smtp,
         smtp_pending=smtp_pending,
         device_groups=db.scalars(
@@ -581,31 +585,61 @@ def _queue_change(request: Request, db: Session, settings: Settings, device: Dev
     return redirect(f"/devices/{device.id}")
 
 
-@router.post("/devices/{device_id}/nat")
-async def device_nat_add(device_id: str, request: Request, settings: Settings = Depends(get_settings),
-                         user: User = Depends(operator), db: Session = Depends(get_db)):
-    """Add one port forward to this firewall only (Configurations deploys them to many)."""
+def _port_forward_from_form(form) -> dict[str, Any]:
+    """One port forward from the add or edit form on the firewall's page (raises PolicyError)."""
     from .config_routes import parse_endpoint
 
-    device = _get_device(db, device_id)
-    form = await request.form()
     dstport = str(form.get("dstport", "")).strip()
     rule = {
         "interface": str(form.get("interface", "wan")).strip().lower() or "wan",
         "protocol": str(form.get("protocol", "tcp")),
-        "source": parse_endpoint(str(form.get("src", ""))),
+        "source": parse_endpoint(str(form.get("src", "")), str(form.get("srcport", ""))),
         "destination": parse_endpoint(str(form.get("dst", "")) or "wan address", dstport),
         "target": str(form.get("target", "")).strip(),
         "local_port": str(form.get("localport", "")).strip() or dstport,
         "descr": str(form.get("descr", "")).strip()[:200],
     }
+    if form.get("disabled") == "true":
+        rule["disabled"] = True
     try:
         validate_port_forward_rule(rule)
     except PolicyError as exc:
-        flash(request, str(exc).replace("rules[0].", ""), "error")
+        raise PolicyError(str(exc).replace("rules[0].", "")) from exc
+    return rule
+
+
+@router.post("/devices/{device_id}/nat")
+async def device_nat_add(device_id: str, request: Request, settings: Settings = Depends(get_settings),
+                         user: User = Depends(operator), db: Session = Depends(get_db)):
+    """Add one port forward to this firewall only (Configurations deploys them to many)."""
+    device = _get_device(db, device_id)
+    try:
+        rule = _port_forward_from_form(await request.form())
+    except PolicyError as exc:
+        flash(request, str(exc), "error")
         return redirect(f"/devices/{device_id}#nat")
     return _queue_change(request, db, settings, device, user, TaskType.nat_add, {"rule": rule},
-                         f"add port forward {dstport} -> {rule['target']}:{rule['local_port']}")
+                         f"add port forward {rule['destination']['port']} -> {rule['target']}:{rule['local_port']}")
+
+
+@router.post("/devices/{device_id}/nat/edit")
+async def device_nat_edit(device_id: str, request: Request, settings: Settings = Depends(get_settings),
+                          user: User = Depends(operator), db: Session = Depends(get_db)):
+    """Change one port forward on this firewall, named by its fingerprint (as for removal)."""
+    device = _get_device(db, device_id)
+    form = await request.form()
+    fingerprint = str(form.get("fingerprint", ""))
+    if not re.fullmatch(r"[0-9a-f]{16}", fingerprint):
+        raise HTTPException(400, "Invalid port forward reference")
+    try:
+        rule = _port_forward_from_form(form)
+    except PolicyError as exc:
+        flash(request, str(exc), "error")
+        return redirect(f"/devices/{device_id}?edit_nat={fingerprint}#nat")
+    return _queue_change(request, db, settings, device, user, TaskType.nat_edit,
+                         {"fingerprint": fingerprint, "rule": rule},
+                         f"change port forward {rule['descr'] or fingerprint} to "
+                         f"{rule['destination']['port']} -> {rule['target']}:{rule['local_port']}")
 
 
 @router.post("/devices/{device_id}/nat/remove")

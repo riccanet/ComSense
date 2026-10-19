@@ -439,6 +439,75 @@ function csfm_remove_port_forward($fingerprint) {
 	throw new CsfmPolicyError('That port forward is no longer on the firewall');
 }
 
+/*
+ * Change one port forward in place, found by fingerprint. Settings ComSense does not edit (NAT reflection,
+ * its pfSense filter rule link, creation stamp) are kept, and a linked filter rule follows the new values,
+ * as pfSense does when a port forward is saved. Configuration-owned ones are refused.
+ */
+function csfm_edit_port_forward($fingerprint, $r) {
+	$rules = array_values((array)csfm_cfg_get('nat/rule', array()));
+	foreach ($rules as $i => $nat) {
+		if (csfm_nat_fingerprint($nat) !== $fingerprint) {
+			continue;
+		}
+		if (!empty($nat['comsense_policy'])) {
+			throw new CsfmPolicyError('This port forward belongs to a ComSense configuration; change it there');
+		}
+		$built = csfm_build_port_forward('', $r);
+		foreach (array('source', 'destination', 'ipprotocol', 'protocol', 'target', 'local-port', 'interface') as $k) {
+			$nat[$k] = $built[$k];
+		}
+		$nat['descr'] = (string)($r['descr'] ?? '');
+		unset($nat['disabled']);
+		if (!empty($r['disabled'])) {
+			$nat['disabled'] = '';
+		}
+		$nat['updated'] = array('time' => (string)time(), 'username' => 'ComSense');
+		$fp = csfm_nat_fingerprint($nat);
+		foreach ($rules as $j => $other) {
+			if ($j !== $i && csfm_nat_fingerprint($other) === $fp) {
+				throw new CsfmPolicyError('An identical port forward already exists');
+			}
+		}
+		$rules[$i] = $nat;
+		csfm_cfg_set('nat/rule', $rules);
+
+		$assoc = (string)($nat['associated-rule-id'] ?? '');
+		$linked = 0;
+		if ($assoc !== '' && $assoc !== 'pass') {
+			$filters = array_values((array)csfm_cfg_get('filter/rule', array()));
+			foreach ($filters as $k => $f) {
+				if ((string)($f['associated-rule-id'] ?? '') !== $assoc) {
+					continue;
+				}
+				$dest = array('address' => $nat['target']);
+				if ($nat['local-port'] !== '') {
+					$dest['port'] = $nat['local-port'];
+				}
+				$f['interface'] = $nat['interface'];
+				$f['ipprotocol'] = $nat['ipprotocol'];
+				$f['protocol'] = $nat['protocol'];
+				$f['source'] = $nat['source'];
+				$f['destination'] = $dest;
+				$f['descr'] = 'NAT ' . $nat['descr'];
+				unset($f['disabled']);
+				if (isset($nat['disabled'])) {
+					$f['disabled'] = '';
+				}
+				$f['updated'] = $nat['updated'];
+				$filters[$k] = $f;
+				$linked++;
+			}
+			csfm_cfg_set('filter/rule', $filters);
+		}
+		write_config('ComSense: changed port forward ' . $nat['descr']);
+		csfm_reload(array('filter'));
+		return sprintf('Changed port forward %s -> %s:%s', $nat['destination']['port'] ?? '', $nat['target'],
+			$nat['local-port']) . ($linked ? ' and its linked firewall rule' : '');
+	}
+	throw new CsfmPolicyError('That port forward is no longer on the firewall (it may have been changed there)');
+}
+
 /* ------------------------------------------------- pfSense email notifications */
 
 /* Whether pfSense sends its own email notifications (System > Advanced > Notifications). */

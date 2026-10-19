@@ -34,11 +34,12 @@ $csfm_task_capability = array(
 	'open_terminal' => 'shell',
 	'nat_add' => 'policy',
 	'nat_remove' => 'policy',
+	'nat_edit' => 'policy',
 	'notifications' => 'policy',
 );
 
 /* Tasks that change the configuration and run under the change guard (guard.inc). */
-$csfm_guarded_tasks = array('apply_policy', 'remove_policy', 'nat_add', 'nat_remove');
+$csfm_guarded_tasks = array('apply_policy', 'remove_policy', 'nat_add', 'nat_remove', 'nat_edit');
 
 class CsfmTaskDeferred extends Exception {
 	/* Thrown by tasks that already reported their own result. */
@@ -145,6 +146,9 @@ function csfm_task_label($type, $payload) {
 	}
 	if ($type === 'nat_remove') {
 		return 'remove port forward ' . ($payload['descr'] ?? '');
+	}
+	if ($type === 'nat_edit') {
+		return 'change port forward ' . ($payload['rule']['descr'] ?? '');
 	}
 	if ($type === 'open_terminal') {
 		return 'open a remote terminal';
@@ -417,6 +421,15 @@ function csfm_task_nat_remove($client, $id, $payload) {
 		throw new Exception('Malformed port forward reference');
 	}
 	return array('output' => csfm_remove_port_forward($fp));
+}
+
+function csfm_task_nat_edit($client, $id, $payload) {
+	$fp = (string)($payload['fingerprint'] ?? '');
+	$r = $payload['rule'] ?? null;
+	if (!preg_match('/^[0-9a-f]{16}$/', $fp) || !is_array($r) || empty($r['target']) || empty($r['destination']['port'])) {
+		throw new Exception('Malformed port forward change');
+	}
+	return array('output' => csfm_edit_port_forward($fp, $r));
 }
 
 function csfm_task_notifications($client, $id, $payload) {

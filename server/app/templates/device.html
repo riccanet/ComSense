@@ -151,7 +151,20 @@ reach ComSense by then, it restores its previous configuration automatically.</d
   </table>
 </section>
 
+{% macro nat_fields(r) %}
+      <label>Interface <input name="interface" value="{{ r.interface or "wan" }}" list="nat-ifaces"></label>
+      <label>Protocol <select name="protocol">{% for p in ["tcp", "udp", "tcp/udp"] %}<option{% if r.protocol == p %} selected{% endif %}>{{ p }}</option>{% endfor %}</select></label>
+      <label>Source <input name="src" placeholder="any" value="{{ r.src if r.src and r.src != "any" else "" }}"></label>
+      <label>Source port <input name="srcport" placeholder="any" value="{{ r.src_port or "" }}"></label>
+      <label>Destination <input name="dst" value="{{ r.destination or "wan address" }}"></label>
+      <label>External port <input name="dstport" required placeholder="443 or 8000:8100" value="{{ r.port or "" }}"></label>
+      <label>Internal IP <input name="target" required placeholder="192.168.1.10" value="{{ r.target or "" }}"></label>
+      <label>Internal port <input name="localport" placeholder="same as external" value="{{ r.local_port or "" }}"></label>
+      <label>Description <input name="descr" maxlength="200" value="{{ r.descr or "" }}"></label>
+{% endmacro %}
+
 <section class="card" id="nat">
+  <datalist id="nat-ifaces">{% for i in inv.get("interfaces", []) %}<option value="{{ i.name }}">{% endfor %}</datalist>
   <h2>Inbound NAT policies</h2>
   {% if nat_backup %}
   <p class="small muted">Port forwards in the firewall's configuration as of {{ nat_backup.created_at|dt }}.
@@ -164,7 +177,7 @@ reach ComSense by then, it restores its previous configuration automatically.</d
     <thead><tr><th>Interface</th><th>Protocol</th><th>Source</th><th>Destination</th><th>Port</th><th>Redirect to</th><th>Filter rule</th><th>Description</th><th></th></tr></thead>
     <tbody>
     {% for r in nat_rules %}
-      <tr{% if r.disabled or r.fingerprint in nat_removing %} class="muted"{% endif %}>
+      <tr{% if r.disabled or r.fingerprint in nat_removing or r.fingerprint in nat_editing %} class="muted"{% endif %}>
         <td>{{ r.interface }}</td>
         <td>{{ r.protocol }}</td>
         <td>{{ r.source }}</td>
@@ -174,11 +187,26 @@ reach ComSense by then, it restores its previous configuration automatically.</d
         <td class="small">{{ {"pass": "pass", "linked": "linked rule", "none": "none"}[r.filter_rule] }}</td>
         <td>{{ r.descr }}{% if r.disabled %} <span class="badge s-disabled">disabled</span>{% endif %}</td>
         <td class="nowrap">{% if r.fingerprint in nat_removing %}<span class="small muted">removal queued</span>
+          {% elif r.fingerprint in nat_editing %}<span class="small muted">change queued</span>
           {% elif r.managed %}<span class="small muted">Configurations</span>
-          {% elif can_change %}{{ post_button_fields("/devices/" ~ device.id ~ "/nat/remove", "Remove", "small danger",
+          {% elif can_change %}<a class="button small" href="/devices/{{ device.id }}?edit_nat={{ r.fingerprint }}#nat-edit">Edit</a>
+            {{ post_button_fields("/devices/" ~ device.id ~ "/nat/remove", "Remove", "small danger",
               "Remove the port forward " ~ (r.descr or r.port) ~ " from " ~ device.name ~ "?" ~ (" Its linked firewall rule is removed too." if r.filter_rule == "linked" else ""),
               {"fingerprint": r.fingerprint, "descr": r.descr}) }}{% endif %}</td>
       </tr>
+      {% if can_change and edit_nat == r.fingerprint and not r.managed and r.fingerprint not in nat_removing and r.fingerprint not in nat_editing %}
+      <tr id="nat-edit" class="nat-edit"><td colspan="9">
+        <form method="post" action="/devices/{{ device.id }}/nat/edit" class="grid-form">
+          {{ csrf() }}
+          <input type="hidden" name="fingerprint" value="{{ r.fingerprint }}">
+          {{ nat_fields(r) }}
+          <label class="check"><input type="checkbox" name="disabled" value="true"{% if r.disabled %} checked{% endif %}> Disabled</label>
+          <div class="wide"><button class="primary">Save changes</button>
+            <a class="button" href="/devices/{{ device.id }}#nat">Cancel</a>
+            <span class="small muted">{% if r.filter_rule == "linked" %}Its linked firewall rule is updated to match. {% endif %}Undone automatically if the firewall loses contact with ComSense.</span></div>
+        </form>
+      </td></tr>
+      {% endif %}
     {% else %}<tr><td colspan="9" class="muted">{% if nat_backup %}No port forwards.{% else %}No configuration backup yet; port forwards appear after the firewall's first backup.{% endif %}</td></tr>{% endfor %}
     {% for a in nat_adding %}
       <tr class="muted"><td>{{ a.interface }}</td><td>{{ a.protocol }}</td><td></td><td></td><td class="mono">{{ a.destination.port }}</td>
@@ -192,21 +220,13 @@ reach ComSense by then, it restores its previous configuration automatically.</d
     <summary>Add a port forward to this firewall</summary>
     <form method="post" action="/devices/{{ device.id }}/nat" class="grid-form">
       {{ csrf() }}
-      <label>Interface <input name="interface" value="wan" list="nat-ifaces">
-        <datalist id="nat-ifaces">{% for i in inv.get("interfaces", []) %}<option value="{{ i.name }}">{% endfor %}</datalist></label>
-      <label>Protocol <select name="protocol"><option>tcp</option><option>udp</option><option>tcp/udp</option></select></label>
-      <label>Source <input name="src" placeholder="any"></label>
-      <label>Destination <input name="dst" value="wan address"></label>
-      <label>External port <input name="dstport" required placeholder="443 or 8000:8100"></label>
-      <label>Internal IP <input name="target" required placeholder="192.168.1.10"></label>
-      <label>Internal port <input name="localport" placeholder="same as external"></label>
-      <label>Description <input name="descr" maxlength="200"></label>
+      {{ nat_fields({}) }}
       <div class="wide"><button class="primary">Add port forward</button>
         <span class="small muted">Lets its own traffic through ("pass"); undone automatically if the firewall loses contact with ComSense.</span></div>
     </form>
   </details>
   {% elif can_operate and not changes_enabled %}<p class="small muted">Firewall changes are turned off on this server.</p>
-  {% elif can_operate %}<p class="small muted">Allow "Policies" in Services &gt; ComSense Agent on the firewall to add or remove port forwards from here.</p>{% endif %}
+  {% elif can_operate %}<p class="small muted">Allow "Policies" in Services &gt; ComSense Agent on the firewall to add, change or remove port forwards from here.</p>{% endif %}
 </section>
 
 <section class="card">

@@ -471,6 +471,22 @@ def test_full_lifecycle(env):
     assert task(tid).status == TaskStatus.success, task(tid).output
     (fwd,) = [r for r in port_forwards_from_xml(pfsense_xml()) if r["descr"] == "Manual web"]
     assert not fwd["managed"] and fwd["target"] == "192.168.1.50"
+    tid = queue(TaskType.nat_edit, {"fingerprint": fwd["fingerprint"], "rule": {
+        "interface": "wan", "protocol": "tcp/udp", "source": {"address": "203.0.113.0/24"},
+        "destination": {"network": "wanip", "port": "8081"}, "target": "192.168.1.51", "local_port": "8080",
+        "descr": "Manual web", "disabled": True}})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.success, task(tid).output
+    (edited,) = [r for r in port_forwards_from_xml(pfsense_xml()) if r["descr"] == "Manual web"]
+    assert (edited["target"], edited["local_port"], edited["port"], edited["protocol"], edited["src"],
+            edited["disabled"]) == ("192.168.1.51", "8080", "8081", "tcp/udp", "203.0.113.0/24", True)
+    raw = [r for r in fw_config(env)["nat"]["rule"] if r.get("descr") == "Manual web"][0]
+    assert raw["associated-rule-id"] == "pass" and "created" in raw  # kept from the original
+    tid = queue(TaskType.nat_edit, {"fingerprint": fwd["fingerprint"], "rule": {  # the old fingerprint
+        "destination": {"network": "wanip", "port": "1"}, "target": "192.168.1.1", "local_port": "1"}})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.failed and "no longer on the firewall" in task(tid).output
+    fwd = edited
     tid = queue(TaskType.nat_remove, {"fingerprint": fwd["fingerprint"], "descr": "Manual web"})
     agent(env, "run")
     assert task(tid).status == TaskStatus.success, task(tid).output
@@ -478,6 +494,28 @@ def test_full_lifecycle(env):
     tid = queue(TaskType.nat_remove, {"fingerprint": fwd["fingerprint"], "descr": "Manual web"})
     agent(env, "run")
     assert task(tid).status == TaskStatus.failed and "no longer on the firewall" in task(tid).output
+
+    # A port forward made in pfSense with a linked filter rule: the rule follows an edit.
+    cfg = fw_config(env)
+    cfg.setdefault("nat", {}).setdefault("rule", []).append({
+        "source": {"any": ""}, "destination": {"network": "wanip", "port": "2222"}, "protocol": "tcp",
+        "target": "192.168.1.60", "local-port": "22", "interface": "wan", "descr": "SSH",
+        "associated-rule-id": "nat_abc123"})
+    cfg.setdefault("filter", {}).setdefault("rule", []).append({
+        "type": "pass", "interface": "wan", "protocol": "tcp", "source": {"any": ""},
+        "destination": {"address": "192.168.1.60", "port": "22"}, "descr": "NAT SSH",
+        "associated-rule-id": "nat_abc123"})
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
+    (ssh,) = [r for r in port_forwards_from_xml(pfsense_xml()) if r["descr"] == "SSH"]
+    assert ssh["filter_rule"] == "linked"
+    tid = queue(TaskType.nat_edit, {"fingerprint": ssh["fingerprint"], "rule": {
+        "interface": "wan", "protocol": "tcp", "source": {"any": True},
+        "destination": {"network": "wanip", "port": "2222"}, "target": "192.168.1.61", "local_port": "2200",
+        "descr": "SSH jump"}})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.success and "linked firewall rule" in task(tid).output
+    (linked,) = [f for f in fw_config(env)["filter"]["rule"] if f.get("associated-rule-id") == "nat_abc123"]
+    assert linked["destination"] == {"address": "192.168.1.61", "port": "2200"} and linked["descr"] == "NAT SSH jump"
 
     tid = queue(TaskType.notifications, {"smtp": False})
     agent(env, "run")

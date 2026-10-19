@@ -27,6 +27,7 @@ TASK_CAPABILITY: dict[TaskType, str | None] = {
     TaskType.open_terminal: "shell",
     TaskType.nat_add: "policy",
     TaskType.nat_remove: "policy",
+    TaskType.nat_edit: "policy",
     TaskType.notifications: "policy",
 }
 

@@ -47,6 +47,37 @@ def test_add_and_remove_port_forwards_from_the_firewall_page(client, db, agent):
 
 
 @pytest.mark.changes
+def test_edit_a_port_forward_from_the_firewall_page(client, db, agent):
+    csrf = login(client)
+    did = _device(agent, db)
+    web, rdp = port_forwards_from_xml(CONFIG)
+    page = client.get(f"/devices/{did}").text
+    assert f"edit_nat={web['fingerprint']}" in page and f"edit_nat={rdp['fingerprint']}" not in page
+    form = client.get(f"/devices/{did}?edit_nat={web['fingerprint']}").text
+    assert 'action="/devices/' + did + '/nat/edit"' in form
+    assert 'value="192.168.1.10"' in form and 'value="8443"' in form and 'value="Web server"' in form
+    # A configuration's port forward has no edit form.
+    assert "/nat/edit" not in client.get(f"/devices/{did}?edit_nat={rdp['fingerprint']}").text
+
+    client.post(f"/devices/{did}/nat/edit", data={
+        "fingerprint": web["fingerprint"], "interface": "wan", "protocol": "tcp", "src": "", "dst": "wan address",
+        "dstport": "443", "target": "192.168.1.11", "localport": "443", "descr": "Web server", "disabled": "true",
+        "csrf_token": csrf})
+    edit = db.scalar(select(Task).where(Task.type == TaskType.nat_edit))
+    assert edit.payload == {"fingerprint": web["fingerprint"], "rule": {
+        "interface": "wan", "protocol": "tcp", "source": {"any": True},
+        "destination": {"network": "wanip", "port": "443"}, "target": "192.168.1.11", "local_port": "443",
+        "descr": "Web server", "disabled": True}}
+    assert "change queued" in client.get(f"/devices/{did}").text
+
+    r = client.post(f"/devices/{did}/nat/edit", data={"fingerprint": web["fingerprint"], "dstport": "443",
+                                                      "target": "bad ip!", "csrf_token": csrf})
+    assert "target must be an IP address or alias" in r.text
+    assert client.post(f"/devices/{did}/nat/edit", data={"fingerprint": "x", "dstport": "1", "target": "1.1.1.1",
+                                                         "csrf_token": csrf}).status_code == 400
+
+
+@pytest.mark.changes
 def test_email_notifications_switch(client, db, agent):
     csrf = login(client)
     did = _device(agent, db)

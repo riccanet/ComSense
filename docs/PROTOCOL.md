@@ -87,16 +87,18 @@ no tasks.
 | `open_terminal` | `{"session"}` | shell |
 | `nat_add` | `{"rule"}` (one port forward, as in a `port_forward` policy) | policy |
 | `nat_remove` | `{"fingerprint","descr"}` | policy |
+| `nat_edit` | `{"fingerprint","rule"}` | policy |
 | `notifications` | `{"smtp": true\|false}` | policy |
 
 Tasks not picked up within 24 h (1 h for restores) expire. Tasks with no final result after their
 timeout (15 min by default, 30 min for agent updates, 2 h for system upgrades) are marked failed.
 
-`nat_add` and `nat_remove` are single changes from a firewall's page, run under the change guard like
-policies. `nat_remove` names the port forward by a fingerprint: the first 16 hex digits of the SHA-256
+`nat_add`, `nat_edit` and `nat_remove` are single changes from a firewall's page, run under the change
+guard like policies. `nat_edit` and `nat_remove` name the port forward by a fingerprint: the first 16 hex digits of the SHA-256
 of its interface, protocol, target, local-port, destination port and description joined with `\x1f`
 (the server computes it from config.xml, the agent from its config). Port forwards owned by a
-configuration are refused, and a linked filter rule is removed with its port forward. `notifications`
+configuration are refused. A linked filter rule is removed with its port forward, and an edit updates it
+to match (settings the console does not show, such as NAT reflection, are kept). `notifications`
 turns pfSense's own email notifications on or off (`notifications/smtp/disable`).
 
 `update_agent` is the console's *Update agent* button. The agent downloads `file` from
