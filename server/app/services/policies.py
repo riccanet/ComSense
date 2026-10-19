@@ -32,6 +32,7 @@ PKG_NAME_RE = re.compile(r"^pfSense-pkg-[A-Za-z0-9_.+-]{1,64}$")
 CONFIG_PATH_RE = re.compile(r"^[A-Za-z0-9_\-]+(/[A-Za-z0-9_\-]+)*$")
 PORT_RE = re.compile(r"^([0-9]{1,5}(:[0-9]{1,5})?|[A-Za-z0-9_]{1,31})$")
 
+ALIAS_FORM_TYPES = ("host", "network", "port", "url", "urltable")  # offered in the forms
 ALIAS_TYPES = {"host", "network", "port", "url", "urltable", "url_ports", "urltable_ports"}
 RULE_TYPES = {"pass", "block", "reject"}
 RULE_PROTOCOLS = {"any", "tcp", "udp", "tcp/udp", "icmp", "esp", "ah", "gre", "ipv6", "igmp", "pim", "ospf", "carp", "pfsync"}
@@ -221,6 +222,43 @@ def _validate_port_forwards(content: dict[str, Any]) -> None:
 def _validate_notifications(content: dict[str, Any]) -> None:
     _require(set(content) == {"smtp"} and isinstance(content["smtp"], bool),
              "notifications: content must be {\"smtp\": true or false}")
+
+
+def _alias_address_ok(value: str) -> bool:
+    try:
+        ipaddress.ip_network(value, strict=False)
+        return True
+    except ValueError:
+        pass
+    first, dash, last = value.partition("-")
+    if dash:
+        try:
+            ipaddress.ip_address(first)
+            ipaddress.ip_address(last)
+            return True
+        except ValueError:
+            return False
+    if re.fullmatch(r"[0-9.:/]+", value):
+        return False  # looks like an address but is not one
+    return bool(re.match(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,252}$", value))  # a host name or another alias
+
+
+def validate_alias(alias: dict[str, Any]) -> None:
+    """One alias, as added or changed from a firewall's page."""
+    try:
+        _validate_aliases({"aliases": [alias]})
+    except PolicyError as exc:
+        raise PolicyError(str(exc).replace("aliases[0].", "")) from exc
+    _require(bool(alias["address"]), "an alias needs at least one entry")
+    if alias["type"] in {"host", "network"}:
+        for value in alias["address"]:
+            _require(_alias_address_ok(value), f"'{value}' is not an address, range, network, host name or alias")
+    elif alias["type"] == "port":
+        for value in alias["address"]:
+            _require(bool(PORT_RE.match(value)), f"'{value}' is not a port, range (8000:8100) or port alias")
+    else:
+        _require(len(alias["address"]) == 1 and alias["address"][0].startswith(("https://", "http://")),
+                 "a URL alias takes one http:// or https:// address")
 
 
 def validate_port_forward_rule(rule: dict[str, Any]) -> None:

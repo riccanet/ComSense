@@ -517,6 +517,58 @@ def test_full_lifecycle(env):
     (linked,) = [f for f in fw_config(env)["filter"]["rule"] if f.get("associated-rule-id") == "nat_abc123"]
     assert linked["destination"] == {"address": "192.168.1.61", "port": "2200"} and linked["descr"] == "NAT SSH jump"
 
+    # Aliases one at a time from the Configuration page.
+    from app.services.configview import aliases_from_xml
+
+    def alias(name):
+        return next((a for a in aliases_from_xml(pfsense_xml()) if a["name"] == name), None)
+
+    tid = queue(TaskType.alias_add, {"alias": {"name": "Cameras", "type": "host", "address": ["192.168.1.40"],
+                                               "descr": "CCTV", "detail": ["Door"]}})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.success, task(tid).output
+    assert alias("Cameras")["entry_list"] == [{"value": "192.168.1.40", "note": "Door"}]
+    tid = queue(TaskType.alias_add, {"alias": {"name": "Cameras", "type": "host", "address": ["192.168.1.9"]}})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.failed and "already exists" in task(tid).output
+    tid = queue(TaskType.alias_edit, {"alias": {"name": "Cameras", "type": "network",
+                                                "address": ["192.168.1.40", "192.168.2.0/24"], "descr": "CCTV v2"}})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.success, task(tid).output
+    cams = alias("Cameras")
+    assert (cams["type"], cams["descr"], [e["value"] for e in cams["entry_list"]]) == \
+        ("network", "CCTV v2", ["192.168.1.40", "192.168.2.0/24"])
+    cfg = fw_config(env)
+    cfg["filter"]["rule"].append({"type": "block", "interface": "lan", "source": {"address": "Cameras"},
+                                  "destination": {"any": ""}, "descr": "No cameras out"})
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
+    tid = queue(TaskType.alias_remove, {"name": "Cameras"})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.failed and "still used" in task(tid).output
+    cfg = fw_config(env)
+    cfg["filter"]["rule"] = [r for r in cfg["filter"]["rule"] if r.get("descr") != "No cameras out"]
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
+    tid = queue(TaskType.alias_remove, {"name": "Cameras"})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.success and alias("Cameras") is None
+    with env["db"]() as db:  # an alias deployed from Configurations is refused here
+        shared = Policy(name="shared", type=PolicyType.aliases, content={"aliases": [
+            {"name": "CSFM_SHARED", "type": "host", "address": ["203.0.113.7"]}]})
+        db.add(shared)
+        db.flush()
+        db.add(PolicyAssignment(policy_id=shared.id, device_id=creds["device_id"]))
+        db.commit()
+    agent(env, "run")
+    assert alias("CSFM_SHARED") is not None
+    tid = queue(TaskType.alias_remove, {"name": "CSFM_SHARED"})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.failed and "belongs to a ComSense configuration" in task(tid).output
+    with env["db"]() as db:
+        db.query(PolicyAssignment).filter(PolicyAssignment.policy_id == shared.id).delete()
+        db.commit()
+    agent(env, "run")
+    assert alias("CSFM_SHARED") is None
+
     tid = queue(TaskType.notifications, {"smtp": False})
     agent(env, "run")
     assert task(tid).status == TaskStatus.success

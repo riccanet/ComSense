@@ -24,6 +24,7 @@ from ..config import Settings, get_settings
 from ..db import get_db
 from ..models import Device, DeviceGroup, Organization, Policy, PolicyAssignment, PolicyType, Role, User, utcnow
 from ..services.policies import (
+    ALIAS_FORM_TYPES,
     TYPE_LABELS,
     PolicyError,
     desired_policies,
@@ -50,7 +51,6 @@ SECTIONS = [
 ]
 SECTION_OF = {t: path for path, _, types in SECTIONS for t in types}
 FORM_TYPES = (PolicyType.aliases, PolicyType.firewall_rules, PolicyType.port_forward, PolicyType.notifications)
-ALIAS_FORM_TYPES = ("host", "network", "port", "url", "urltable")
 RULE_PROTOCOLS = ("any", "tcp", "udp", "tcp/udp", "icmp")
 NAT_PROTOCOLS = ("tcp", "udp", "tcp/udp")
 

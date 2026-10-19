@@ -33,6 +33,7 @@ from ..models import (
     Organization,
     Policy,
     PolicyAssignment,
+    PolicyType,
     Role,
     Task,
     TaskStatus,
@@ -54,8 +55,16 @@ from ..services.agentpkg import agent_outdated, latest_package
 from ..services.appsettings import agent_tls_names, effective_agent_url, format_dt, get_email_settings, setup_pending
 from ..services.backups import BackupError, delete_backup_file, load_backup
 from ..services.configview import config_summary, current_backup, redact
-from ..services.policies import TYPE_LABELS, PolicyError, desired_policies, policy_hash, validate_port_forward_rule
-from ..services.tasks import COMING_SOON, SAFE_TASKS, TASK_CAPABILITY, TaskError, queue_task
+from ..services.policies import (
+    ALIAS_FORM_TYPES,
+    TYPE_LABELS,
+    PolicyError,
+    desired_policies,
+    policy_hash,
+    validate_alias,
+    validate_port_forward_rule,
+)
+from ..services.tasks import COMING_SOON, OPEN_STATES, SAFE_TASKS, TASK_CAPABILITY, TaskError, queue_task
 from ..tls import ensure_agent_tls
 from .auth import csrf_token, current_user, flash, pop_flashes, require, verify_csrf
 
@@ -424,26 +433,9 @@ async def devices_assign(request: Request, user: User = Depends(operator), db: S
 
 @router.get("/devices/{device_id}", response_class=HTMLResponse)
 def device_detail(
-    device_id: str, request: Request, edit_nat: str = "", user: User = Depends(viewer),
-    db: Session = Depends(get_db),
+    device_id: str, request: Request, user: User = Depends(viewer), db: Session = Depends(get_db),
 ):
     device = _get_device(db, device_id)
-    nat_backup = current_backup(db, device)
-    nat_rules, nat_error, smtp = [], "", None
-    if nat_backup is not None:
-        try:
-            summary = config_summary(request.app.state.settings, nat_backup)
-            nat_rules, smtp = summary["nat"], summary["smtp"]
-        except (BackupError, OSError) as exc:
-            nat_error = str(exc)
-    open_states = (TaskStatus.pending, TaskStatus.sent, TaskStatus.running)
-    queued = db.scalars(select(Task).where(
-        Task.device_id == device.id, Task.status.in_(open_states),
-        Task.type.in_((TaskType.nat_add, TaskType.nat_remove, TaskType.nat_edit, TaskType.notifications)))).all()
-    nat_removing = {t.payload.get("fingerprint") for t in queued if t.type == TaskType.nat_remove}
-    nat_adding = [t.payload.get("rule", {}) for t in queued if t.type == TaskType.nat_add]
-    nat_editing = {t.payload.get("fingerprint") for t in queued if t.type == TaskType.nat_edit}
-    smtp_pending = next((t.payload.get("smtp") for t in queued if t.type == TaskType.notifications), None)
     since = utcnow() - timedelta(hours=24)
     metrics = db.scalars(
         select(Metric).where(Metric.device_id == device.id, Metric.ts >= since).order_by(Metric.ts)
@@ -487,15 +479,6 @@ def device_detail(
         policy_names={str(p.id): p.name for p in db.scalars(select(Policy))} if device.rolled_back_policies else {},
         latest_agent=_latest_agent_version(request),
         page_token=_device_page_token(db, device),
-        nat_backup=nat_backup,
-        nat_rules=nat_rules,
-        nat_error=nat_error,
-        nat_removing=nat_removing,
-        nat_adding=nat_adding,
-        nat_editing=nat_editing,
-        edit_nat=edit_nat,
-        smtp=smtp,
-        smtp_pending=smtp_pending,
         device_groups=db.scalars(
             select(DeviceGroup).where(DeviceGroup.devices.any(Device.id == device.id)).order_by(DeviceGroup.name)
         ).all(),
@@ -507,9 +490,58 @@ def device_detail(
         assignable=[
             p for p in db.scalars(select(Policy).order_by(Policy.name)) if p.id not in assigned_ids
         ],
-        orgs=db.scalars(select(Organization).order_by(Organization.name)).all(),
         manual_tasks=MANUAL_TASKS,
         task_capability=TASK_CAPABILITY,
+    )
+
+
+CONFIG_PAGE_TASKS = (TaskType.nat_add, TaskType.nat_remove, TaskType.nat_edit, TaskType.alias_add,
+                     TaskType.alias_edit, TaskType.alias_remove, TaskType.notifications)
+
+
+@router.get("/devices/{device_id}/configuration", response_class=HTMLResponse)
+def device_configuration(
+    device_id: str, request: Request, edit_nat: str = "", edit_alias: str = "", user: User = Depends(viewer),
+    db: Session = Depends(get_db),
+):
+    """The firewall's port forwards, aliases, services, email notifications and notes, changed one at a time
+    (Configurations deploys them to many firewalls)."""
+    device = _get_device(db, device_id)
+    backup = current_backup(db, device)
+    summary: dict[str, Any] = {"nat": [], "aliases": [], "smtp": None}
+    error = ""
+    if backup is not None:
+        try:
+            summary = config_summary(request.app.state.settings, backup)
+        except (BackupError, OSError) as exc:
+            error = str(exc)
+    queued = db.scalars(select(Task).where(
+        Task.device_id == device.id, Task.status.in_(OPEN_STATES), Task.type.in_(CONFIG_PAGE_TASKS))).all()
+    managed_aliases = {a.get("name") for p in desired_policies(db, device) if p.type == PolicyType.aliases
+                       for a in (p.content or {}).get("aliases", [])}
+    aliases = [a | {"managed": a["name"] in managed_aliases} for a in summary["aliases"]]
+    return render(
+        request,
+        "device_configuration.html",
+        device=device,
+        page_token=_device_page_token(db, device),
+        config_backup=backup,
+        config_error=error,
+        nat_rules=summary["nat"],
+        nat_removing={t.payload.get("fingerprint") for t in queued if t.type == TaskType.nat_remove},
+        nat_adding=[t.payload.get("rule", {}) for t in queued if t.type == TaskType.nat_add],
+        nat_editing={t.payload.get("fingerprint") for t in queued if t.type == TaskType.nat_edit},
+        edit_nat=edit_nat,
+        aliases=aliases,
+        alias_adding=[t.payload.get("alias", {}) for t in queued if t.type == TaskType.alias_add],
+        alias_queued={t.payload.get("alias", {}).get("name") if t.type == TaskType.alias_edit else t.payload.get("name"):
+                      "change" if t.type == TaskType.alias_edit else "removal"
+                      for t in queued if t.type in (TaskType.alias_edit, TaskType.alias_remove)},
+        edit_alias=edit_alias,
+        alias_types=ALIAS_FORM_TYPES,
+        smtp=summary["smtp"],
+        smtp_pending=next((t.payload.get("smtp") for t in queued if t.type == TaskType.notifications), None),
+        orgs=db.scalars(select(Organization).order_by(Organization.name)).all(),
     )
 
 
@@ -525,6 +557,8 @@ def device_queue_task(
     db: Session = Depends(get_db),
 ):
     device = _get_device(db, device_id)
+    back = f"/devices/{device_id}/configuration#services" if task_type == TaskType.restart_service.value \
+        else f"/devices/{device_id}"
     try:
         ttype = TaskType(task_type)
     except ValueError as exc:
@@ -533,12 +567,12 @@ def device_queue_task(
     if ttype in (TaskType.install_package, TaskType.remove_package):
         if not package.startswith("pfSense-pkg-"):
             flash(request, "Package names start with pfSense-pkg-.", "error")
-            return redirect(f"/devices/{device_id}")
+            return redirect(back)
         payload["package"] = package.strip()
     elif ttype == TaskType.restart_service:
         if not service.strip():
             flash(request, "Choose a service.", "error")
-            return redirect(f"/devices/{device_id}")
+            return redirect(back)
         payload["service"] = service.strip()
     elif ttype not in MANUAL_TASKS:
         raise HTTPException(400, "This task cannot be started manually")
@@ -548,12 +582,12 @@ def device_queue_task(
         )
     except TaskError as exc:
         flash(request, str(exc), "error")
-        return redirect(f"/devices/{device_id}")
+        return redirect(back)
     db.flush()
     audit(db, user.username, f"task.{ttype.value}", target=device.id, detail=json.dumps(payload), ip=_ip(request))
     db.commit()
     flash(request, f"Queued task #{task.id} ({ttype.value}). It runs at the next check-in.", "success")
-    return redirect(f"/devices/{device_id}")
+    return redirect(back)
 
 
 def _latest_agent_version(request: Request) -> str:
@@ -597,17 +631,19 @@ def device_poll(device_id: str, user: User = Depends(viewer), db: Session = Depe
 
 
 def _queue_change(request: Request, db: Session, settings: Settings, device: Device, user: User, ttype: TaskType,
-                  payload: dict[str, Any], what: str):
+                  payload: dict[str, Any], what: str, anchor: str = ""):
+    """Queue one change made on the firewall's Configuration page and go back there."""
+    back = f"/devices/{device.id}/configuration{anchor}"
     try:
         queue_task(db, device, ttype, payload, actor=user.username, changes_enabled=settings.enable_firewall_changes)
     except TaskError as exc:
         flash(request, str(exc), "error")
-        return redirect(f"/devices/{device.id}")
+        return redirect(back)
     audit(db, user.username, f"task.{ttype.value}", target=device.id, detail=what, ip=_ip(request))
     db.commit()
     flash(request, f"Queued: {what}. The firewall applies it within seconds and keeps the change only if it can "
           "still reach ComSense afterwards.", "success")
-    return redirect(f"/devices/{device.id}")
+    return redirect(back)
 
 
 def _port_forward_from_form(form) -> dict[str, Any]:
@@ -642,9 +678,9 @@ async def device_nat_add(device_id: str, request: Request, settings: Settings = 
         rule = _port_forward_from_form(await request.form())
     except PolicyError as exc:
         flash(request, str(exc), "error")
-        return redirect(f"/devices/{device_id}#nat")
+        return redirect(f"/devices/{device_id}/configuration#nat")
     return _queue_change(request, db, settings, device, user, TaskType.nat_add, {"rule": rule},
-                         f"add port forward {rule['destination']['port']} -> {rule['target']}:{rule['local_port']}")
+                         f"add port forward {rule['destination']['port']} -> {rule['target']}:{rule['local_port']}", "#nat")
 
 
 @router.post("/devices/{device_id}/nat/edit")
@@ -660,11 +696,11 @@ async def device_nat_edit(device_id: str, request: Request, settings: Settings =
         rule = _port_forward_from_form(form)
     except PolicyError as exc:
         flash(request, str(exc), "error")
-        return redirect(f"/devices/{device_id}?edit_nat={fingerprint}#nat")
+        return redirect(f"/devices/{device_id}/configuration?edit_nat={fingerprint}#nat-edit")
     return _queue_change(request, db, settings, device, user, TaskType.nat_edit,
                          {"fingerprint": fingerprint, "rule": rule},
                          f"change port forward {rule['descr'] or fingerprint} to "
-                         f"{rule['destination']['port']} -> {rule['target']}:{rule['local_port']}")
+                         f"{rule['destination']['port']} -> {rule['target']}:{rule['local_port']}", "#nat")
 
 
 @router.post("/devices/{device_id}/nat/remove")
@@ -676,7 +712,7 @@ def device_nat_remove(device_id: str, request: Request, fingerprint: str = Form(
         raise HTTPException(400, "Invalid port forward reference")
     return _queue_change(request, db, settings, device, user, TaskType.nat_remove,
                          {"fingerprint": fingerprint, "descr": descr[:200]},
-                         f"remove port forward {descr or fingerprint}")
+                         f"remove port forward {descr or fingerprint}", "#nat")
 
 
 @router.post("/devices/{device_id}/notifications")
@@ -686,7 +722,64 @@ def device_notifications(device_id: str, request: Request, smtp: str = Form(...)
     device = _get_device(db, device_id)
     enabled = smtp == "on"
     return _queue_change(request, db, settings, device, user, TaskType.notifications, {"smtp": enabled},
-                         f"turn {'on' if enabled else 'off'} pfSense email notifications")
+                         f"turn {'on' if enabled else 'off'} pfSense email notifications", "#notifications")
+
+
+def _alias_from_form(form) -> dict[str, Any]:
+    """One alias from the add or edit form on the Configuration page (raises PolicyError)."""
+    addresses, notes = [], []
+    for line in str(form.get("entries", "")).replace(",", "\n").splitlines():
+        value, _, note = line.strip().partition(" ")
+        if value:
+            addresses.append(value)
+            notes.append(note.strip()[:200])
+    alias: dict[str, Any] = {"name": str(form.get("name", "")).strip(), "type": str(form.get("type", "host")),
+                             "address": addresses, "descr": str(form.get("descr", "")).strip()[:200]}
+    if any(notes):
+        alias["detail"] = notes
+    validate_alias(alias)
+    return alias
+
+
+@router.post("/devices/{device_id}/aliases")
+async def device_alias_add(device_id: str, request: Request, settings: Settings = Depends(get_settings),
+                           user: User = Depends(operator), db: Session = Depends(get_db)):
+    device = _get_device(db, device_id)
+    try:
+        alias = _alias_from_form(await request.form())
+    except PolicyError as exc:
+        flash(request, str(exc), "error")
+        return redirect(f"/devices/{device_id}/configuration#aliases")
+    return _queue_change(request, db, settings, device, user, TaskType.alias_add, {"alias": alias},
+                         f"add alias {alias['name']}", "#aliases")
+
+
+@router.post("/devices/{device_id}/aliases/edit")
+async def device_alias_edit(device_id: str, request: Request, settings: Settings = Depends(get_settings),
+                            user: User = Depends(operator), db: Session = Depends(get_db)):
+    """Change an alias's type, entries and description; it keeps its name, which rules refer to."""
+    device = _get_device(db, device_id)
+    form = await request.form()
+    try:
+        alias = _alias_from_form(form)
+    except PolicyError as exc:
+        flash(request, str(exc), "error")
+        name = str(form.get("name", ""))
+        return redirect(f"/devices/{device_id}/configuration?edit_alias={name}#alias-edit"
+                        if re.fullmatch(r"[A-Za-z0-9_]{1,31}", name) else f"/devices/{device_id}/configuration")
+    return _queue_change(request, db, settings, device, user, TaskType.alias_edit, {"alias": alias},
+                         f"change alias {alias['name']}", "#aliases")
+
+
+@router.post("/devices/{device_id}/aliases/remove")
+def device_alias_remove(device_id: str, request: Request, name: str = Form(...),
+                        settings: Settings = Depends(get_settings), user: User = Depends(operator),
+                        db: Session = Depends(get_db)):
+    device = _get_device(db, device_id)
+    if not re.fullmatch(r"[A-Za-z0-9_]{1,31}", name):
+        raise HTTPException(400, "Invalid alias name")
+    return _queue_change(request, db, settings, device, user, TaskType.alias_remove, {"name": name},
+                         f"remove alias {name}", "#aliases")
 
 
 @router.post("/devices/{device_id}/check-now")
@@ -791,8 +884,8 @@ def device_edit(
     device.notes = notes
     audit(db, user.username, "device.edited", target=device.id, ip=_ip(request))
     db.commit()
-    flash(request, "Device updated.", "success")
-    return redirect(f"/devices/{device_id}")
+    flash(request, "Saved.", "success")
+    return redirect(f"/devices/{device_id}/configuration#notes")
 
 
 @router.post("/devices/{device_id}/status")

@@ -13,6 +13,11 @@ CONFIG = b"""<?xml version="1.0"?>
 <pfsense>
 <version>23.3</version>
 <system><user><name>admin</name><bcrypt-hash>$2y$10$secrethash</bcrypt-hash></user></system>
+<aliases>
+  <alias><name>Web_Servers</name><type>host</type><address>192.168.1.10 192.168.1.11</address>
+    <descr>Front end</descr><detail>Primary||Standby</detail></alias>
+  <alias><name>Office</name><type>network</type><address>10.0.0.0/24</address><descr></descr><detail></detail></alias>
+</aliases>
 <nat>
   <rule>
     <source><any></any></source>
@@ -51,7 +56,7 @@ def test_port_forwards_are_read_from_config_xml():
 def test_device_page_lists_inbound_nat(client, db, agent):
     login(client)
     did = _device_with_backup(agent, db)
-    page = client.get(f"/devices/{did}").text
+    page = client.get(f"/devices/{did}/configuration").text
     assert "Inbound NAT policies" in page
     assert "192.168.1.10:8443" in page and "[CSFM] RDP" in page
     assert f'href="/devices/{did}/config"' in page
@@ -77,7 +82,7 @@ def test_view_config_permissions(client, db, agent):
     db.commit()
     login(client, "v", "viewer-password-1")
     assert client.get(f"/devices/{did}/config").status_code == 403
-    assert f'/devices/{did}/config"' not in client.get(f"/devices/{did}").text
+    assert f'/devices/{did}/config"' not in client.get(f"/devices/{did}/configuration").text
     client.cookies.clear()
     login(client, "op", "operator-password-1")
     page = client.get(f"/devices/{did}/config?secrets=1").text

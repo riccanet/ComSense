@@ -169,6 +169,92 @@ function csfm_alias_in_use($name) {
 	return false;
 }
 
+/* An alias as pfSense stores it in config.xml. */
+function csfm_alias_entry($a) {
+	$entry = array(
+		'name' => $a['name'],
+		'type' => $a['type'],
+		'address' => implode(' ', $a['address'] ?? array()),
+		'descr' => $a['descr'] ?? 'Managed by ComSense',
+		'detail' => implode('||', $a['detail'] ?? array()),
+	);
+	if (in_array($a['type'], array('url', 'urltable', 'url_ports', 'urltable_ports'), true)) {
+		$entry['url'] = $a['address'][0] ?? '';
+		$entry['updatefreq'] = (string)($a['updatefreq'] ?? '1');
+	}
+	return $entry;
+}
+
+/* ---------------------------------- single aliases from the firewall's page */
+
+function csfm_single_alias_check($name) {
+	if (!preg_match('/^[A-Za-z0-9_]{1,31}$/', (string)$name)) {
+		throw new CsfmPolicyError("Invalid alias name '{$name}'");
+	}
+	$owner = csfm_alias_owner($name, csfm_state(), null);
+	if ($owner !== null) {
+		throw new CsfmPolicyError("Alias {$name} belongs to a ComSense configuration (policy {$owner}); change it there");
+	}
+}
+
+function csfm_alias_index($aliases, $name) {
+	foreach ($aliases as $i => $a) {
+		if (($a['name'] ?? '') === $name) {
+			return $i;
+		}
+	}
+	return null;
+}
+
+function csfm_save_aliases($aliases, $message) {
+	usort($aliases, function ($a, $b) { return strnatcasecmp($a['name'], $b['name']); });
+	csfm_cfg_set('aliases/alias', array_values($aliases));
+	write_config($message);
+	csfm_reload(array('filter'));
+}
+
+function csfm_add_alias($a) {
+	csfm_single_alias_check($a['name']);
+	$aliases = array_values((array)csfm_cfg_get('aliases/alias', array()));
+	if (csfm_alias_index($aliases, $a['name']) !== null) {
+		throw new CsfmPolicyError("An alias named {$a['name']} already exists on this firewall");
+	}
+	$aliases[] = csfm_alias_entry($a + array('descr' => ''));
+	csfm_save_aliases($aliases, "ComSense: added alias {$a['name']}");
+	return sprintf('Added alias %s (%d entr%s)', $a['name'], count($a['address']), count($a['address']) === 1 ? 'y' : 'ies');
+}
+
+/* Change an alias's type, entries and description. Its name stays: rules refer to it by name. */
+function csfm_edit_alias($a) {
+	csfm_single_alias_check($a['name']);
+	$aliases = array_values((array)csfm_cfg_get('aliases/alias', array()));
+	$i = csfm_alias_index($aliases, $a['name']);
+	if ($i === null) {
+		throw new CsfmPolicyError("Alias {$a['name']} is no longer on the firewall");
+	}
+	$entry = csfm_alias_entry($a + array('descr' => ''));
+	$kept = $aliases[$i];
+	unset($kept['url'], $kept['updatefreq']);
+	$aliases[$i] = array_merge($kept, $entry);
+	csfm_save_aliases($aliases, "ComSense: changed alias {$a['name']}");
+	return sprintf('Changed alias %s (%d entr%s)', $a['name'], count($a['address']), count($a['address']) === 1 ? 'y' : 'ies');
+}
+
+function csfm_remove_alias($name) {
+	csfm_single_alias_check($name);
+	$aliases = array_values((array)csfm_cfg_get('aliases/alias', array()));
+	$i = csfm_alias_index($aliases, $name);
+	if ($i === null) {
+		throw new CsfmPolicyError("Alias {$name} is no longer on the firewall");
+	}
+	if (csfm_alias_in_use($name)) {
+		throw new CsfmPolicyError("Alias {$name} is still used by a rule, port forward or another alias; change those first");
+	}
+	array_splice($aliases, $i, 1);
+	csfm_save_aliases($aliases, "ComSense: removed alias {$name}");
+	return "Removed alias {$name}";
+}
+
 function csfm_apply_aliases($pid, $content, $prev, $state) {
 	$aliases = array_values((array)csfm_cfg_get('aliases/alias', array()));
 	$index = array();
@@ -189,17 +275,7 @@ function csfm_apply_aliases($pid, $content, $prev, $state) {
 		if (isset($index[$name]) && !$adopt && !in_array($name, $prev['items'] ?? array(), true)) {
 			throw new CsfmPolicyError("Alias {$name} already exists on this firewall. Rename it or set adopt_existing.");
 		}
-		$entry = array(
-			'name' => $name,
-			'type' => $a['type'],
-			'address' => implode(' ', $a['address'] ?? array()),
-			'descr' => $a['descr'] ?? 'Managed by ComSense',
-			'detail' => implode('||', $a['detail'] ?? array()),
-		);
-		if (in_array($a['type'], array('url', 'urltable', 'url_ports', 'urltable_ports'), true)) {
-			$entry['url'] = $a['address'][0] ?? '';
-			$entry['updatefreq'] = (string)($a['updatefreq'] ?? '1');
-		}
+		$entry = csfm_alias_entry($a);
 		if (isset($index[$name])) {
 			$aliases[$index[$name]] = $entry;
 		} else {

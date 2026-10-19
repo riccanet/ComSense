@@ -88,6 +88,8 @@ no tasks.
 | `nat_add` | `{"rule"}` (one port forward, as in a `port_forward` policy) | policy |
 | `nat_remove` | `{"fingerprint","descr"}` | policy |
 | `nat_edit` | `{"fingerprint","rule"}` | policy |
+| `alias_add`, `alias_edit` | `{"alias"}` (one alias, as in an `aliases` policy) | policy |
+| `alias_remove` | `{"name"}` | policy |
 | `notifications` | `{"smtp": true\|false}` | policy |
 
 Tasks not picked up within 24 h (1 h for restores) expire. Tasks with no final result after their
@@ -98,7 +100,10 @@ guard like policies. `nat_edit` and `nat_remove` name the port forward by a fing
 of its interface, protocol, target, local-port, destination port and description joined with `\x1f`
 (the server computes it from config.xml, the agent from its config). Port forwards owned by a
 configuration are refused. A linked filter rule is removed with its port forward, and an edit updates it
-to match (settings the console does not show, such as NAT reflection, are kept). `notifications`
+to match (settings the console does not show, such as NAT reflection, are kept). `alias_add`,
+`alias_edit` and `alias_remove` change one alias by name: an edit keeps the name (rules refer to it),
+removal is refused while a rule, port forward or other alias uses it, and aliases owned by a
+configuration are refused. `notifications`
 turns pfSense's own email notifications on or off (`notifications/smtp/disable`).
 
 `update_agent` is the console's *Update agent* button. The agent downloads `file` from

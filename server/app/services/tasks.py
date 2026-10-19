@@ -28,6 +28,9 @@ TASK_CAPABILITY: dict[TaskType, str | None] = {
     TaskType.nat_add: "policy",
     TaskType.nat_remove: "policy",
     TaskType.nat_edit: "policy",
+    TaskType.alias_add: "policy",
+    TaskType.alias_edit: "policy",
+    TaskType.alias_remove: "policy",
     TaskType.notifications: "policy",
 }
 

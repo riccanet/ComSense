@@ -35,11 +35,15 @@ $csfm_task_capability = array(
 	'nat_add' => 'policy',
 	'nat_remove' => 'policy',
 	'nat_edit' => 'policy',
+	'alias_add' => 'policy',
+	'alias_edit' => 'policy',
+	'alias_remove' => 'policy',
 	'notifications' => 'policy',
 );
 
 /* Tasks that change the configuration and run under the change guard (guard.inc). */
-$csfm_guarded_tasks = array('apply_policy', 'remove_policy', 'nat_add', 'nat_remove', 'nat_edit');
+$csfm_guarded_tasks = array('apply_policy', 'remove_policy', 'nat_add', 'nat_remove', 'nat_edit',
+	'alias_add', 'alias_edit', 'alias_remove');
 
 class CsfmTaskDeferred extends Exception {
 	/* Thrown by tasks that already reported their own result. */
@@ -146,6 +150,12 @@ function csfm_task_label($type, $payload) {
 	}
 	if ($type === 'nat_remove') {
 		return 'remove port forward ' . ($payload['descr'] ?? '');
+	}
+	if ($type === 'alias_add' || $type === 'alias_edit') {
+		return ($type === 'alias_add' ? 'add' : 'change') . ' alias ' . ($payload['alias']['name'] ?? '');
+	}
+	if ($type === 'alias_remove') {
+		return 'remove alias ' . ($payload['name'] ?? '');
 	}
 	if ($type === 'nat_edit') {
 		return 'change port forward ' . ($payload['rule']['descr'] ?? '');
@@ -430,6 +440,27 @@ function csfm_task_nat_edit($client, $id, $payload) {
 		throw new Exception('Malformed port forward change');
 	}
 	return array('output' => csfm_edit_port_forward($fp, $r));
+}
+
+function csfm_alias_payload($payload) {
+	$a = $payload['alias'] ?? null;
+	if (!is_array($a) || !is_string($a['name'] ?? null) || !is_string($a['type'] ?? null)
+	    || !is_array($a['address'] ?? null) || !$a['address']) {
+		throw new Exception('Malformed alias');
+	}
+	return $a;
+}
+
+function csfm_task_alias_add($client, $id, $payload) {
+	return array('output' => csfm_add_alias(csfm_alias_payload($payload)));
+}
+
+function csfm_task_alias_edit($client, $id, $payload) {
+	return array('output' => csfm_edit_alias(csfm_alias_payload($payload)));
+}
+
+function csfm_task_alias_remove($client, $id, $payload) {
+	return array('output' => csfm_remove_alias((string)($payload['name'] ?? '')));
 }
 
 function csfm_task_notifications($client, $id, $payload) {

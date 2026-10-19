@@ -74,6 +74,9 @@ class TaskType(str, enum.Enum):
     nat_add = "nat_add"
     nat_remove = "nat_remove"
     nat_edit = "nat_edit"
+    alias_add = "alias_add"
+    alias_edit = "alias_edit"
+    alias_remove = "alias_remove"
     notifications = "notifications"
 
 

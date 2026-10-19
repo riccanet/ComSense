@@ -1,5 +1,6 @@
 """Reading a firewall's current config.xml from its stored backups: the raw file for the
-"View config" page (secrets hidden) and the port forwards shown on the firewall's page.
+"View config" page (secrets hidden) and the port forwards, aliases and notification setting shown on
+the firewall's Configuration page.
 
 The agent uploads config.xml whenever it changes, so the backup whose SHA-256 matches the hash the
 firewall last reported is its current configuration.
@@ -115,6 +116,26 @@ def port_forwards_from_xml(xml: bytes) -> list[dict[str, Any]]:
     return out
 
 
+def aliases_from_xml(xml: bytes) -> list[dict[str, Any]]:
+    """Aliases (Firewall > Aliases), with each entry's own description."""
+    out = []
+    for alias in _parse(xml).findall("./aliases/alias"):
+        def text(tag: str) -> str:
+            return (alias.findtext(tag) or "").strip()
+
+        values = text("address").split()
+        notes = text("detail").split("||") if text("detail") else []
+        items = [{"value": v, "note": notes[i].strip() if i < len(notes) else ""} for i, v in enumerate(values)]
+        out.append({
+            "name": text("name"),
+            "type": text("type") or "host",
+            "entry_list": items,
+            "entries": "\n".join(f"{e['value']} {e['note']}".strip() for e in items),
+            "descr": text("descr"),
+        })
+    return sorted(out, key=lambda a: a["name"].lower())
+
+
 def config_summary(settings: Settings, backup: Backup) -> dict[str, Any]:
     """Port forwards and email notification state in a backup (cached; backups never change)."""
     key = (backup.id, backup.sha256)
@@ -122,7 +143,8 @@ def config_summary(settings: Settings, backup: Backup) -> dict[str, Any]:
         _nat_cache.move_to_end(key)
         return _nat_cache[key]
     xml = load_backup(settings, backup)
-    rules = {"nat": port_forwards_from_xml(xml), "smtp": smtp_notifications_from_xml(xml)}
+    rules = {"nat": port_forwards_from_xml(xml), "aliases": aliases_from_xml(xml),
+             "smtp": smtp_notifications_from_xml(xml)}
     _nat_cache[key] = rules
     while len(_nat_cache) > _NAT_CACHE_SIZE:
         _nat_cache.popitem(last=False)

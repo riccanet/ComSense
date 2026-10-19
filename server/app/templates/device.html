@@ -12,7 +12,7 @@
   <h1>{{ device.name }} {{ status_badge(device.status.value) }}</h1>
   <div class="actions">
     {% set agent_old = latest_agent and device.agent_version and device.agent_version|agent_outdated(latest_agent) %}
-    {% if can_operate %}<a class="button" href="/devices/{{ device.id }}/config">View config</a>{% endif %}
+    <a class="button" href="/devices/{{ device.id }}/configuration" title="Port forwards, aliases, services, email notifications and notes">Configuration</a>
     {% if can_operate and device.status.value not in ("pending", "disabled") %}
     {{ post_button("/devices/" ~ device.id ~ "/check-now", "Check now", "", "") }}
     {% if agent_old %}{{ post_button("/devices/" ~ device.id ~ "/update-agent", "Update agent to " ~ latest_agent, "primary", "Install agent " ~ latest_agent ~ " on this firewall? It updates itself in the background and checks in again.") }}{% endif %}
@@ -57,7 +57,7 @@ reach ComSense by then, it restores its previous configuration automatically.</d
   <section class="card">
     <h2>System</h2>
     <dl>
-      <dt>Customer</dt><dd>{% if device.organization %}<a href="/customers/{{ device.organization.id }}">{{ device.organization.name }}</a>{% else %}<span class="muted">not assigned</span>{% if can_operate %} <a class="small" href="#settings">Assign</a>{% endif %}{% endif %}</dd>
+      <dt>Customer</dt><dd>{% if device.organization %}<a href="/customers/{{ device.organization.id }}">{{ device.organization.name }}</a>{% else %}<span class="muted">not assigned</span>{% if can_operate %} <a class="small" href="/devices/{{ device.id }}/configuration#notes">Assign</a>{% endif %}{% endif %}</dd>
       <dt>Hostname</dt><dd>{{ device.hostname }}</dd>
       <dt>Edition</dt><dd>{{ "pfSense Plus" if device.edition == "plus" else "pfSense CE" if device.edition == "ce" else device.edition }}</dd>
       <dt>Version</dt><dd>{{ device.product_version }}</dd>
@@ -151,98 +151,6 @@ reach ComSense by then, it restores its previous configuration automatically.</d
   </table>
 </section>
 
-{% macro nat_fields(r) %}
-      <label>Interface <input name="interface" value="{{ r.interface or "wan" }}" list="nat-ifaces"></label>
-      <label>Protocol <select name="protocol">{% for p in ["tcp", "udp", "tcp/udp"] %}<option{% if r.protocol == p %} selected{% endif %}>{{ p }}</option>{% endfor %}</select></label>
-      <label>Source <input name="src" placeholder="any" value="{{ r.src if r.src and r.src != "any" else "" }}"></label>
-      <label>Source port <input name="srcport" placeholder="any" value="{{ r.src_port or "" }}"></label>
-      <label>Destination <input name="dst" value="{{ r.destination or "wan address" }}"></label>
-      <label>External port <input name="dstport" required placeholder="443 or 8000:8100" value="{{ r.port or "" }}"></label>
-      <label>Internal IP <input name="target" required placeholder="192.168.1.10" value="{{ r.target or "" }}"></label>
-      <label>Internal port <input name="localport" placeholder="same as external" value="{{ r.local_port or "" }}"></label>
-      <label>Description <input name="descr" maxlength="200" value="{{ r.descr or "" }}"></label>
-{% endmacro %}
-
-<section class="card" id="nat">
-  <datalist id="nat-ifaces">{% for i in inv.get("interfaces", []) %}<option value="{{ i.name }}">{% endfor %}</datalist>
-  <h2>Inbound NAT policies</h2>
-  {% if nat_backup %}
-  <p class="small muted">Port forwards in the firewall's configuration as of {{ nat_backup.created_at|dt }}.
-  [CSFM] marks the ones deployed from Configurations; change those there.</p>
-  {% endif %}
-  {% if nat_error %}<p class="small">Could not read the configuration: {{ nat_error }}</p>{% endif %}
-  {% set can_change = can_operate and changes_enabled and "policy" in (device.capabilities or []) %}
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>Interface</th><th>Protocol</th><th>Source</th><th>Destination</th><th>Port</th><th>Redirect to</th><th>Filter rule</th><th>Description</th><th></th></tr></thead>
-    <tbody>
-    {% for r in nat_rules %}
-      <tr{% if r.disabled or r.fingerprint in nat_removing or r.fingerprint in nat_editing %} class="muted"{% endif %}>
-        <td>{{ r.interface }}</td>
-        <td>{{ r.protocol }}</td>
-        <td>{{ r.source }}</td>
-        <td>{{ r.destination }}</td>
-        <td class="mono">{{ r.port }}</td>
-        <td class="mono">{% if r.nordr %}<span class="muted">no redirect</span>{% else %}{{ r.target }}{% if r.local_port %}:{{ r.local_port }}{% endif %}{% endif %}</td>
-        <td class="small">{{ {"pass": "pass", "linked": "linked rule", "none": "none"}[r.filter_rule] }}</td>
-        <td>{{ r.descr }}{% if r.disabled %} <span class="badge s-disabled">disabled</span>{% endif %}</td>
-        <td class="nowrap">{% if r.fingerprint in nat_removing %}<span class="small muted">removal queued</span>
-          {% elif r.fingerprint in nat_editing %}<span class="small muted">change queued</span>
-          {% elif r.managed %}<span class="small muted">Configurations</span>
-          {% elif can_change %}<a class="button small" href="/devices/{{ device.id }}?edit_nat={{ r.fingerprint }}#nat-edit">Edit</a>
-            {{ post_button_fields("/devices/" ~ device.id ~ "/nat/remove", "Remove", "small danger",
-              "Remove the port forward " ~ (r.descr or r.port) ~ " from " ~ device.name ~ "?" ~ (" Its linked firewall rule is removed too." if r.filter_rule == "linked" else ""),
-              {"fingerprint": r.fingerprint, "descr": r.descr}) }}{% endif %}</td>
-      </tr>
-      {% if can_change and edit_nat == r.fingerprint and not r.managed and r.fingerprint not in nat_removing and r.fingerprint not in nat_editing %}
-      <tr id="nat-edit" class="nat-edit"><td colspan="9">
-        <form method="post" action="/devices/{{ device.id }}/nat/edit" class="grid-form">
-          {{ csrf() }}
-          <input type="hidden" name="fingerprint" value="{{ r.fingerprint }}">
-          {{ nat_fields(r) }}
-          <label class="check"><input type="checkbox" name="disabled" value="true"{% if r.disabled %} checked{% endif %}> Disabled</label>
-          <div class="wide"><button class="primary">Save changes</button>
-            <a class="button" href="/devices/{{ device.id }}#nat">Cancel</a>
-            <span class="small muted">{% if r.filter_rule == "linked" %}Its linked firewall rule is updated to match. {% endif %}Undone automatically if the firewall loses contact with ComSense.</span></div>
-        </form>
-      </td></tr>
-      {% endif %}
-    {% else %}<tr><td colspan="9" class="muted">{% if nat_backup %}No port forwards.{% else %}No configuration backup yet; port forwards appear after the firewall's first backup.{% endif %}</td></tr>{% endfor %}
-    {% for a in nat_adding %}
-      <tr class="muted"><td>{{ a.interface }}</td><td>{{ a.protocol }}</td><td></td><td></td><td class="mono">{{ a.destination.port }}</td>
-        <td class="mono">{{ a.target }}:{{ a.local_port }}</td><td></td><td>{{ a.descr }}</td><td class="small">being added</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
-  {% if can_change %}
-  <details class="add-nat">
-    <summary>Add a port forward to this firewall</summary>
-    <form method="post" action="/devices/{{ device.id }}/nat" class="grid-form">
-      {{ csrf() }}
-      {{ nat_fields({}) }}
-      <div class="wide"><button class="primary">Add port forward</button>
-        <span class="small muted">Lets its own traffic through ("pass"); undone automatically if the firewall loses contact with ComSense.</span></div>
-    </form>
-  </details>
-  {% elif can_operate and not changes_enabled %}<p class="small muted">Firewall changes are turned off on this server.</p>
-  {% elif can_operate %}<p class="small muted">Allow "Policies" in Services &gt; ComSense Agent on the firewall to add, change or remove port forwards from here.</p>{% endif %}
-</section>
-
-<section class="card">
-  <h2>Email notifications</h2>
-  {% if smtp %}
-  <p>pfSense's own email notifications (System &gt; Advanced &gt; Notifications) are
-  <strong>{{ "on" if smtp.enabled else "off" }}</strong>{% if smtp.server %} <span class="muted small">via {{ smtp.server }}{% if smtp.to %} to {{ smtp.to }}{% endif %}</span>{% elif smtp.enabled %} <span class="muted small">(no SMTP server set on the firewall)</span>{% endif %}.
-  {% if smtp_pending is not none %}<span class="small muted">Turning {{ "on" if smtp_pending else "off" }}&hellip;</span>{% endif %}</p>
-  {% if can_change and smtp_pending is none %}
-  {{ post_button_fields("/devices/" ~ device.id ~ "/notifications", "Turn off" if smtp.enabled else "Turn on", "", "", {"smtp": "off" if smtp.enabled else "on"}) }}
-  {% endif %}
-  <p class="small muted">To switch them for many firewalls at once, use Configurations &gt; Notifications.</p>
-  {% else %}<p class="muted">Shown after the firewall's first configuration backup.</p>{% endif %}
-</section>
-
-<div class="grid2">
 <section class="card">
   <h2>Gateways</h2>
   <table>
@@ -254,34 +162,6 @@ reach ComSense by then, it restores its previous configuration automatically.</d
     </tbody>
   </table>
 </section>
-
-<section class="card">
-  <h2>Services{% if not changes_enabled %} <span class="h-badge muted small">restart {{ coming_soon() }}</span>{% endif %}</h2>
-  <table>
-    <thead><tr><th>Service</th><th>Status</th><th></th></tr></thead>
-    <tbody>
-    {% for s in inv.get("services", []) %}
-      <tr>
-        <td>{{ s.name }} <span class="muted small">{{ s.description }}</span></td>
-        <td>{{ status_badge("unknown" if s.running is none else ("running" if s.running else "stopped")) }}</td>
-        <td>
-          {% if can_operate and not changes_enabled %}
-          <button class="small" disabled>Restart</button>
-          {% elif can_operate and "services" in device.capabilities %}
-          <form method="post" action="/devices/{{ device.id }}/tasks" class="inline">
-            {{ csrf() }}
-            <input type="hidden" name="task_type" value="restart_service">
-            <input type="hidden" name="service" value="{{ s.name }}">
-            <button class="small">Restart</button>
-          </form>
-          {% endif %}
-        </td>
-      </tr>
-    {% else %}<tr><td colspan="3" class="muted">None reported.</td></tr>{% endfor %}
-    </tbody>
-  </table>
-</section>
-</div>
 
 <div class="grid2">
 <section class="card">
@@ -433,31 +313,4 @@ reach ComSense by then, it restores its previous configuration automatically.</d
 </section>
 </div>
 
-{% if can_operate %}
-<section class="card" id="settings">
-  <h2>Settings</h2>
-  <form method="post" action="/devices/{{ device.id }}/edit" class="grid-form">
-    {{ csrf() }}
-    <label>Name <input name="name" value="{{ device.name }}" required></label>
-    <label>Customer
-      <select name="organization_id">
-        <option value="">None</option>
-        {% for o in orgs %}<option value="{{ o.id }}"{% if device.organization_id == o.id %} selected{% endif %}>{{ o.name }}</option>{% endfor %}
-      </select>
-    </label>
-    <label class="wide">Notes <textarea name="notes" rows="3">{{ device.notes }}</textarea></label>
-    <button>Save</button>
-  </form>
-  {% if is_admin %}
-  <div class="toolbar danger-zone">
-    {% if device.status.value == "disabled" %}
-      <form method="post" action="/devices/{{ device.id }}/status" class="inline">{{ csrf() }}<input type="hidden" name="action" value="enable"><button>Enable</button></form>
-    {% else %}
-      <form method="post" action="/devices/{{ device.id }}/status" class="inline" data-confirm="Disable this firewall? Its agent will be rejected until re-enabled.">{{ csrf() }}<input type="hidden" name="action" value="disable"><button class="danger">Disable</button></form>
-    {% endif %}
-    {{ post_button("/devices/" ~ device.id ~ "/delete", "Delete firewall", "danger", "Delete this firewall, its history and all of its backups? The agent will need a new enrollment key.") }}
-  </div>
-  {% endif %}
-</section>
-{% endif %}
 {% endblock %}
