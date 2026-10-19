@@ -20,6 +20,7 @@ from ..audit import audit
 from ..config import Settings, get_settings
 from ..db import get_db
 from ..models import (
+    SsoProvider,
     DeviceGroup,
     Alert,
     TerminalSession,
@@ -205,7 +206,8 @@ def _get_device(db: Session, device_id: str) -> Device:
 
 @router.get("/login", response_class=HTMLResponse)
 def login_form(request: Request, db: Session = Depends(get_db)):
-    return render(request, "login.html", email_ready=get_email_settings(db).configured)
+    providers = db.scalars(select(SsoProvider).where(SsoProvider.enabled.is_(True)).order_by(SsoProvider.name)).all()
+    return render(request, "login.html", email_ready=get_email_settings(db).configured, sso_providers=providers)
 
 
 @router.post("/login")

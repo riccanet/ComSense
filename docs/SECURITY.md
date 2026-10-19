@@ -44,6 +44,25 @@ compromised server cannot do more than the firewall owner permitted. By default 
 and service restarts are allowed; upgrades, package changes, restores, reboots and the remote terminal
 are opt-in.
 
+### Single sign-on (SAML)
+
+Settings > Single sign-on adds SAML 2.0 identity providers: Google Workspace, Microsoft Entra ID,
+Cisco Duo or any other. ComSense is the service provider:
+
+* Only sign-ins started from the ComSense sign-in page are accepted (no IdP-initiated sign-in). Each
+  request id is used once, within 10 minutes, and is tied to the browser that started it by a
+  short-lived cookie.
+* The response or assertion must be signed with the provider's certificate (checked with signxml;
+  only the signed part is used). Issuer, status, audience (the Entity ID), recipient (the ACS URL),
+  validity times (3 minutes of clock skew) and single use of each assertion are checked. Encrypted
+  assertions are not supported.
+* People are matched to ComSense users by email address. Unless the provider is set to create users
+  (with a chosen role), only existing users can sign in. Roles stay managed in ComSense.
+* The provider applies its own MFA (Entra Conditional Access, Duo, Google 2-Step Verification), so an
+  SSO sign-in counts as two-factor for "require two-factor sign-in". Remote terminal sessions still
+  need an authenticator app in ComSense.
+* Sign-ins and failures are in the audit log. Passwords keep working alongside SSO.
+
 ### Remote terminal
 
 A root shell on the firewall from the console, for troubleshooting. Because it is unrestricted, it is

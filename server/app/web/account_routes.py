@@ -54,6 +54,7 @@ SETTINGS_SECTIONS = [
     ("/settings/alerts", "Alert emails"),
     ("/settings/addresses", "Addresses"),
     ("/settings/security", "Security"),
+    ("/settings/sso", "Single sign-on"),
     ("/settings/setup", "Setup wizard"),
 ]
 TEMPLATES.env.globals["settings_sections"] = SETTINGS_SECTIONS

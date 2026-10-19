@@ -8,3 +8,4 @@ itsdangerous>=2.2
 cryptography>=43
 segno>=1.6
 tzdata>=2024.1
+signxml>=4.0

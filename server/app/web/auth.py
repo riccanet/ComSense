@@ -58,7 +58,9 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> User:
     if user.must_change_password and request.url.path not in PASSWORD_CHANGE_PATHS:
         raise PasswordChangeRequired()
     path = request.url.path
-    if path not in MFA_SETUP_PATHS and not path.startswith("/account/mfa/") and _mfa_setup_needed(db, user):
+    # A sign-in through an SSO provider used the provider's MFA.
+    if (path not in MFA_SETUP_PATHS and not path.startswith("/account/mfa/") and request.session.get("auth") != "sso"
+            and _mfa_setup_needed(db, user)):
         raise MfaSetupRequired()
     return user
 

@@ -12,5 +12,11 @@
     <button class="primary">Sign in</button>
   </form>
   {% if email_ready %}<p class="small forgot-link"><a href="/forgot">Forgot password?</a></p>{% endif %}
+  {% if sso_providers %}
+  <div class="sso-buttons">
+    <p class="small muted sso-or">or sign in with</p>
+    {% for p in sso_providers %}<a class="button sso-{{ p.kind }}" href="/sso/{{ p.id }}/login">{{ p.name }}</a>{% endfor %}
+  </div>
+  {% endif %}
 </section>
 {% endblock %}

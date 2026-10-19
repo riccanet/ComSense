@@ -1,0 +1,93 @@
+{% extends "settings_layout.html" %}
+{% from "macros.html" import csrf, post_button with context %}
+{% block title %}Single sign-on · Settings{% endblock %}
+{% block settings %}
+{% if not provider %}
+<section class="card">
+  <h2>Single sign-on (SAML)</h2>
+  <p>Let people sign in with Google Workspace, Microsoft Entra ID, Cisco Duo or another SAML 2.0 provider. The
+  provider checks the password and its own MFA, so a sign-in through it counts as two-factor in ComSense.
+  Users are matched by email address; the provider can also create users on first sign-in.</p>
+  <table class="list">
+    <thead><tr><th>Provider</th><th>Type</th><th>Status</th><th>New users</th></tr></thead>
+    <tbody>
+    {% for p in providers %}
+      <tr>
+        <td><a href="/settings/sso/{{ p.id }}"><strong>{{ p.name }}</strong></a></td>
+        <td>{{ kinds[p.kind].label }}</td>
+        <td>{% if p.enabled %}<span class="badge s-online">on</span>{% else %}<span class="badge s-disabled">off</span>{% endif %}</td>
+        <td>{{ ("created as " ~ p.default_role.value) if p.auto_create else "existing users only" }}</td>
+      </tr>
+    {% else %}<tr><td colspan="4" class="muted">No providers yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <form method="post" action="/settings/sso" class="toolbar">
+    {{ csrf() }}
+    <select name="kind" aria-label="Provider type">{% for k, v in kinds.items() %}<option value="{{ k }}">{{ v.label }}</option>{% endfor %}</select>
+    <button class="primary">Add provider</button>
+  </form>
+  <p class="small muted">Sign-in pages and links use the console address from Settings &gt; Addresses
+  (<span class="mono">{{ console }}</span>); set it before registering ComSense with a provider.</p>
+</section>
+{% else %}
+<p class="small"><a href="/settings/sso">&larr; Single sign-on</a></p>
+<h2>{{ provider.name }} <span class="muted small">{{ kinds[provider.kind].label }}</span></h2>
+
+<section class="card">
+  <h2>1. Register ComSense at the provider</h2>
+  <p class="small">{{ kinds[provider.kind].help }}</p>
+  <dl class="inline-dl">
+    <dt>Entity ID / Identifier</dt><dd><input class="mono" id="sp-entity" value="{{ entity_id(provider) }}" readonly size="60"> <button type="button" class="small" data-copy="sp-entity">Copy</button></dd>
+    <dt>ACS / Reply URL</dt><dd><input class="mono" id="sp-acs" value="{{ acs(provider) }}" readonly size="60"> <button type="button" class="small" data-copy="sp-acs">Copy</button></dd>
+    <dt>Metadata</dt><dd><a href="/sso/{{ provider.id }}/metadata">{{ console }}/sso/{{ provider.id }}/metadata</a></dd>
+    <dt>Binding</dt><dd>HTTP-POST, signed response or assertion, no encryption</dd>
+  </dl>
+</section>
+
+<form method="post" action="/settings/sso/{{ provider.id }}" class="stack">
+  {{ csrf() }}
+  <section class="card">
+    <h2>2. The provider's details</h2>
+    <label>Paste the provider's metadata XML (fills in everything below)
+      <textarea name="metadata" rows="5" class="mono" spellcheck="false" placeholder="&lt;EntityDescriptor ..."></textarea>
+    </label>
+    <details{% if not provider.idp_entity_id %} open{% endif %}>
+      <summary>Or enter them by hand</summary>
+      <div class="grid-form">
+        <label class="wide">Provider entity ID (Issuer) <input name="idp_entity_id" value="{{ provider.idp_entity_id }}"></label>
+        <label class="wide">Sign-in URL (HTTP-Redirect) <input name="idp_sso_url" value="{{ provider.idp_sso_url }}" placeholder="https://"></label>
+        <label class="wide">Signing certificate (PEM; leave empty to keep)
+          <textarea name="idp_cert" rows="4" class="mono" spellcheck="false" placeholder="-----BEGIN CERTIFICATE-----"></textarea></label>
+      </div>
+    </details>
+    {% if provider.idp_entity_id %}
+    <dl class="inline-dl">
+      <dt>Issuer</dt><dd class="mono small">{{ provider.idp_entity_id }}</dd>
+      <dt>Sign-in URL</dt><dd class="mono small">{{ provider.idp_sso_url }}</dd>
+      {% for c in certs %}<dt>Certificate</dt><dd class="small">{{ c.subject }}{% if c.expires %}, expires {{ c.expires|dt }}{% endif %}</dd>{% endfor %}
+    </dl>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>3. Sign-in</h2>
+    <div class="grid-form">
+      <label>Button label <input name="name" value="{{ provider.name }}" maxlength="64"></label>
+      <label>Email attribute <input name="email_attribute" value="{{ provider.email_attribute }}" placeholder="empty: the NameID"></label>
+      <label class="check wide"><input type="checkbox" name="auto_create" value="true"{% if provider.auto_create %} checked{% endif %}>
+        Create a ComSense user on first sign-in</label>
+      <label>Role for new users
+        <select name="default_role">{% for r in roles %}<option value="{{ r.value }}"{% if provider.default_role == r %} selected{% endif %}>{{ r.value }}</option>{% endfor %}</select>
+      </label>
+      <label class="check wide"><input type="checkbox" name="enabled" value="true"{% if provider.enabled %} checked{% endif %}>
+        Show "{{ provider.name }}" on the sign-in page</label>
+    </div>
+    <p class="small muted">Without automatic creation, only people who already have a ComSense user with the same
+    email address (Settings &gt; Users) can sign in. Roles are managed in ComSense, not at the provider. Passwords and
+    the other two-factor methods keep working for everyone.</p>
+  </section>
+  <div><button class="primary">Save</button></div>
+</form>
+<p>{{ post_button("/settings/sso/" ~ provider.id ~ "/delete", "Remove provider", "danger", "Remove " ~ provider.name ~ "? People can no longer sign in with it.") }}</p>
+{% endif %}
+{% endblock %}

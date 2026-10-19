@@ -386,6 +386,29 @@ class PasswordResetToken(Base):
     requested_ip: Mapped[str] = mapped_column(String(64), default="")
 
 
+class SsoProvider(Base):
+    """A SAML 2.0 identity provider users can sign in with (Settings > Single sign-on).
+    The provider enforces its own MFA, so a sign-in through it counts as two-factor."""
+
+    __tablename__ = "sso_providers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # google, entra, duo or saml (only changes the setup help and defaults).
+    kind: Mapped[str] = mapped_column(String(16), default="saml")
+    name: Mapped[str] = mapped_column(String(64))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    idp_entity_id: Mapped[str] = mapped_column(String(512), default="")
+    idp_sso_url: Mapped[str] = mapped_column(String(1024), default="")
+    # PEM certificate(s) the provider signs with; a new one can be added before the old expires.
+    idp_cert: Mapped[str] = mapped_column(Text, default="")
+    # Attribute holding the email address; empty: the NameID.
+    email_attribute: Mapped[str] = mapped_column(String(255), default="")
+    # Create a ComSense user on first sign-in (else only existing users, matched by email, can sign in).
+    auto_create: Mapped[bool] = mapped_column(Boolean, default=False)
+    default_role: Mapped[Role] = mapped_column(Enum(Role, native_enum=False), default=Role.viewer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class TerminalStatus(str, enum.Enum):
     approved = "approved"  # the admin's authenticator code was accepted; waiting for both ends
     connected = "connected"
