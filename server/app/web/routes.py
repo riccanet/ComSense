@@ -54,7 +54,7 @@ from ..enrollment import make_code
 from ..services.agentpkg import agent_outdated, latest_package
 from ..services.appsettings import agent_tls_names, effective_agent_url, format_dt, get_email_settings, setup_pending
 from ..services.backups import BackupError, delete_backup_file, load_backup
-from ..services.configview import config_summary, current_backup, redact
+from ..services.configview import config_summary, current_backup, is_system_alias, redact
 from ..services.policies import (
     ALIAS_FORM_TYPES,
     TYPE_LABELS,
@@ -501,14 +501,14 @@ CONFIG_PAGE_TASKS = (TaskType.nat_add, TaskType.nat_remove, TaskType.nat_edit, T
 
 @router.get("/devices/{device_id}/configuration", response_class=HTMLResponse)
 def device_configuration(
-    device_id: str, request: Request, edit_nat: str = "", edit_alias: str = "", user: User = Depends(viewer),
-    db: Session = Depends(get_db),
+    device_id: str, request: Request, edit_nat: str = "", edit_alias: str = "", rules: str = "",
+    user: User = Depends(viewer), db: Session = Depends(get_db),
 ):
-    """The firewall's port forwards, aliases, services, email notifications and notes, changed one at a time
-    (Configurations deploys them to many firewalls)."""
+    """The firewall's aliases, rules (read only), port forwards, services, packages, email notifications and
+    notes; changed one at a time (Configurations deploys them to many firewalls)."""
     device = _get_device(db, device_id)
     backup = current_backup(db, device)
-    summary: dict[str, Any] = {"nat": [], "aliases": [], "smtp": None}
+    summary: dict[str, Any] = {"nat": [], "aliases": [], "smtp": None, "rules": [], "rule_tabs": []}
     error = ""
     if backup is not None:
         try:
@@ -517,9 +517,17 @@ def device_configuration(
             error = str(exc)
     queued = db.scalars(select(Task).where(
         Task.device_id == device.id, Task.status.in_(OPEN_STATES), Task.type.in_(CONFIG_PAGE_TASKS))).all()
+    queued_packages = db.scalars(select(Task).where(
+        Task.device_id == device.id, Task.status.in_(OPEN_STATES),
+        Task.type.in_((TaskType.install_package, TaskType.remove_package)))).all()
     managed_aliases = {a.get("name") for p in desired_policies(db, device) if p.type == PolicyType.aliases
                        for a in (p.content or {}).get("aliases", [])}
     aliases = [a | {"managed": a["name"] in managed_aliases} for a in summary["aliases"]]
+    tabs = summary["rule_tabs"]
+    # Open on the tab asked for, else LAN (where most rules are), else the first with rules.
+    tab = next((t["id"] for t in tabs if t["id"] == rules), None) \
+        or next((t["id"] for t in tabs if t["id"] == "lan" and t["count"]), None) \
+        or next((t["id"] for t in tabs if t["count"]), tabs[0]["id"] if tabs else "")
     return render(
         request,
         "device_configuration.html",
@@ -532,7 +540,13 @@ def device_configuration(
         nat_adding=[t.payload.get("rule", {}) for t in queued if t.type == TaskType.nat_add],
         nat_editing={t.payload.get("fingerprint") for t in queued if t.type == TaskType.nat_edit},
         edit_nat=edit_nat,
-        aliases=aliases,
+        aliases=[a for a in aliases if not is_system_alias(a)],
+        system_aliases=[a for a in aliases if is_system_alias(a)],
+        rule_tabs=tabs,
+        rule_tab=tab,
+        rules=[r for r in summary["rules"] if r["tab"] == tab],
+        interface_names={i["id"]: i["name"] for i in summary.get("interfaces", [])},
+        package_tasks={t.payload.get("package"): t.type for t in queued_packages},
         alias_adding=[t.payload.get("alias", {}) for t in queued if t.type == TaskType.alias_add],
         alias_queued={t.payload.get("alias", {}).get("name") if t.type == TaskType.alias_edit else t.payload.get("name"):
                       "change" if t.type == TaskType.alias_edit else "removal"
@@ -557,8 +571,10 @@ def device_queue_task(
     db: Session = Depends(get_db),
 ):
     device = _get_device(db, device_id)
-    back = f"/devices/{device_id}/configuration#services" if task_type == TaskType.restart_service.value \
-        else f"/devices/{device_id}"
+    back = {TaskType.restart_service.value: f"/devices/{device_id}/configuration#services",
+            TaskType.install_package.value: f"/devices/{device_id}/configuration#packages",
+            TaskType.remove_package.value: f"/devices/{device_id}/configuration#packages"}.get(
+                task_type, f"/devices/{device_id}")
     try:
         ttype = TaskType(task_type)
     except ValueError as exc:
@@ -567,6 +583,10 @@ def device_queue_task(
     if ttype in (TaskType.install_package, TaskType.remove_package):
         if not package.startswith("pfSense-pkg-"):
             flash(request, "Package names start with pfSense-pkg-.", "error")
+            return redirect(back)
+        if ttype == TaskType.remove_package and package.strip() == "pfSense-pkg-ComSense":
+            flash(request, "The ComSense agent cannot remove itself; remove it in Package Manager on the firewall.",
+                  "error")
             return redirect(back)
         payload["package"] = package.strip()
     elif ttype == TaskType.restart_service:
@@ -872,15 +892,19 @@ def device_clear_rollbacks(
 def device_edit(
     device_id: str,
     request: Request,
-    name: str = Form(...),
-    organization_id: str = Form(""),
+    name: str | None = Form(None),
+    organization_id: str | None = Form(None),
     notes: str = Form(""),
     user: User = Depends(operator),
     db: Session = Depends(get_db),
 ):
+    """The Notes card; name and customer are changed only when posted (the customer is set from the
+    customer's page or the Firewalls list)."""
     device = _get_device(db, device_id)
-    device.name = name.strip()[:128] or device.name
-    device.organization_id = int(organization_id) if organization_id.isdigit() else None
+    if name is not None:
+        device.name = name.strip()[:128] or device.name
+    if organization_id is not None:
+        device.organization_id = int(organization_id) if organization_id.isdigit() else None
     device.notes = notes
     audit(db, user.username, "device.edited", target=device.id, ip=_ip(request))
     db.commit()

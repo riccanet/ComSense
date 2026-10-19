@@ -123,7 +123,7 @@ def aliases_from_xml(xml: bytes) -> list[dict[str, Any]]:
         def text(tag: str) -> str:
             return (alias.findtext(tag) or "").strip()
 
-        values = text("address").split()
+        values = text("address").split() or ([text("url")] if text("url") else [])
         notes = text("detail").split("||") if text("detail") else []
         items = [{"value": v, "note": notes[i].strip() if i < len(notes) else ""} for i, v in enumerate(values)]
         out.append({
@@ -136,6 +136,68 @@ def aliases_from_xml(xml: bytes) -> list[dict[str, Any]]:
     return sorted(out, key=lambda a: a["name"].lower())
 
 
+# Aliases that packages create and maintain themselves (pfBlockerNG's pfB_* lists).
+SYSTEM_ALIAS_PREFIXES = ("pfb_",)
+
+
+def is_system_alias(alias: dict[str, Any]) -> bool:
+    return alias["name"].lower().startswith(SYSTEM_ALIAS_PREFIXES) or alias["descr"].lower().startswith("pfblockerng")
+
+
+def interfaces_from_xml(xml: bytes) -> list[dict[str, str]]:
+    """The firewall's interfaces in config order: [{"id": "wan", "name": "WAN"}, {"id": "opt1", "name": "DMZ"}]."""
+    root = _parse(xml)
+    out = []
+    for el in list(root.find("interfaces") if root.find("interfaces") is not None else []):
+        out.append({"id": el.tag, "name": (el.findtext("descr") or "").strip() or el.tag.upper()})
+    return out
+
+
+def firewall_rules_from_xml(xml: bytes) -> list[dict[str, Any]]:
+    """Firewall > Rules, in the firewall's order. Floating rules have interface "floating" and list theirs."""
+    out = []
+    for rule in _parse(xml).findall("./filter/rule"):
+        def text(tag: str) -> str:
+            return (rule.findtext(tag) or "").strip()
+
+        src, src_port = _endpoint(rule.find("source"))
+        dst, dst_port = _endpoint(rule.find("destination"))
+        floating = text("floating") == "yes"
+        descr = text("descr")
+        out.append({
+            "tab": "floating" if floating else (text("interface") or "wan"),
+            "interfaces": [i for i in text("interface").split(",") if i],
+            "action": text("type") or "pass",
+            "ipprotocol": {"inet": "IPv4", "inet6": "IPv6", "inet46": "IPv4+6"}.get(text("ipprotocol"), text("ipprotocol") or "IPv4"),
+            "protocol": text("protocol") or "any",
+            "source": src, "source_port": src_port,
+            "destination": dst, "destination_port": dst_port,
+            "gateway": text("gateway"),
+            "schedule": text("sched"),
+            "log": rule.find("log") is not None,
+            "quick": rule.find("quick") is not None,
+            "direction": text("direction"),
+            "disabled": rule.find("disabled") is not None,
+            "nat": bool(text("associated-rule-id")),
+            "managed": bool(text("comsense_policy")) or descr.startswith("[CSFM]"),
+            "descr": descr,
+        })
+    return out
+
+
+def rule_tabs(interfaces: list[dict[str, str]], rules: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Tabs as pfSense shows them: Floating (if used), the interfaces, then rule-only groups (OpenVPN, IPsec...)."""
+    counts: dict[str, int] = {}
+    for r in rules:
+        counts[r["tab"]] = counts.get(r["tab"], 0) + 1
+    tabs = [{"id": "floating", "name": "Floating"}] if counts.get("floating") else []
+    tabs += interfaces
+    known = {t["id"] for t in tabs}
+    names = {"openvpn": "OpenVPN", "ipsec": "IPsec", "wireguard": "WireGuard", "enc0": "IPsec"}
+    tabs += [{"id": tab, "name": names.get(tab, tab)} for tab in counts if tab not in known]
+    return [t | {"count": counts.get(t["id"], 0)} for t in tabs]
+
+
 def config_summary(settings: Settings, backup: Backup) -> dict[str, Any]:
     """Port forwards and email notification state in a backup (cached; backups never change)."""
     key = (backup.id, backup.sha256)
@@ -143,8 +205,11 @@ def config_summary(settings: Settings, backup: Backup) -> dict[str, Any]:
         _nat_cache.move_to_end(key)
         return _nat_cache[key]
     xml = load_backup(settings, backup)
+    interfaces = interfaces_from_xml(xml)
+    filter_rules = firewall_rules_from_xml(xml)
     rules = {"nat": port_forwards_from_xml(xml), "aliases": aliases_from_xml(xml),
-             "smtp": smtp_notifications_from_xml(xml)}
+             "smtp": smtp_notifications_from_xml(xml), "rules": filter_rules,
+             "rule_tabs": rule_tabs(interfaces, filter_rules), "interfaces": interfaces}
     _nat_cache[key] = rules
     while len(_nat_cache) > _NAT_CACHE_SIZE:
         _nat_cache.popitem(last=False)

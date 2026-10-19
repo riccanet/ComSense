@@ -326,3 +326,10 @@ pre.config-xml { background: var(--panel); border: 1px solid var(--line); border
 .add-nat { margin-top: .75rem; } .add-nat summary { cursor: pointer; font-weight: 600; margin-bottom: .5rem; }
 ul.plain { list-style: none; padding: 0; margin: .5rem 0 1rem; display: flex; flex-direction: column; gap: .35rem; }
 details.add-devices { margin-top: 1rem; }
+table.aliases th.entries, table.aliases td.entries { width: 45%; min-width: 16rem; }
+nav.tabs { display: flex; flex-wrap: wrap; gap: .25rem; border-bottom: 1px solid var(--line); margin: .5rem 0 .75rem; }
+nav.tabs a { padding: .4rem .75rem; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; color: var(--text); margin-bottom: -1px; }
+nav.tabs a:hover { background: var(--neutral-bg); text-decoration: none; }
+nav.tabs a.active { border-color: var(--line); background: var(--panel); color: var(--accent); font-weight: 600; }
+.badge.rule-pass { background: var(--ok-bg); color: var(--ok); }
+.badge.rule-block, .badge.rule-reject { background: var(--bad-bg); color: var(--bad); }

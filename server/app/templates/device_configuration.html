@@ -27,20 +27,22 @@
       <label class="wide">Description <input name="descr" maxlength="200" value="{{ a.descr or "" }}"></label>
 {% endmacro %}
 
+{% macro alias_entries(a) %}{% for e in a.entry_list[:12] %}<span class="mono">{{ e.value }}</span>{% if e.note %} <span class="muted">{{ e.note }}</span>{% endif %}{{ "<br>"|safe if not loop.last }}{% endfor %}{% if a.entry_list|length > 12 %}<br><span class="muted">and {{ a.entry_list|length - 12 }} more</span>{% endif %}{% endmacro %}
+
 <section class="card" id="aliases">
   <h2>Aliases</h2>
   <p class="small muted">Aliases on the firewall. The ones deployed from Configurations are changed there.</p>
   <div class="table-scroll">
-  <table>
-    <thead><tr><th>Name</th><th>Type</th><th>Entries</th><th>Description</th><th></th></tr></thead>
+  <table class="aliases">
+    <thead><tr><th>Name</th><th>Type</th><th>Description</th><th class="entries">Entries</th><th></th></tr></thead>
     <tbody>
     {% for a in aliases %}
       {% set queued = alias_queued.get(a.name) %}
       <tr{% if queued %} class="muted"{% endif %}>
         <td class="mono">{{ a.name }}</td>
         <td>{{ a.type }}</td>
-        <td class="small">{% for e in a.entry_list[:8] %}<span class="mono">{{ e.value }}</span>{% if e.note %} <span class="muted">{{ e.note }}</span>{% endif %}{{ "<br>"|safe if not loop.last }}{% endfor %}{% if a.entry_list|length > 8 %}<br><span class="muted">and {{ a.entry_list|length - 8 }} more</span>{% endif %}</td>
         <td>{{ a.descr }}</td>
+        <td class="small entries">{{ alias_entries(a) }}</td>
         <td class="nowrap">{% if queued %}<span class="small muted">{{ queued }} queued</span>
           {% elif a.managed %}<span class="small muted">Configurations</span>
           {% elif can_change %}<a class="button small" href="/devices/{{ device.id }}/configuration?edit_alias={{ a.name }}#alias-edit">Edit</a>
@@ -60,11 +62,27 @@
       {% endif %}
     {% else %}<tr><td colspan="5" class="muted">{% if config_backup %}No aliases.{% else %}No configuration backup yet; aliases appear after the firewall's first backup.{% endif %}</td></tr>{% endfor %}
     {% for a in alias_adding %}
-      <tr class="muted"><td class="mono">{{ a.name }}</td><td>{{ a.type }}</td><td class="small mono">{{ a.address|join(", ") }}</td><td>{{ a.descr }}</td><td class="small">being added</td></tr>
+      <tr class="muted"><td class="mono">{{ a.name }}</td><td>{{ a.type }}</td><td>{{ a.descr }}</td><td class="small mono entries">{{ a.address|join(", ") }}</td><td class="small">being added</td></tr>
     {% endfor %}
     </tbody>
   </table>
   </div>
+  {% if system_aliases %}
+  <details class="add-nat">
+    <summary>Aliases added by packages ({{ system_aliases|length }})</summary>
+    <p class="small muted">Created and kept up to date by packages such as pfBlockerNG; change them in the package.</p>
+    <div class="table-scroll">
+    <table class="aliases">
+      <thead><tr><th>Name</th><th>Type</th><th>Description</th><th class="entries">Entries</th></tr></thead>
+      <tbody>
+      {% for a in system_aliases %}
+        <tr><td class="mono">{{ a.name }}</td><td>{{ a.type }}</td><td>{{ a.descr }}</td><td class="small entries">{{ alias_entries(a) }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </details>
+  {% endif %}
   {% if can_change %}
   <details class="add-nat">
     <summary>Add an alias to this firewall</summary>
@@ -75,6 +93,39 @@
     </form>
   </details>
   {% else %}{{ change_hint("aliases") }}{% endif %}
+</section>
+
+<section class="card" id="rules">
+  <h2>Firewall rules</h2>
+  <p class="small muted">The firewall's rules, read only, in the order the firewall evaluates them. Rules deployed from
+  Configurations are marked [CSFM]; rules created by a port forward are marked NAT.</p>
+  {% if rule_tabs %}
+  <nav class="tabs" aria-label="Interfaces">
+    {% for t in rule_tabs %}<a href="/devices/{{ device.id }}/configuration?rules={{ t.id }}#rules"{% if t.id == rule_tab %} class="active" aria-current="page"{% endif %}>{{ t.name }} <span class="muted small">{{ t.count }}</span></a>{% endfor %}
+  </nav>
+  {% endif %}
+  <div class="table-scroll">
+  <table class="rules">
+    <thead><tr><th></th><th>Action</th><th>Protocol</th><th>Source</th><th>Port</th><th>Destination</th><th>Port</th><th>Gateway</th>{% if rule_tab == "floating" %}<th>Interfaces</th>{% endif %}<th>Description</th></tr></thead>
+    <tbody>
+    {% for r in rules %}
+      <tr{% if r.disabled %} class="muted"{% endif %}>
+        <td class="small nowrap">{{ loop.index }}{% if r.log %} <span title="Logged">log</span>{% endif %}</td>
+        <td><span class="badge rule-{{ r.action }}">{{ r.action }}</span>{% if r.disabled %} <span class="badge s-disabled">disabled</span>{% endif %}</td>
+        <td class="nowrap">{{ r.ipprotocol }} {{ r.protocol if r.protocol != "any" else "" }}</td>
+        <td>{{ r.source }}</td>
+        <td class="mono">{{ r.source_port or "*" }}</td>
+        <td>{{ r.destination }}</td>
+        <td class="mono">{{ r.destination_port or "*" }}</td>
+        <td>{{ r.gateway or "*" }}</td>
+        {% if rule_tab == "floating" %}<td class="small">{% for i in r.interfaces %}{{ interface_names.get(i, i) }}{{ ", " if not loop.last }}{% endfor %}{% if r.direction %} <span class="muted">({{ r.direction }})</span>{% endif %}</td>{% endif %}
+        <td>{% if r.nat %}<span class="badge">NAT</span> {% endif %}{{ r.descr }}</td>
+      </tr>
+    {% else %}<tr><td colspan="10" class="muted">{% if config_backup %}No rules on this interface.{% else %}No configuration backup yet; rules appear after the firewall's first backup.{% endif %}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="small muted">pfSense also adds its own rules (anti-lockout, block private networks, default deny) that are not listed here.</p>
 </section>
 
 {% macro nat_fields(r) %}
@@ -178,6 +229,36 @@
   </table>
 </section>
 
+<section class="card" id="packages">
+  <h2>Packages</h2>
+  {% set can_packages = can_operate and changes_enabled and "packages" in (device.capabilities or []) %}
+  <table>
+    <thead><tr><th>Package</th><th>Version</th><th></th></tr></thead>
+    <tbody>
+    {% for p in inv.get("packages", []) %}
+      {% set queued = package_tasks.get(p.name) %}
+      <tr{% if queued %} class="muted"{% endif %}><td>{{ p.name }}</td><td>{{ p.version }}</td>
+        <td class="nowrap">{% if queued %}<span class="small muted">{{ "removal" if queued.value == "remove_package" else "install" }} queued</span>
+          {% elif p.name == "pfSense-pkg-ComSense" %}<span class="small muted">this agent</span>
+          {% elif can_packages %}{{ post_button_fields("/devices/" ~ device.id ~ "/tasks", "Remove", "small danger",
+              "Remove the package " ~ p.name ~ " from " ~ device.name ~ "? pfSense removes it and its settings may be lost.",
+              {"task_type": "remove_package", "package": p.name}) }}{% endif %}</td></tr>
+    {% else %}<tr><td colspan="3" class="muted">None reported.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if can_packages %}
+  <form method="post" action="/devices/{{ device.id }}/tasks" class="toolbar">
+    {{ csrf() }}
+    <input type="hidden" name="task_type" value="install_package">
+    <input name="package" placeholder="pfSense-pkg-name" required pattern="pfSense-pkg-[A-Za-z0-9_.+-]{1,64}" aria-label="Package to install">
+    <button>Install</button>
+  </form>
+  {% elif can_operate and not changes_enabled %}<p class="small muted">Firewall changes are turned off on this server.</p>
+  {% elif can_operate %}<p class="small muted">Allow "Packages" in Services &gt; ComSense Agent on the firewall to install or remove packages from here.</p>{% endif %}
+</section>
+</div>
+
+<div class="grid2">
 <section class="card" id="notifications">
   <h2>Email notifications</h2>
   {% if smtp %}
@@ -190,22 +271,14 @@
   <p class="small muted">To switch them for many firewalls at once, use Configurations &gt; Notifications.</p>
   {% else %}<p class="muted">Shown after the firewall's first configuration backup.</p>{% endif %}
 </section>
-</div>
 
 {% if can_operate %}
 <section class="card" id="notes">
   <h2>Notes</h2>
   <form method="post" action="/devices/{{ device.id }}/edit" class="grid-form">
     {{ csrf() }}
-    <label>Name <input name="name" value="{{ device.name }}" required></label>
-    <label>Customer
-      <select name="organization_id">
-        <option value="">None</option>
-        {% for o in orgs %}<option value="{{ o.id }}"{% if device.organization_id == o.id %} selected{% endif %}>{{ o.name }}</option>{% endfor %}
-      </select>
-    </label>
-    <label class="wide">Notes <textarea name="notes" rows="3">{{ device.notes }}</textarea></label>
-    <button>Save</button>
+    <textarea class="wide" name="notes" rows="4" aria-label="Notes" placeholder="Anything worth knowing about this firewall">{{ device.notes }}</textarea>
+    <div><button>Save</button></div>
   </form>
   {% if is_admin %}
   <div class="toolbar danger-zone">
@@ -219,4 +292,5 @@
   {% endif %}
 </section>
 {% endif %}
+</div>
 {% endblock %}

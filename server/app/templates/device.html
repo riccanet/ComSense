@@ -57,7 +57,7 @@ reach ComSense by then, it restores its previous configuration automatically.</d
   <section class="card">
     <h2>System</h2>
     <dl>
-      <dt>Customer</dt><dd>{% if device.organization %}<a href="/customers/{{ device.organization.id }}">{{ device.organization.name }}</a>{% else %}<span class="muted">not assigned</span>{% if can_operate %} <a class="small" href="/devices/{{ device.id }}/configuration#notes">Assign</a>{% endif %}{% endif %}</dd>
+      <dt>Customer</dt><dd>{% if device.organization %}<a href="/customers/{{ device.organization.id }}">{{ device.organization.name }}</a>{% else %}<span class="muted">not assigned</span>{% if can_operate %} <a class="small" href="/devices?org=none" title="Select it in the list and choose a customer, or add it from the customer's page">Assign</a>{% endif %}{% endif %}</dd>
       <dt>Hostname</dt><dd>{{ device.hostname }}</dd>
       <dt>Edition</dt><dd>{{ "pfSense Plus" if device.edition == "plus" else "pfSense CE" if device.edition == "ce" else device.edition }}</dd>
       <dt>Version</dt><dd>{{ device.product_version }}</dd>
@@ -163,28 +163,6 @@ reach ComSense by then, it restores its previous configuration automatically.</d
   </table>
 </section>
 
-<div class="grid2">
-<section class="card">
-  <h2>Packages{% if not changes_enabled %} <span class="h-badge">{{ coming_soon() }}</span>{% endif %}</h2>
-  <table>
-    <thead><tr><th>Package</th><th>Version</th></tr></thead>
-    <tbody>
-    {% for p in inv.get("packages", []) %}<tr><td>{{ p.name }}</td><td>{{ p.version }}</td></tr>
-    {% else %}<tr><td colspan="2" class="muted">None reported.</td></tr>{% endfor %}
-    </tbody>
-  </table>
-  {% if not changes_enabled %}
-  <p class="small muted">Installing, removing and upgrading packages from ComSense is coming soon.</p>
-  {% elif can_operate and "packages" in device.capabilities %}
-  <form method="post" action="/devices/{{ device.id }}/tasks" class="toolbar">
-    {{ csrf() }}
-    <input name="package" placeholder="pfSense-pkg-name" required>
-    <select name="task_type"><option value="install_package">Install</option><option value="remove_package">Remove</option></select>
-    <button>Queue</button>
-  </form>
-  {% endif %}
-</section>
-
 <section class="card">
   <h2>Configurations</h2>
   {% if not changes_enabled %}<p class="small muted">Firewall changes are turned off on this server, so configurations are not sent to firewalls yet.</p>{% endif %}
@@ -211,7 +189,6 @@ reach ComSense by then, it restores its previous configuration automatically.</d
   </form>
   {% endif %}
 </section>
-</div>
 
 <section class="card" id="backups">
   <h2>Configuration backups</h2>

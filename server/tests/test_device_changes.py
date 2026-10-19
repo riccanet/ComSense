@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import gzip
+import re
 
 import pytest
 from conftest import ALL_CAPS, auth, enroll, login, make_key
 from sqlalchemy import select
 from test_config_view import CONFIG
 
-from app.models import Policy, PolicyAssignment, PolicyType, Task, TaskType
+from app.models import Device, Organization, Policy, PolicyAssignment, PolicyType, Task, TaskType
 from app.services.configview import aliases_from_xml, port_forwards_from_xml
 
 
@@ -92,7 +93,8 @@ def test_configuration_page_layout(client, db, agent):
 
 
 def test_aliases_are_read_from_config_xml():
-    office, web = aliases_from_xml(CONFIG)
+    by_name = {a["name"]: a for a in aliases_from_xml(CONFIG)}
+    office, web = by_name["Office"], by_name["Web_Servers"]
     assert web["entry_list"] == [{"value": "192.168.1.10", "note": "Primary"}, {"value": "192.168.1.11", "note": "Standby"}]
     assert web["entries"] == "192.168.1.10 Primary\n192.168.1.11 Standby" and office["type"] == "network"
 
@@ -148,6 +150,72 @@ def test_aliases_from_configurations_are_not_editable_here(client, db, agent):
     assert "edit_alias=Web_Servers" in page and "edit_alias=Office" not in page
 
 
+def test_firewall_rules_by_interface(client, db, agent):
+    login(client)
+    did = _device(agent, db)
+    page = client.get(f"/devices/{did}/configuration").text
+    tabs = re.findall(r'\?rules=(\w+)#rules"[^>]*>([^<]+)<span class="muted small">(\d+)', page)
+    assert [(t, n.strip(), c) for t, n, c in tabs] == [("floating", "Floating", "1"), ("wan", "WAN", "1"),
+                                                       ("lan", "LAN", "1"), ("opt1", "Guest", "1")]
+    assert "Default allow LAN to any rule" in page and "No SMB from guests" not in page  # opens on LAN
+    guest = client.get(f"/devices/{did}/configuration?rules=opt1").text
+    assert "No SMB from guests" in guest and "rule-block" in guest and "445" in guest
+    wan = client.get(f"/devices/{did}/configuration?rules=wan").text
+    assert ">NAT</span>" in wan and "s-disabled" in wan
+    floating = client.get(f"/devices/{did}/configuration?rules=floating").text
+    assert "Block bad hosts" in floating and "WAN, LAN" in floating
+
+
+def test_package_aliases_are_tucked_away(client, db, agent):
+    login(client)
+    did = _device(agent, db)
+    page = client.get(f"/devices/{did}/configuration").text
+    main, _, system = page.partition("Aliases added by packages (1)")
+    assert "pfB_PRI1_v4" not in main and "pfB_PRI1_v4" in system and "edit_alias=pfB_" not in page
+    header = re.search(r"<table class=\"aliases\">\s*<thead><tr>(.*?)</tr>", page, re.S).group(1)
+    assert re.findall(r"<th[^>]*>(\w*)</th>", header) == ["Name", "Type", "Description", "Entries", ""]
+
+
+@pytest.mark.changes
+def test_packages_on_the_configuration_page(client, db, agent):
+    csrf = login(client)
+    creds = enroll(agent, make_key(db), capabilities=ALL_CAPS)
+    agent.post("/api/agent/v1/checkin", json={"packages": [{"name": "pfSense-pkg-ComSense", "version": "0.2.7"},
+                                                            {"name": "pfSense-pkg-Netgate_Firmware_Upgrade", "version": "1.2"}]},
+               headers=auth(creds["token"]))
+    did = creds["device_id"]
+    assert "<h2>Packages" not in client.get(f"/devices/{did}").text
+    page = client.get(f"/devices/{did}/configuration").text
+    assert "<h2>Packages</h2>" in page and "this agent" in page
+    assert 'value="pfSense-pkg-Netgate_Firmware_Upgrade"' in page and 'value="pfSense-pkg-ComSense"' not in page
+    r = client.post(f"/devices/{did}/tasks", data={"task_type": "remove_package",
+                                                   "package": "pfSense-pkg-Netgate_Firmware_Upgrade", "csrf_token": csrf})
+    assert r.url.path == f"/devices/{did}/configuration" and "removal queued" in r.text
+    task = db.scalar(select(Task).where(Task.type == TaskType.remove_package))
+    assert task.payload == {"package": "pfSense-pkg-Netgate_Firmware_Upgrade"}
+    r = client.post(f"/devices/{did}/tasks", data={"task_type": "remove_package", "package": "pfSense-pkg-ComSense",
+                                                   "csrf_token": csrf})
+    assert "cannot remove itself" in r.text
+
+
+def test_notes_keep_the_name_and_customer(client, db, agent):
+    csrf = login(client)
+    did = _device(agent, db)
+    org = Organization(name="Acme")
+    db.add(org)
+    db.commit()
+    device = db.get(Device, did)
+    device.organization_id, name = org.id, device.name
+    db.commit()
+    page = client.get(f"/devices/{did}/configuration").text
+    notes = page[page.index('id="notes"'):]
+    assert 'name="name"' not in notes and 'name="organization_id"' not in notes
+    client.post(f"/devices/{did}/edit", data={"notes": "Rack 3", "csrf_token": csrf})
+    db.expire_all()
+    device = db.get(Device, did)
+    assert (device.notes, device.name, device.organization_id) == ("Rack 3", name, org.id)
+
+
 @pytest.mark.changes
 def test_email_notifications_switch(client, db, agent):
     csrf = login(client)
@@ -174,7 +242,7 @@ def test_changes_need_the_switch_and_the_firewall_permission(client, db, agent):
     did = _device(agent, db, caps=["backup"])
     page = client.get(f"/devices/{did}/configuration").text
     assert "Add a port forward to this firewall" not in page
-    assert page.count("Firewall changes are turned off on this server.") == 2
+    assert page.count("Firewall changes are turned off on this server.") == 3
     r = client.post(f"/devices/{did}/notifications", data={"smtp": "off", "csrf_token": csrf})
     assert db.scalar(select(Task).where(Task.type == TaskType.notifications)) is None
     assert r.status_code == 200

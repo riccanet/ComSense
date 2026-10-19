@@ -17,7 +17,22 @@ CONFIG = b"""<?xml version="1.0"?>
   <alias><name>Web_Servers</name><type>host</type><address>192.168.1.10 192.168.1.11</address>
     <descr>Front end</descr><detail>Primary||Standby</detail></alias>
   <alias><name>Office</name><type>network</type><address>10.0.0.0/24</address><descr></descr><detail></detail></alias>
+  <alias><name>pfB_PRI1_v4</name><type>urltable</type><url>https://127.0.0.1:443/pfb/pfB_PRI1_v4.txt</url>
+    <descr>pfBlockerNG auto list</descr></alias>
 </aliases>
+<interfaces><wan><descr>WAN</descr><if>igc0</if></wan><lan><descr>LAN</descr><if>igc1</if></lan><opt1><descr>Guest</descr><if>igc2</if></opt1></interfaces>
+<filter>
+  <rule><type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol><source><network>lan</network></source>
+    <destination><any></any></destination><descr>Default allow LAN to any rule</descr></rule>
+  <rule><type>block</type><interface>opt1</interface><ipprotocol>inet</ipprotocol><protocol>tcp</protocol>
+    <source><network>opt1</network></source><destination><network>lan</network><port>445</port></destination>
+    <descr>No SMB from guests</descr><log></log></rule>
+  <rule><type>pass</type><interface>wan</interface><ipprotocol>inet</ipprotocol><protocol>tcp</protocol>
+    <source><any></any></source><destination><address>192.168.1.20</address><port>3389</port></destination>
+    <descr>NAT [CSFM] RDP</descr><associated-rule-id>nat_5f00</associated-rule-id><disabled></disabled></rule>
+  <rule><type>block</type><interface>wan,lan</interface><floating>yes</floating><direction>in</direction><quick>yes</quick>
+    <source><address>BadHosts</address></source><destination><any></any></destination><descr>Block bad hosts</descr></rule>
+</filter>
 <nat>
   <rule>
     <source><any></any></source>
