@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import csrf, post_button, status_badge with context %}
+{% from "macros.html" import csrf, post_button, post_button_fields, status_badge with context %}
 {% block title %}{{ customer.name }}{% endblock %}
 {% block content %}
 {% set can_operate = user.role.value in ("operator", "admin") %}
@@ -20,7 +20,7 @@
 <section class="card">
   <h2>Firewalls</h2>
   <table>
-    <thead><tr><th>Name</th><th>Status</th><th>Edition / version</th><th>WAN IP</th><th>Last seen</th><th>Last backup</th><th>Updates</th></tr></thead>
+    <thead><tr><th>Name</th><th>Status</th><th>Edition / version</th><th>WAN IP</th><th>Last seen</th><th>Last backup</th><th>Updates</th>{% if can_operate %}<th></th>{% endif %}</tr></thead>
     <tbody>
     {% for d in devices %}
       <tr>
@@ -31,12 +31,29 @@
         <td>{{ d.last_seen_at|ago }}</td>
         <td>{{ last_backup.get(d.id)|ago if last_backup.get(d.id) else "none yet" }}</td>
         <td>{% if d.updates.update_available %}<span class="badge s-pending">{{ d.updates.version }}</span>{% endif %}</td>
+        {% if can_operate %}<td>{{ post_button_fields("/customers/" ~ customer.id ~ "/devices/remove", "Remove", "small",
+            "Remove " ~ d.name ~ " from " ~ customer.name ~ "? The firewall stays enrolled, without a customer.", {"device_id": d.id}) }}</td>{% endif %}
       </tr>
     {% else %}
-      <tr><td colspan="7" class="muted">No firewalls yet.{% if user.role.value == "admin" %} <a href="/keys?customer={{ customer.id }}">Create an enrollment key</a> for this customer and paste its code on each firewall.{% endif %}</td></tr>
+      <tr><td colspan="8" class="muted">No firewalls yet.{% if user.role.value == "admin" %} <a href="/keys?customer={{ customer.id }}">Create an enrollment key</a> for this customer and paste its code on each firewall.{% endif %}</td></tr>
     {% endfor %}
     </tbody>
   </table>
+  {% if can_operate and unassigned %}
+  <details class="add-devices"{% if not devices %} open{% endif %}>
+    <summary>Add firewalls without a customer ({{ unassigned|length }})</summary>
+    <form method="post" action="/customers/{{ customer.id }}/devices">
+      {{ csrf() }}
+      <ul class="plain">
+      {% for d in unassigned %}
+        <li><label class="check"><input type="checkbox" name="device_ids" value="{{ d.id }}"> {{ d.name }}
+          <span class="muted small">{{ d.hostname }}{% if d.wan_ip %} · {{ d.wan_ip }}{% endif %}</span></label></li>
+      {% endfor %}
+      </ul>
+      <button class="primary">Add to {{ customer.name }}</button>
+    </form>
+  </details>
+  {% endif %}
 </section>
 
 <div class="grid2">

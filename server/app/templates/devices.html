@@ -49,6 +49,13 @@
       </select>
     </label>
     <button>Queue</button>
+    <label>Customer:
+      <select name="organization_id">
+        <option value="">None</option>
+        {% for o in orgs %}<option value="{{ o.id }}">{{ o.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <button formaction="/devices/assign">Assign</button>
   </div>
   {% endif %}
 </form>

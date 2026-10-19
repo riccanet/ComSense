@@ -397,6 +397,31 @@ async def devices_bulk(
     return redirect("/devices")
 
 
+@router.post("/devices/assign")
+async def devices_assign(request: Request, user: User = Depends(operator), db: Session = Depends(get_db)):
+    """Set (or clear) the customer of the selected firewalls."""
+    form = await request.form()
+    org_id = str(form.get("organization_id", ""))
+    org = db.get(Organization, int(org_id)) if org_id.isdigit() else None
+    if org_id and org is None:
+        raise HTTPException(400, "Unknown customer")
+    moved = []
+    for device_id in form.getlist("device_ids"):
+        device = db.get(Device, str(device_id))
+        if device is not None:
+            device.organization_id = org.id if org else None
+            moved.append(device.name)
+    if not moved:
+        flash(request, "Select at least one firewall.", "error")
+        return redirect("/devices")
+    audit(db, user.username, "device.assigned", target=org.name if org else "no customer",
+          detail=", ".join(moved)[:500], ip=_ip(request))
+    db.commit()
+    flash(request, f"{len(moved)} firewall(s) " + (f"assigned to {org.name}." if org else "no longer assigned to a customer."),
+          "success")
+    return redirect("/devices")
+
+
 @router.get("/devices/{device_id}", response_class=HTMLResponse)
 def device_detail(
     device_id: str, request: Request, edit_nat: str = "", user: User = Depends(viewer),

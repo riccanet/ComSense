@@ -324,3 +324,5 @@ pre.config-xml { background: var(--panel); border: 1px solid var(--line); border
 .sso-buttons .button { text-align: center; padding: .55rem .75rem; }
 .sso-or { text-align: center; margin: 0; }
 .add-nat { margin-top: .75rem; } .add-nat summary { cursor: pointer; font-weight: 600; margin-bottom: .5rem; }
+ul.plain { list-style: none; padding: 0; margin: .5rem 0 1rem; display: flex; flex-direction: column; gap: .35rem; }
+details.add-devices { margin-top: 1rem; }

@@ -127,6 +127,7 @@ def customer_detail(customer_id: int, request: Request, user: User = Depends(vie
     keys = db.scalars(
         select(EnrollmentKey).where(EnrollmentKey.organization_id == org.id).order_by(EnrollmentKey.id.desc())
     ).all()
+    unassigned = db.scalars(select(Device).where(Device.organization_id.is_(None)).order_by(Device.name)).all()
     return render(
         request,
         "customer.html",
@@ -135,10 +136,47 @@ def customer_detail(customer_id: int, request: Request, user: User = Depends(vie
         alerts=alerts,
         last_backup=last_backup,
         keys=keys,
+        unassigned=unassigned,
         online=sum(1 for d in devices if d.status == DeviceStatus.online),
         updates=sum(1 for d in devices if (d.updates or {}).get("update_available")),
         now=utcnow(),
     )
+
+
+@router.post("/customers/{customer_id}/devices")
+async def customer_add_devices(customer_id: int, request: Request, user: User = Depends(operator),
+                               db: Session = Depends(get_db)):
+    """Assign firewalls that have no customer yet to this one."""
+    org = _get(db, customer_id)
+    form = await request.form()
+    added = []
+    for device_id in form.getlist("device_ids"):
+        device = db.get(Device, str(device_id))
+        if device is not None and device.organization_id is None:
+            device.organization_id = org.id
+            added.append(device.name)
+    if added:
+        audit(db, user.username, "customer.devices_added", target=org.name, detail=", ".join(added)[:500],
+              ip=_ip(request))
+        db.commit()
+        flash(request, f"Added {len(added)} firewall(s) to {org.name}.", "success")
+    else:
+        flash(request, "Select at least one firewall to add.", "error")
+    return redirect(f"/customers/{org.id}")
+
+
+@router.post("/customers/{customer_id}/devices/remove")
+def customer_remove_device(customer_id: int, request: Request, device_id: str = Form(...),
+                           user: User = Depends(operator), db: Session = Depends(get_db)):
+    org = _get(db, customer_id)
+    device = db.get(Device, device_id)
+    if device is None or device.organization_id != org.id:
+        raise HTTPException(404, "Firewall not found for this customer")
+    device.organization_id = None
+    audit(db, user.username, "customer.device_removed", target=org.name, detail=device.name, ip=_ip(request))
+    db.commit()
+    flash(request, f"{device.name} is no longer assigned to {org.name}.", "success")
+    return redirect(f"/customers/{org.id}")
 
 
 @router.post("/customers/{customer_id}")
