@@ -33,7 +33,10 @@ def test_admins_see_new_firewalls_waiting_for_approval(client, db, agent):
     db.expire_all()
     assert db.get(Device, did).status == DeviceStatus.offline
     page = client.get("/customers").text
-    assert "new-fw approved" in page and "is waiting for approval" not in page
+    assert "is waiting for approval" not in page
+    assert '<div class="pending-banner approved" role="status">' in page
+    assert "new-fw has been approved. You should start receiving data shortly." in page
+    assert "has been approved" not in client.get("/customers").text  # shown once
     assert "new-fw" not in client.get("/pending-banner").text
 
 

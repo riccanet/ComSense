@@ -964,8 +964,11 @@ def device_set_status(
         raise HTTPException(400, "Invalid action for the device's current state")
     audit(db, user.username, f"device.{action}", target=device.id, ip=_ip(request))
     db.commit()
-    flash(request, f"{device.name} approved; it receives tasks from its next check-in." if action == "approve"
-          else f"Device {action}d.", "success")
+    if action == "approve":
+        # Shown like the approval banner, under the navigation bar (base.html).
+        flash(request, f"{device.name} has been approved. You should start receiving data shortly.", "approved")
+    else:
+        flash(request, f"Device {action}d.", "success")
     return redirect(local_path(next, f"/devices/{device_id}"))
 
 

@@ -348,4 +348,5 @@ nav.tabs a.active { border-color: var(--line); background: var(--panel); color: 
   text-align: center; padding: .6rem 1.5rem; background: var(--banner-bg); color: var(--text);
   border-bottom: 1px solid var(--banner-line); }
 .pending-banner .muted { color: inherit; opacity: .75; }
+.pending-banner.approved { background: var(--ok-bg); color: var(--ok); border-bottom-color: var(--ok); }
 .pending-banner .actions { display: flex; gap: .4rem; }
