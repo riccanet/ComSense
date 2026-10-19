@@ -70,6 +70,10 @@ class TaskType(str, enum.Enum):
     refresh_inventory = "refresh_inventory"
     update_agent = "update_agent"
     open_terminal = "open_terminal"
+    # Single changes from the firewall's page (names fit the existing 16-character column).
+    nat_add = "nat_add"
+    nat_remove = "nat_remove"
+    notifications = "notifications"
 
 
 class PolicyType(str, enum.Enum):
@@ -79,6 +83,7 @@ class PolicyType(str, enum.Enum):
     packages = "packages"
     config_set = "config_set"
     port_forward = "port_forward"  # inbound NAT (fits the existing 14-character column)
+    notifications = "notifications"  # pfSense email notifications on/off
 
 
 class User(Base):

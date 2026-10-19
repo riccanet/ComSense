@@ -32,10 +32,13 @@ $csfm_task_capability = array(
 	'reboot' => 'reboot',
 	'update_agent' => 'upgrade',
 	'open_terminal' => 'shell',
+	'nat_add' => 'policy',
+	'nat_remove' => 'policy',
+	'notifications' => 'policy',
 );
 
 /* Tasks that change the configuration and run under the change guard (guard.inc). */
-$csfm_guarded_tasks = array('apply_policy', 'remove_policy');
+$csfm_guarded_tasks = array('apply_policy', 'remove_policy', 'nat_add', 'nat_remove');
 
 class CsfmTaskDeferred extends Exception {
 	/* Thrown by tasks that already reported their own result. */
@@ -136,6 +139,12 @@ function csfm_task_label($type, $payload) {
 	}
 	if ($type === 'restore_backup') {
 		return 'restore backup #' . (int)($payload['backup_id'] ?? 0);
+	}
+	if ($type === 'nat_add') {
+		return 'add port forward ' . ($payload['rule']['descr'] ?? '');
+	}
+	if ($type === 'nat_remove') {
+		return 'remove port forward ' . ($payload['descr'] ?? '');
 	}
 	if ($type === 'open_terminal') {
 		return 'open a remote terminal';
@@ -390,6 +399,31 @@ function csfm_task_open_terminal($client, $id, $payload) {
 	file_put_contents(csfm_terminal_request_file($sid), (string)time());
 	csfm_log('Remote terminal ' . substr($sid, 0, 8) . ' requested by the management server', LOG_NOTICE);
 	return array('output' => 'Terminal requested; the firewall connects to the console in a moment.');
+}
+
+/* ------------------------------------------- single changes from the firewall's page */
+
+function csfm_task_nat_add($client, $id, $payload) {
+	$r = $payload['rule'] ?? null;
+	if (!is_array($r) || empty($r['target']) || empty($r['destination']['port'])) {
+		throw new Exception('Malformed port forward');
+	}
+	return array('output' => csfm_add_port_forward($r));
+}
+
+function csfm_task_nat_remove($client, $id, $payload) {
+	$fp = (string)($payload['fingerprint'] ?? '');
+	if (!preg_match('/^[0-9a-f]{16}$/', $fp)) {
+		throw new Exception('Malformed port forward reference');
+	}
+	return array('output' => csfm_remove_port_forward($fp));
+}
+
+function csfm_task_notifications($client, $id, $payload) {
+	if (!isset($payload['smtp']) || !is_bool($payload['smtp'])) {
+		throw new Exception('Malformed notification setting');
+	}
+	return array('output' => csfm_set_smtp_notifications($payload['smtp']));
 }
 
 function csfm_task_restore_backup($client, $id, $payload) {

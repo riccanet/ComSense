@@ -101,6 +101,12 @@ placed at the top (default) or bottom of the firewall's port forwards.
 `local_port` take a port, a range (`8000:8100`) or a port alias. `target` is an IP address or a host
 alias. `source` and `destination` take the same forms as in firewall rules.
 
+## notifications
+
+Turns pfSense's own email notifications (System > Advanced > Notifications) on or off:
+`{"smtp": false}`. The firewall's SMTP server and addresses are left alone. Unassigning restores the
+previous setting. A single firewall can also be switched from its page.
+
 ## system
 
 ```json

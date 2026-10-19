@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import status_badge, csrf, post_button, coming_soon with context %}
+{% from "macros.html" import status_badge, csrf, post_button, post_button_fields, coming_soon with context %}
 {% block title %}{{ device.name }}{% endblock %}
 {% block content %}
 {% set inv = device.inventory or {} %}
@@ -151,19 +151,20 @@ reach ComSense by then, it restores its previous configuration automatically.</d
   </table>
 </section>
 
-<section class="card">
+<section class="card" id="nat">
   <h2>Inbound NAT policies</h2>
   {% if nat_backup %}
   <p class="small muted">Port forwards in the firewall's configuration as of {{ nat_backup.created_at|dt }}.
-  [CSFM] marks the ones managed from Configurations.</p>
+  [CSFM] marks the ones deployed from Configurations; change those there.</p>
   {% endif %}
   {% if nat_error %}<p class="small">Could not read the configuration: {{ nat_error }}</p>{% endif %}
+  {% set can_change = can_operate and changes_enabled and "policy" in (device.capabilities or []) %}
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Interface</th><th>Protocol</th><th>Source</th><th>Destination</th><th>Port</th><th>Redirect to</th><th>Filter rule</th><th>Description</th></tr></thead>
+    <thead><tr><th>Interface</th><th>Protocol</th><th>Source</th><th>Destination</th><th>Port</th><th>Redirect to</th><th>Filter rule</th><th>Description</th><th></th></tr></thead>
     <tbody>
     {% for r in nat_rules %}
-      <tr{% if r.disabled %} class="muted"{% endif %}>
+      <tr{% if r.disabled or r.fingerprint in nat_removing %} class="muted"{% endif %}>
         <td>{{ r.interface }}</td>
         <td>{{ r.protocol }}</td>
         <td>{{ r.source }}</td>
@@ -172,11 +173,53 @@ reach ComSense by then, it restores its previous configuration automatically.</d
         <td class="mono">{% if r.nordr %}<span class="muted">no redirect</span>{% else %}{{ r.target }}{% if r.local_port %}:{{ r.local_port }}{% endif %}{% endif %}</td>
         <td class="small">{{ {"pass": "pass", "linked": "linked rule", "none": "none"}[r.filter_rule] }}</td>
         <td>{{ r.descr }}{% if r.disabled %} <span class="badge s-disabled">disabled</span>{% endif %}</td>
+        <td class="nowrap">{% if r.fingerprint in nat_removing %}<span class="small muted">removal queued</span>
+          {% elif r.managed %}<span class="small muted">Configurations</span>
+          {% elif can_change %}{{ post_button_fields("/devices/" ~ device.id ~ "/nat/remove", "Remove", "small danger",
+              "Remove the port forward " ~ (r.descr or r.port) ~ " from " ~ device.name ~ "?" ~ (" Its linked firewall rule is removed too." if r.filter_rule == "linked" else ""),
+              {"fingerprint": r.fingerprint, "descr": r.descr}) }}{% endif %}</td>
       </tr>
-    {% else %}<tr><td colspan="8" class="muted">{% if nat_backup %}No port forwards.{% else %}No configuration backup yet; port forwards appear after the firewall's first backup.{% endif %}</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="9" class="muted">{% if nat_backup %}No port forwards.{% else %}No configuration backup yet; port forwards appear after the firewall's first backup.{% endif %}</td></tr>{% endfor %}
+    {% for a in nat_adding %}
+      <tr class="muted"><td>{{ a.interface }}</td><td>{{ a.protocol }}</td><td></td><td></td><td class="mono">{{ a.destination.port }}</td>
+        <td class="mono">{{ a.target }}:{{ a.local_port }}</td><td></td><td>{{ a.descr }}</td><td class="small">being added</td></tr>
+    {% endfor %}
     </tbody>
   </table>
   </div>
+  {% if can_change %}
+  <details class="add-nat">
+    <summary>Add a port forward to this firewall</summary>
+    <form method="post" action="/devices/{{ device.id }}/nat" class="grid-form">
+      {{ csrf() }}
+      <label>Interface <input name="interface" value="wan" list="nat-ifaces">
+        <datalist id="nat-ifaces">{% for i in inv.get("interfaces", []) %}<option value="{{ i.name }}">{% endfor %}</datalist></label>
+      <label>Protocol <select name="protocol"><option>tcp</option><option>udp</option><option>tcp/udp</option></select></label>
+      <label>Source <input name="src" placeholder="any"></label>
+      <label>Destination <input name="dst" value="wan address"></label>
+      <label>External port <input name="dstport" required placeholder="443 or 8000:8100"></label>
+      <label>Internal IP <input name="target" required placeholder="192.168.1.10"></label>
+      <label>Internal port <input name="localport" placeholder="same as external"></label>
+      <label>Description <input name="descr" maxlength="200"></label>
+      <div class="wide"><button class="primary">Add port forward</button>
+        <span class="small muted">Lets its own traffic through ("pass"); undone automatically if the firewall loses contact with ComSense.</span></div>
+    </form>
+  </details>
+  {% elif can_operate and not changes_enabled %}<p class="small muted">Firewall changes are turned off on this server.</p>
+  {% elif can_operate %}<p class="small muted">Allow "Policies" in Services &gt; ComSense Agent on the firewall to add or remove port forwards from here.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Email notifications</h2>
+  {% if smtp %}
+  <p>pfSense's own email notifications (System &gt; Advanced &gt; Notifications) are
+  <strong>{{ "on" if smtp.enabled else "off" }}</strong>{% if smtp.server %} <span class="muted small">via {{ smtp.server }}{% if smtp.to %} to {{ smtp.to }}{% endif %}</span>{% elif smtp.enabled %} <span class="muted small">(no SMTP server set on the firewall)</span>{% endif %}.
+  {% if smtp_pending is not none %}<span class="small muted">Turning {{ "on" if smtp_pending else "off" }}&hellip;</span>{% endif %}</p>
+  {% if can_change and smtp_pending is none %}
+  {{ post_button_fields("/devices/" ~ device.id ~ "/notifications", "Turn off" if smtp.enabled else "Turn on", "", "", {"smtp": "off" if smtp.enabled else "on"}) }}
+  {% endif %}
+  <p class="small muted">To switch them for many firewalls at once, use Configurations &gt; Notifications.</p>
+  {% else %}<p class="muted">Shown after the firewall's first configuration backup.</p>{% endif %}
 </section>
 
 <div class="grid2">

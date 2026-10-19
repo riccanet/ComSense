@@ -51,6 +51,9 @@ function csfm_apply_policy($policy) {
 		case 'port_forward':
 			$record = csfm_apply_port_forwards($pid, $content);
 			break;
+		case 'notifications':
+			$record = csfm_apply_notifications($content, $prev);
+			break;
 		default:
 			throw new CsfmPolicyError("Unsupported policy type '{$type}'");
 	}
@@ -84,6 +87,7 @@ function csfm_remove_policy($pid) {
 			break;
 		case 'system':
 		case 'config_set':
+		case 'notifications':
 			$summary = csfm_restore_saved_values($prev, "ComSense: removed policy {$pid}");
 			break;
 		default:
@@ -374,6 +378,86 @@ function csfm_remove_rules($pid) {
 }
 
 /* ------------------------------------------------- port forwards (inbound NAT) */
+
+/*
+ * Identifies one port forward across the server and the firewall (the server computes the same from
+ * config.xml): interface, protocol, target, local port, external port and description.
+ */
+function csfm_nat_fingerprint($nat) {
+	$parts = array(
+		(string)($nat['interface'] ?? ''), (string)($nat['protocol'] ?? ''), (string)($nat['target'] ?? ''),
+		(string)($nat['local-port'] ?? ''), (string)($nat['destination']['port'] ?? ''), (string)($nat['descr'] ?? ''),
+	);
+	return substr(hash('sha256', implode("\x1f", $parts)), 0, 16);
+}
+
+/* One port forward added from the firewall's page (not owned by a configuration). */
+function csfm_add_port_forward($r) {
+	$nat = csfm_build_port_forward('', $r);
+	unset($nat['comsense_policy']);
+	$nat['descr'] = (string)($r['descr'] ?? '');
+	$rules = array_values((array)csfm_cfg_get('nat/rule', array()));
+	$fp = csfm_nat_fingerprint($nat);
+	foreach ($rules as $existing) {
+		if (csfm_nat_fingerprint($existing) === $fp) {
+			return 'An identical port forward already exists';
+		}
+	}
+	$rules[] = $nat;
+	csfm_cfg_set('nat/rule', $rules);
+	write_config('ComSense: added port forward ' . $nat['descr']);
+	csfm_reload(array('filter'));
+	return sprintf('Added port forward %s -> %s:%s', $nat['destination']['port'] ?? '', $nat['target'], $nat['local-port']);
+}
+
+/* Remove one port forward by fingerprint, with its linked filter rule. Configuration-owned ones are refused. */
+function csfm_remove_port_forward($fingerprint) {
+	$rules = array_values((array)csfm_cfg_get('nat/rule', array()));
+	foreach ($rules as $i => $nat) {
+		if (csfm_nat_fingerprint($nat) !== $fingerprint) {
+			continue;
+		}
+		if (!empty($nat['comsense_policy'])) {
+			throw new CsfmPolicyError('This port forward belongs to a ComSense configuration; unassign that instead');
+		}
+		array_splice($rules, $i, 1);
+		csfm_cfg_set('nat/rule', $rules);
+		$assoc = (string)($nat['associated-rule-id'] ?? '');
+		$removedRule = 0;
+		if ($assoc !== '' && $assoc !== 'pass') {
+			$filters = (array)csfm_cfg_get('filter/rule', array());
+			$kept = array_values(array_filter($filters, function ($f) use ($assoc) {
+				return (string)($f['associated-rule-id'] ?? '') !== $assoc;
+			}));
+			$removedRule = count($filters) - count($kept);
+			csfm_cfg_set('filter/rule', $kept);
+		}
+		write_config('ComSense: removed port forward ' . ($nat['descr'] ?? ''));
+		csfm_reload(array('filter'));
+		return 'Removed port forward ' . ($nat['descr'] ?? '') . ($removedRule ? ' and its linked firewall rule' : '');
+	}
+	throw new CsfmPolicyError('That port forward is no longer on the firewall');
+}
+
+/* ------------------------------------------------- pfSense email notifications */
+
+/* Whether pfSense sends its own email notifications (System > Advanced > Notifications). */
+function csfm_set_smtp_notifications($enabled) {
+	if ($enabled) {
+		csfm_cfg_del('notifications/smtp/disable');
+	} else {
+		csfm_cfg_set('notifications/smtp/disable', true);
+	}
+	write_config('ComSense: ' . ($enabled ? 'enabled' : 'disabled') . ' email notifications');
+	return $enabled ? 'Email notifications turned on' : 'Email notifications turned off';
+}
+
+function csfm_apply_notifications($content, $prev) {
+	$saved = $prev['saved'] ?? array();
+	csfm_remember($saved, 'notifications/smtp/disable');
+	$summary = csfm_set_smtp_notifications(!empty($content['smtp']));
+	return array('items' => array(), 'saved' => $saved, 'summary' => $summary);
+}
 
 function csfm_build_port_forward($pid, $r) {
 	$nat = array(

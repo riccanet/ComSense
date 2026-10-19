@@ -433,6 +433,74 @@ def test_full_lifecycle(env):
     # helper connects out over a WebSocket (pinned TLS) and runs a real shell on a pseudo-terminal.
     terminal_session(env, creds)
 
+    # 10b. Single changes from the firewall's page: add a port forward, remove it again by the fingerprint the
+    #      server reads from config.xml, and switch pfSense's email notifications.
+    from app.services.configview import port_forwards_from_xml, smtp_notifications_from_xml
+
+    def queue(ttype, payload):
+        with env["db"]() as db:
+            t = queue_task(db, db.get(Device, creds["device_id"]), ttype, payload, actor="e2e", changes_enabled=True)
+            db.commit()
+            return t.id
+
+    def task(tid):
+        with env["db"]() as db:
+            return db.get(Task, tid)
+
+    def pfsense_xml() -> bytes:
+        """The firewall's config as pfSense writes config.xml (the harness keeps it as JSON)."""
+        from xml.sax.saxutils import escape
+
+        def render(tag, value):
+            if isinstance(value, list):
+                return "".join(render(tag, v) for v in value)
+            if isinstance(value, dict):
+                return f"<{tag}>" + "".join(render(k, v) for k, v in value.items()) + f"</{tag}>"
+            if value is True or value == "":
+                return f"<{tag}></{tag}>"
+            return f"<{tag}>{escape(str(value))}</{tag}>"
+
+        cfg = fw_config(env)
+        return ('<?xml version="1.0"?>\n' + render("pfsense", {"version": "23.3", **cfg})).encode()
+
+    tid = queue(TaskType.nat_add, {"rule": {
+        "interface": "wan", "protocol": "tcp", "source": {"any": True},
+        "destination": {"network": "wanip", "port": "8080"}, "target": "192.168.1.50", "local_port": "80",
+        "descr": "Manual web"}})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.success, task(tid).output
+    (fwd,) = [r for r in port_forwards_from_xml(pfsense_xml()) if r["descr"] == "Manual web"]
+    assert not fwd["managed"] and fwd["target"] == "192.168.1.50"
+    tid = queue(TaskType.nat_remove, {"fingerprint": fwd["fingerprint"], "descr": "Manual web"})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.success, task(tid).output
+    assert not [r for r in fw_config(env).get("nat", {}).get("rule", []) if r.get("descr") == "Manual web"]
+    tid = queue(TaskType.nat_remove, {"fingerprint": fwd["fingerprint"], "descr": "Manual web"})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.failed and "no longer on the firewall" in task(tid).output
+
+    tid = queue(TaskType.notifications, {"smtp": False})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.success
+    assert not smtp_notifications_from_xml(pfsense_xml())["enabled"]
+    queue(TaskType.notifications, {"smtp": True})
+    agent(env, "run")
+    assert smtp_notifications_from_xml(pfsense_xml())["enabled"]
+    # The same, deployed as a configuration; unassigning puts back what the firewall had.
+    with env["db"]() as db:
+        notif = Policy(name="quiet", type=PolicyType.notifications, content={"smtp": False})
+        db.add(notif)
+        db.flush()
+        db.add(PolicyAssignment(policy_id=notif.id, device_id=creds["device_id"]))
+        db.commit()
+    agent(env, "run")
+    assert not smtp_notifications_from_xml(pfsense_xml())["enabled"]
+    with env["db"]() as db:
+        db.query(PolicyAssignment).filter(PolicyAssignment.policy_id == notif.id).delete()
+        db.commit()
+    agent(env, "run")
+    assert smtp_notifications_from_xml(pfsense_xml())["enabled"]
+
     # 11. Surviving pfSense upgrades: the agent keeps a copy of its package and a boot script outside the
     #     package, and registers the script as a shellcmd; once in place, check-ins leave them alone.
     rec = env["fw"] / "db" / "recovery"

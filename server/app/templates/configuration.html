@@ -104,6 +104,15 @@
     port; leave the internal port empty to keep the same one. Each port forward lets its traffic through itself, so no
     separate firewall rule is needed. The internal IP may also be an alias.</p>
   </section>
+  {% elif ptype.value == "notifications" %}
+  <section class="card">
+    <label>pfSense email notifications (System &gt; Advanced &gt; Notifications) on the assigned firewalls
+      <select name="smtp"><option value="off"{% if not content.get("smtp") %} selected{% endif %}>Off</option>
+        <option value="on"{% if content.get("smtp") %} selected{% endif %}>On</option></select>
+    </label>
+    <p class="small muted">Only switches the notifications on or off; each firewall keeps its own SMTP server and
+    addresses. Unassigning puts back what the firewall had before.</p>
+  </section>
   {% else %}
   <section class="card">
     <label>Content (JSON) - see docs/POLICIES.md

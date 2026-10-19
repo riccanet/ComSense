@@ -6,6 +6,7 @@ firewall last reported is its current configuration.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
@@ -27,7 +28,7 @@ SECRET_TAGS = (
 )
 _SECRET_RE = re.compile(r"<(" + "|".join(re.escape(t) for t in SECRET_TAGS) + r")>(.*?)</\1>", re.S | re.I)
 
-_nat_cache: OrderedDict[tuple[int, str], list[dict[str, Any]]] = OrderedDict()
+_nat_cache: OrderedDict[tuple[int, str], dict[str, Any]] = OrderedDict()
 _NAT_CACHE_SIZE = 64
 
 
@@ -63,6 +64,21 @@ def _endpoint(el: ET.Element | None) -> tuple[str, str]:
     return endpoint_text(ep), str(ep.get("port") or "")
 
 
+def nat_fingerprint(interface: str, protocol: str, target: str, local_port: str, port: str, descr: str) -> str:
+    """Identifies one port forward; the agent computes the same (csfm_nat_fingerprint)."""
+    return hashlib.sha256("\x1f".join((interface, protocol, target, local_port, port, descr)).encode()).hexdigest()[:16]
+
+
+def smtp_notifications_from_xml(xml: bytes) -> dict[str, Any]:
+    """pfSense's own email notifications (System > Advanced > Notifications)."""
+    smtp = _parse(xml).find("./notifications/smtp")
+    return {
+        "enabled": smtp is None or smtp.find("disable") is None,
+        "server": (smtp.findtext("ipaddress") or "").strip() if smtp is not None else "",
+        "to": (smtp.findtext("notifyemailaddress") or "").strip() if smtp is not None else "",
+    }
+
+
 def port_forwards_from_xml(xml: bytes) -> list[dict[str, Any]]:
     root = _parse(xml)
     out = []
@@ -74,6 +90,11 @@ def port_forwards_from_xml(xml: bytes) -> list[dict[str, Any]]:
         dst, dst_port = _endpoint(rule.find("destination"))
         descr = text("descr")
         assoc = text("associated-rule-id")
+        dest = rule.find("destination")
+        fingerprint = nat_fingerprint(
+            rule.findtext("interface") or "", rule.findtext("protocol") or "", rule.findtext("target") or "",
+            rule.findtext("local-port") or "", (dest.findtext("port") if dest is not None else "") or "",
+            rule.findtext("descr") or "")
         out.append({
             "interface": text("interface") or "wan",
             "protocol": text("protocol") or "any",
@@ -87,17 +108,19 @@ def port_forwards_from_xml(xml: bytes) -> list[dict[str, Any]]:
             "nordr": rule.find("nordr") is not None,
             "filter_rule": "pass" if assoc == "pass" else ("linked" if assoc else "none"),
             "managed": bool(text("comsense_policy")) or descr.startswith("[CSFM]"),
+            "fingerprint": fingerprint,
         })
     return out
 
 
-def port_forwards(settings: Settings, backup: Backup) -> list[dict[str, Any]]:
-    """Port forwards in a backup (cached per backup; backups never change)."""
+def config_summary(settings: Settings, backup: Backup) -> dict[str, Any]:
+    """Port forwards and email notification state in a backup (cached; backups never change)."""
     key = (backup.id, backup.sha256)
     if key in _nat_cache:
         _nat_cache.move_to_end(key)
         return _nat_cache[key]
-    rules = port_forwards_from_xml(load_backup(settings, backup))
+    xml = load_backup(settings, backup)
+    rules = {"nat": port_forwards_from_xml(xml), "smtp": smtp_notifications_from_xml(xml)}
     _nat_cache[key] = rules
     while len(_nat_cache) > _NAT_CACHE_SIZE:
         _nat_cache.popitem(last=False)

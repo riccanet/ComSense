@@ -64,6 +64,7 @@ TYPE_LABELS = {
     PolicyType.system: "System settings",
     PolicyType.packages: "Packages",
     PolicyType.config_set: "Config values",
+    PolicyType.notifications: "Email notifications",
 }
 
 
@@ -217,6 +218,16 @@ def _validate_port_forwards(content: dict[str, Any]) -> None:
         _require(isinstance(rule.get("disabled", False), bool), f"{where}.disabled must be a boolean")
 
 
+def _validate_notifications(content: dict[str, Any]) -> None:
+    _require(set(content) == {"smtp"} and isinstance(content["smtp"], bool),
+             "notifications: content must be {\"smtp\": true or false}")
+
+
+def validate_port_forward_rule(rule: dict[str, Any]) -> None:
+    """One port forward, as added from a firewall's page."""
+    _validate_port_forwards({"rules": [rule]})
+
+
 def _validate_system(content: dict[str, Any]) -> None:
     unknown = set(content) - SYSTEM_KEYS
     _require(not unknown, f"system: unknown keys {sorted(unknown)}")
@@ -278,6 +289,7 @@ _VALIDATORS = {
     PolicyType.packages: _validate_packages,
     PolicyType.config_set: _validate_config_set,
     PolicyType.port_forward: _validate_port_forwards,
+    PolicyType.notifications: _validate_notifications,
 }
 
 

@@ -44,11 +44,12 @@ SECTIONS = [
     ("aliases", "Aliases", (PolicyType.aliases,)),
     ("rules", "Firewall rules", (PolicyType.firewall_rules,)),
     ("nat", "NAT (inbound)", (PolicyType.port_forward,)),
+    ("notifications", "Notifications", (PolicyType.notifications,)),
     ("groups", "Firewall groups", ()),
     ("advanced", "Advanced", (PolicyType.system, PolicyType.packages, PolicyType.config_set)),
 ]
 SECTION_OF = {t: path for path, _, types in SECTIONS for t in types}
-FORM_TYPES = (PolicyType.aliases, PolicyType.firewall_rules, PolicyType.port_forward)
+FORM_TYPES = (PolicyType.aliases, PolicyType.firewall_rules, PolicyType.port_forward, PolicyType.notifications)
 ALIAS_FORM_TYPES = ("host", "network", "port", "url", "urltable")
 RULE_PROTOCOLS = ("any", "tcp", "udp", "tcp/udp", "icmp")
 NAT_PROTOCOLS = ("tcp", "udp", "tcp/udp")
@@ -164,6 +165,9 @@ def content_from_form(ptype: PolicyType, form) -> dict[str, Any]:
             }
             rules.append(rule)
         return {"position": form.get("position") or "top", "rules": rules}
+
+    if ptype == PolicyType.notifications:
+        return {"smtp": form.get("smtp") == "on"}
 
     raw = str(form.get("content", ""))
     try:
@@ -350,7 +354,8 @@ def configuration_new(request: Request, type: str = "aliases", settings: Setting
                       user: User = Depends(operator), db: Session = Depends(get_db)):
     ptype = PolicyType(type) if type in PolicyType.__members__ else PolicyType.aliases
     content = {"position": "top", "rules": []} if ptype in (PolicyType.firewall_rules, PolicyType.port_forward) \
-        else {"aliases": []} if ptype == PolicyType.aliases else EXAMPLES[ptype]
+        else {"aliases": []} if ptype == PolicyType.aliases else {"smtp": False} if ptype == PolicyType.notifications \
+        else EXAMPLES[ptype]
     return _editor(request, settings, db, None, ptype, content)
 
 

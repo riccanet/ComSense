@@ -53,8 +53,8 @@ from ..enrollment import make_code
 from ..services.agentpkg import agent_outdated, latest_package
 from ..services.appsettings import agent_tls_names, effective_agent_url, format_dt, get_email_settings, setup_pending
 from ..services.backups import BackupError, delete_backup_file, load_backup
-from ..services.configview import current_backup, port_forwards, redact
-from ..services.policies import TYPE_LABELS, desired_policies, policy_hash
+from ..services.configview import config_summary, current_backup, redact
+from ..services.policies import TYPE_LABELS, PolicyError, desired_policies, policy_hash, validate_port_forward_rule
 from ..services.tasks import COMING_SOON, SAFE_TASKS, TASK_CAPABILITY, TaskError, queue_task
 from ..tls import ensure_agent_tls
 from .auth import csrf_token, current_user, flash, pop_flashes, require, verify_csrf
@@ -403,12 +403,20 @@ def device_detail(
 ):
     device = _get_device(db, device_id)
     nat_backup = current_backup(db, device)
-    nat_rules, nat_error = [], ""
+    nat_rules, nat_error, smtp = [], "", None
     if nat_backup is not None:
         try:
-            nat_rules = port_forwards(request.app.state.settings, nat_backup)
+            summary = config_summary(request.app.state.settings, nat_backup)
+            nat_rules, smtp = summary["nat"], summary["smtp"]
         except (BackupError, OSError) as exc:
             nat_error = str(exc)
+    open_states = (TaskStatus.pending, TaskStatus.sent, TaskStatus.running)
+    queued = db.scalars(select(Task).where(
+        Task.device_id == device.id, Task.status.in_(open_states),
+        Task.type.in_((TaskType.nat_add, TaskType.nat_remove, TaskType.notifications)))).all()
+    nat_removing = {t.payload.get("fingerprint") for t in queued if t.type == TaskType.nat_remove}
+    nat_adding = [t.payload.get("rule", {}) for t in queued if t.type == TaskType.nat_add]
+    smtp_pending = next((t.payload.get("smtp") for t in queued if t.type == TaskType.notifications), None)
     since = utcnow() - timedelta(hours=24)
     metrics = db.scalars(
         select(Metric).where(Metric.device_id == device.id, Metric.ts >= since).order_by(Metric.ts)
@@ -455,6 +463,10 @@ def device_detail(
         nat_backup=nat_backup,
         nat_rules=nat_rules,
         nat_error=nat_error,
+        nat_removing=nat_removing,
+        nat_adding=nat_adding,
+        smtp=smtp,
+        smtp_pending=smtp_pending,
         device_groups=db.scalars(
             select(DeviceGroup).where(DeviceGroup.devices.any(Device.id == device.id)).order_by(DeviceGroup.name)
         ).all(),
@@ -553,6 +565,69 @@ def _device_page_token(db: Session, device: Device) -> str:
 def device_poll(device_id: str, user: User = Depends(viewer), db: Session = Depends(get_db)) -> dict[str, str]:
     """Polled by the firewall's page (static/app.js), which reloads itself when the token changes."""
     return {"token": _device_page_token(db, _get_device(db, device_id))}
+
+
+def _queue_change(request: Request, db: Session, settings: Settings, device: Device, user: User, ttype: TaskType,
+                  payload: dict[str, Any], what: str):
+    try:
+        queue_task(db, device, ttype, payload, actor=user.username, changes_enabled=settings.enable_firewall_changes)
+    except TaskError as exc:
+        flash(request, str(exc), "error")
+        return redirect(f"/devices/{device.id}")
+    audit(db, user.username, f"task.{ttype.value}", target=device.id, detail=what, ip=_ip(request))
+    db.commit()
+    flash(request, f"Queued: {what}. The firewall applies it within seconds and keeps the change only if it can "
+          "still reach ComSense afterwards.", "success")
+    return redirect(f"/devices/{device.id}")
+
+
+@router.post("/devices/{device_id}/nat")
+async def device_nat_add(device_id: str, request: Request, settings: Settings = Depends(get_settings),
+                         user: User = Depends(operator), db: Session = Depends(get_db)):
+    """Add one port forward to this firewall only (Configurations deploys them to many)."""
+    from .config_routes import parse_endpoint
+
+    device = _get_device(db, device_id)
+    form = await request.form()
+    dstport = str(form.get("dstport", "")).strip()
+    rule = {
+        "interface": str(form.get("interface", "wan")).strip().lower() or "wan",
+        "protocol": str(form.get("protocol", "tcp")),
+        "source": parse_endpoint(str(form.get("src", ""))),
+        "destination": parse_endpoint(str(form.get("dst", "")) or "wan address", dstport),
+        "target": str(form.get("target", "")).strip(),
+        "local_port": str(form.get("localport", "")).strip() or dstport,
+        "descr": str(form.get("descr", "")).strip()[:200],
+    }
+    try:
+        validate_port_forward_rule(rule)
+    except PolicyError as exc:
+        flash(request, str(exc).replace("rules[0].", ""), "error")
+        return redirect(f"/devices/{device_id}#nat")
+    return _queue_change(request, db, settings, device, user, TaskType.nat_add, {"rule": rule},
+                         f"add port forward {dstport} -> {rule['target']}:{rule['local_port']}")
+
+
+@router.post("/devices/{device_id}/nat/remove")
+def device_nat_remove(device_id: str, request: Request, fingerprint: str = Form(...), descr: str = Form(""),
+                      settings: Settings = Depends(get_settings), user: User = Depends(operator),
+                      db: Session = Depends(get_db)):
+    device = _get_device(db, device_id)
+    if not re.fullmatch(r"[0-9a-f]{16}", fingerprint):
+        raise HTTPException(400, "Invalid port forward reference")
+    return _queue_change(request, db, settings, device, user, TaskType.nat_remove,
+                         {"fingerprint": fingerprint, "descr": descr[:200]},
+                         f"remove port forward {descr or fingerprint}")
+
+
+@router.post("/devices/{device_id}/notifications")
+def device_notifications(device_id: str, request: Request, smtp: str = Form(...),
+                         settings: Settings = Depends(get_settings), user: User = Depends(operator),
+                         db: Session = Depends(get_db)):
+    device = _get_device(db, device_id)
+    enabled = smtp == "on"
+    return _queue_change(request, db, settings, device, user, TaskType.notifications, {"smtp": enabled},
+                         f"turn {'on' if enabled else 'off'} pfSense email notifications")
 
 
 @router.post("/devices/{device_id}/check-now")

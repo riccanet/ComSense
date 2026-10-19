@@ -25,6 +25,9 @@ TASK_CAPABILITY: dict[TaskType, str | None] = {
     TaskType.reboot: "reboot",
     TaskType.update_agent: "upgrade",
     TaskType.open_terminal: "shell",
+    TaskType.nat_add: "policy",
+    TaskType.nat_remove: "policy",
+    TaskType.notifications: "policy",
 }
 
 # How long a task may stay "sent"/"running" without a final result.
