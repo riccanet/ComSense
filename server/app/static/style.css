@@ -18,6 +18,8 @@
   --bad: #b42318;
   --ok-bg: #e5f5ec;
   --warn-bg: #fff4dc;
+  --banner-bg: #ffe066;
+  --banner-line: #e6b800;
   --bad-bg: #fde8e7;
   --neutral-bg: #edf0f5;
   --chart-cpu: #d7262e;
@@ -39,6 +41,8 @@
   --bad: #f97066;
   --ok-bg: #12301f;
   --warn-bg: #3a2c0e;
+  --banner-bg: #5c4500;
+  --banner-line: #8a6a00;
   --bad-bg: #3d1614;
   --neutral-bg: #232a35;
   --chart-cpu: #ff5a52;
@@ -61,6 +65,10 @@
     --bad: #f97066;
     --ok-bg: #12301f;
     --warn-bg: #3a2c0e;
+    --banner-bg: #5c4500;
+    --banner-line: #8a6a00;
+  --banner-bg: #5c4500;
+  --banner-line: #8a6a00;
     --bad-bg: #3d1614;
     --neutral-bg: #232a35;
     --chart-cpu: #ff5a52;
@@ -334,6 +342,10 @@ nav.tabs a.active { border-color: var(--line); background: var(--panel); color: 
 .badge.rule-pass { background: var(--ok-bg); color: var(--ok); }
 .badge.rule-block, .badge.rule-reject { background: var(--bad-bg); color: var(--bad); }
 #pending-banner:empty { display: none; }
-.pending-banner { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap;
-  padding: .55rem 1.5rem; background: var(--warn-bg); color: var(--text); border-bottom: 1px solid var(--line); }
+/* Full window width, yellow, with its text and buttons centred. */
+#pending-banner { width: 100%; }
+.pending-banner { display: flex; align-items: center; justify-content: center; gap: .5rem 1rem; flex-wrap: wrap;
+  text-align: center; padding: .6rem 1.5rem; background: var(--banner-bg); color: var(--text);
+  border-bottom: 1px solid var(--banner-line); }
+.pending-banner .muted { color: inherit; opacity: .75; }
 .pending-banner .actions { display: flex; gap: .4rem; }
