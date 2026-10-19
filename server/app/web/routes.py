@@ -13,12 +13,12 @@ from fastapi.templating import Jinja2Templates
 from jinja2 import Undefined
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from .. import __version__
 from ..audit import audit
 from ..config import Settings, get_settings
-from ..db import get_db
+from ..db import get_db, session_factory
 from ..models import (
     SsoProvider,
     DeviceGroup,
@@ -180,10 +180,23 @@ def theme_preference(request: Request) -> str:
     return value if value in THEMES else "auto"
 
 
+def pending_devices(user: User | None) -> list[Device]:
+    """Firewalls waiting for approval, for the banner admins see under the navigation bar."""
+    if user is None or user.role != Role.admin:
+        return []
+    with session_factory()() as db:
+        devices = db.scalars(select(Device).where(Device.status == DeviceStatus.pending)
+                             .options(selectinload(Device.organization)).order_by(Device.enrolled_at)).all()
+        db.expunge_all()
+        return list(devices)
+
+
 def render(request: Request, template: str, status_code: int = 200, **ctx: Any) -> HTMLResponse:
+    user = getattr(request.state, "user", None)
+    ctx.setdefault("pending_devices", pending_devices(user))
     ctx.update(
         request=request,
-        user=getattr(request.state, "user", None),
+        user=user,
         csrf_token=csrf_token(request),
         flashes=pop_flashes(request),
         version=__version__,
@@ -197,6 +210,11 @@ def render(request: Request, template: str, status_code: int = 200, **ctx: Any) 
 
 def redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url, status_code=303)
+
+
+def local_path(value: str | None, default: str) -> str:
+    """A page of this console to go back to (never another site)."""
+    return value if value and value.startswith("/") and not value.startswith(("//", "/\\")) else default
 
 
 def _ip(request: Request) -> str:
@@ -404,6 +422,13 @@ async def devices_bulk(
     label = BULK_LABELS.get(action, action)
     flash(request, f"{label}: queued on {queued} firewall(s); skipped {skipped}.", "success")
     return redirect("/devices")
+
+
+@router.get("/pending-banner", response_class=HTMLResponse)
+def pending_banner(request: Request, user: User = Depends(viewer)):
+    """The approval banner alone, polled by static/app.js so a new firewall shows up without a reload."""
+    return TEMPLATES.TemplateResponse(request, "_pending_banner.html", {
+        "request": request, "csrf_token": csrf_token(request), "pending_devices": pending_devices(user)})
 
 
 @router.post("/devices/assign")
@@ -917,6 +942,7 @@ def device_set_status(
     device_id: str,
     request: Request,
     action: str = Form(...),
+    next: str = Form(""),  # noqa: A002 - the form field
     user: User = Depends(admin),
     db: Session = Depends(get_db),
 ):
@@ -934,14 +960,16 @@ def device_set_status(
         raise HTTPException(400, "Invalid action for the device's current state")
     audit(db, user.username, f"device.{action}", target=device.id, ip=_ip(request))
     db.commit()
-    flash(request, f"Device {action}d.", "success")
-    return redirect(f"/devices/{device_id}")
+    flash(request, f"{device.name} approved; it receives tasks from its next check-in." if action == "approve"
+          else f"Device {action}d.", "success")
+    return redirect(local_path(next, f"/devices/{device_id}"))
 
 
 @router.post("/devices/{device_id}/delete")
 def device_delete(
     device_id: str,
     request: Request,
+    next: str = Form(""),  # noqa: A002 - the form field
     settings: Settings = Depends(get_settings),
     user: User = Depends(admin),
     db: Session = Depends(get_db),
@@ -953,7 +981,8 @@ def device_delete(
     db.delete(device)
     db.commit()
     flash(request, "Device and its backups were deleted. Its token no longer works.", "success")
-    return redirect("/devices")
+    back = local_path(next, "/devices")
+    return redirect("/devices" if back.startswith(f"/devices/{device_id}") else back)
 
 
 @router.post("/devices/{device_id}/policies")

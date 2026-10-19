@@ -333,3 +333,7 @@ nav.tabs a:hover { background: var(--neutral-bg); text-decoration: none; }
 nav.tabs a.active { border-color: var(--line); background: var(--panel); color: var(--accent); font-weight: 600; }
 .badge.rule-pass { background: var(--ok-bg); color: var(--ok); }
 .badge.rule-block, .badge.rule-reject { background: var(--bad-bg); color: var(--bad); }
+#pending-banner:empty { display: none; }
+.pending-banner { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap;
+  padding: .55rem 1.5rem; background: var(--warn-bg); color: var(--text); border-bottom: 1px solid var(--line); }
+.pending-banner .actions { display: flex; gap: .4rem; }

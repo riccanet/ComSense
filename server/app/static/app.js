@@ -158,4 +158,17 @@
         .catch(function () {});
     }, 4000);
   }
+  // Firewalls waiting for approval: the banner under the navigation bar refreshes itself, so a new
+  // firewall shows up on whatever page is open.
+  var banner = document.querySelector("[data-pending-banner]");
+  if (banner && window.fetch) {
+    window.setInterval(function () {
+      if (document.hidden) return;
+      if (banner.contains(document.activeElement)) return;
+      fetch(banner.getAttribute("data-pending-banner"), { credentials: "same-origin", headers: { Accept: "text/html" } })
+        .then(function (r) { return r.ok ? r.text() : null; })
+        .then(function (html) { if (html !== null && html.trim() !== banner.innerHTML.trim()) banner.innerHTML = html; })
+        .catch(function () {});
+    }, 15000);
+  }
 })();

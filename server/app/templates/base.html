@@ -43,6 +43,7 @@
     </form>
   </div>
 </header>
+{% if user.role == Role.admin %}<div id="pending-banner" data-pending-banner="/pending-banner">{% include "_pending_banner.html" %}</div>{% endif %}
 {% endif %}
 <main>
   {% for category, message in flashes %}
