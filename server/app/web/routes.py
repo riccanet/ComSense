@@ -213,8 +213,10 @@ def redirect(url: str) -> RedirectResponse:
 
 
 def local_path(value: str | None, default: str) -> str:
-    """A page of this console to go back to (never another site)."""
-    return value if value and value.startswith("/") and not value.startswith(("//", "/\\")) else default
+    """A page of this console to go back to (never another site, nor the banner fragment)."""
+    if not value or not value.startswith("/") or value.startswith(("//", "/\\", "/pending-banner")):
+        return default
+    return value
 
 
 def _ip(request: Request) -> str:
@@ -425,10 +427,12 @@ async def devices_bulk(
 
 
 @router.get("/pending-banner", response_class=HTMLResponse)
-def pending_banner(request: Request, user: User = Depends(viewer)):
-    """The approval banner alone, polled by static/app.js so a new firewall shows up without a reload."""
+def pending_banner(request: Request, page: str = "/", user: User = Depends(viewer)):
+    """The approval banner alone, polled by static/app.js so a new firewall shows up without a reload.
+    `page` is the page it is shown on, where Approve and Reject return to."""
     return TEMPLATES.TemplateResponse(request, "_pending_banner.html", {
-        "request": request, "csrf_token": csrf_token(request), "pending_devices": pending_devices(user)})
+        "request": request, "csrf_token": csrf_token(request), "pending_devices": pending_devices(user),
+        "banner_page": local_path(page, "/")})
 
 
 @router.post("/devices/assign")

@@ -165,7 +165,8 @@
     window.setInterval(function () {
       if (document.hidden) return;
       if (banner.contains(document.activeElement)) return;
-      fetch(banner.getAttribute("data-pending-banner"), { credentials: "same-origin", headers: { Accept: "text/html" } })
+      var url = banner.getAttribute("data-pending-banner") + "?page=" + encodeURIComponent(location.pathname + location.search);
+      fetch(url, { credentials: "same-origin", headers: { Accept: "text/html" } })
         .then(function (r) { return r.ok ? r.text() : null; })
         .then(function (html) { if (html !== null && html.trim() !== banner.innerHTML.trim()) banner.innerHTML = html; })
         .catch(function () {});

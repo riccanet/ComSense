@@ -1,13 +1,14 @@
 {# Firewalls waiting for an admin's approval; shown under the navigation bar and refreshed by app.js. #}
 {% from "macros.html" import post_button_fields with context %}
+{% set back = banner_page or request.url.path %}
 {% for d in pending_devices[:5] %}
 <div class="pending-banner" role="status">
   <span><strong>New firewall:</strong> <a href="/devices/{{ d.id }}">{{ d.name }}</a>
     <span class="muted small">{% if d.wan_ip %}{{ d.wan_ip }} · {% endif %}{% if d.organization %}{{ d.organization.name }} · {% endif %}enrolled {{ d.enrolled_at|ago }}</span>
     is waiting for approval.</span>
   <span class="actions">
-    {{ post_button_fields("/devices/" ~ d.id ~ "/status", "Approve", "primary small", "", {"action": "approve", "next": request.url.path}) }}
-    {{ post_button_fields("/devices/" ~ d.id ~ "/delete", "Reject", "small danger", "Reject " ~ d.name ~ " and delete it? Its agent stops being accepted and needs a new enrollment key.", {"next": request.url.path}) }}
+    {{ post_button_fields("/devices/" ~ d.id ~ "/status", "Approve", "primary small", "", {"action": "approve", "next": back}) }}
+    {{ post_button_fields("/devices/" ~ d.id ~ "/delete", "Reject", "small danger", "Reject " ~ d.name ~ " and delete it? Its agent stops being accepted and needs a new enrollment key.", {"next": back}) }}
   </span>
 </div>
 {% endfor %}

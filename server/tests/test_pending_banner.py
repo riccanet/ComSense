@@ -19,6 +19,13 @@ def test_admins_see_new_firewalls_waiting_for_approval(client, db, agent):
     # The banner alone, which the page fetches every few seconds.
     fragment = client.get("/pending-banner").text
     assert "new-fw" in fragment and "<html" not in fragment
+    # Its buttons return to the page it is shown on, never to the fragment itself.
+    assert 'name="next" value="/pending-banner"' not in fragment
+    fragment = client.get("/pending-banner", params={"page": "/devices?org=none"}).text
+    assert 'name="next" value="/devices?org=none"' in fragment
+    assert 'value="https://evil.example/"' not in client.get("/pending-banner", params={"page": "https://evil.example/"}).text
+    r = client.post(f"/devices/{did}/status", data={"action": "nope", "next": "/pending-banner", "csrf_token": csrf})
+    assert r.status_code == 400
 
     r = client.post(f"/devices/{did}/status", data={"action": "approve", "next": "/customers", "csrf_token": csrf},
                     follow_redirects=False)
@@ -40,6 +47,10 @@ def test_rejecting_deletes_and_redirects_only_inside_the_console(client, db, age
     r = client.post(f"/devices/{other}/status", data={"action": "approve", "next": "https://evil.example/",
                                                       "csrf_token": csrf}, follow_redirects=False)
     assert r.headers["location"] == f"/devices/{other}"
+    third = enroll(agent, make_key(db, require_approval=True), system={"hostname": "c", "unique_id": "c1"})["device_id"]
+    r = client.post(f"/devices/{third}/status", data={"action": "approve", "next": "/pending-banner?page=/",
+                                                      "csrf_token": csrf}, follow_redirects=False)
+    assert r.headers["location"] == f"/devices/{third}"
 
 
 def test_only_admins_see_the_banner(client, db, agent):
