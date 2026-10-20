@@ -28,7 +28,7 @@
 {% if not ts.connected_at %}<p class="muted">Nothing was recorded: the session never connected.</p>{% endif %}
 {% endif %}
 {% if live or ts.connected_at %}
-<div id="terminal" class="terminal" data-session="{{ ts.id }}" data-live="{{ 1 if live else 0 }}"
+<div id="terminal" class="terminal-box" data-session="{{ ts.id }}" data-live="{{ 1 if live else 0 }}"
      data-recording="/terminal/{{ ts.id }}/recording"></div>
 {% endif %}
 {% endblock %}

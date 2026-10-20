@@ -22,11 +22,22 @@
     status.className = "terminal-status " + (cls || "muted");
   }
 
+  if (!live) el.classList.add("replay");
   if (live) connect(); else replay();
+
+  // Fill the window below the box without making the page scroll (the footer stays in view).
+  function sizeToWindow() {
+    const top = el.getBoundingClientRect().top + window.scrollY;
+    let height = Math.max(300, Math.floor(window.innerHeight - top - 16));
+    el.style.height = height + "px";
+    const extra = document.documentElement.scrollHeight - window.innerHeight;
+    if (extra > 0) el.style.height = Math.max(300, height - extra) + "px";
+  }
 
   function connect() {
     const fit = new window.FitAddon.FitAddon();
     term.loadAddon(fit);
+    sizeToWindow();
     fit.fit();
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(proto + "//" + location.host + "/terminal/" + encodeURIComponent(el.dataset.session) + "/ws");
@@ -56,7 +67,11 @@
     };
     term.onData((d) => send({ t: "i", d: d }));
     term.onResize((size) => send({ t: "r", c: size.cols, r: size.rows }));
-    window.addEventListener("resize", () => fit.fit());
+    let pending = 0;
+    window.addEventListener("resize", () => {
+      cancelAnimationFrame(pending);
+      pending = requestAnimationFrame(() => { sizeToWindow(); fit.fit(); });
+    });
     const btn = document.getElementById("terminal-close");
     if (btn) btn.addEventListener("click", () => ws.close());
   }

@@ -296,8 +296,14 @@ h2 a.plain:hover { color: var(--accent); text-decoration: none; }
 
 /* Remote terminal */
 .terminal-card { max-width: 640px; }
-.terminal { background: #0b0d10; border: 1px solid var(--line); border-radius: 8px; padding: 6px;
-  height: calc(100vh - 250px); min-height: 360px; overflow: auto; }
+/* The box around xterm (which puts its own "terminal" class on its element). terminal.js sizes the box to the rest of the window and fits the terminal to it, so neither the box
+   nor the page scrolls; scroll back through output with the mouse wheel or Shift+PgUp. */
+.terminal-box { background: #0b0d10; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px;
+  box-sizing: content-box; height: calc(100vh - 264px); min-height: 300px; overflow: hidden; }
+.terminal-box .xterm-viewport { scrollbar-width: none; }
+.terminal-box .xterm-viewport::-webkit-scrollbar { display: none; }
+/* A replay keeps the size it was recorded at; scroll sideways only if the window is narrower. */
+.terminal-box.replay { height: auto; min-height: 0; overflow-x: auto; }
 .terminal-status { margin: 0 0 .5rem; }
 .terminal-status.ok { color: var(--ok); }
 .terminal-status.bad { color: var(--bad); }
