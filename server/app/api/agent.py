@@ -385,6 +385,12 @@ async def task_result(
         raise HTTPException(400, "status must be running, success or failed")
     task.status = status
     task.output = _str(data.get("output"), 64_000)
+    if (task.type == TaskType.update_agent and status == TaskStatus.failed
+            and "is already installed" in (task.output or "")):
+        # Agents up to 0.2.9 ran a plain `pkg add`, which pkg refuses over an installed package.
+        task.output += ("\n\nThis agent version cannot update itself in place. Install the new package once "
+                        "by hand (Settings > Enrollment keys shows the command; it uses pkg-static add -f); "
+                        "later versions update themselves.")
     result = data.get("result")
     if isinstance(result, dict):
         task.result = result

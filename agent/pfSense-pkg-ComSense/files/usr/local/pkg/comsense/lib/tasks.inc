@@ -381,7 +381,12 @@ function csfm_task_update_agent($client, $id, $payload) {
 	));
 	csfm_report_result($client, $id, 'running', "Downloaded {$file} (sha256 verified); installing.");
 	$log = escapeshellarg(CSFM_AGENT_UPDATE_LOG);
-	$cmd = 'sleep 2; ' . CSFM_PKG . ' add ' . escapeshellarg(CSFM_AGENT_UPDATE_PKG) . " > {$log} 2>&1; "
+	/*
+	 * -f: pkg up to 2.1 (every pfSense release so far) refuses `pkg add` for a package that is already
+	 * installed, whatever the version ("the most recent version of ... is already installed"). Forced, it
+	 * installs over the old one and runs the new package's install script, not the old one's removal.
+	 */
+	$cmd = 'sleep 2; ' . CSFM_PKG . ' add -f ' . escapeshellarg(CSFM_AGENT_UPDATE_PKG) . " > {$log} 2>&1; "
 	    . 'touch ' . escapeshellarg(CSFM_DB_DIR . '/checkin-now') . '; '
 	    . "/usr/local/etc/rc.d/comsense.sh restart >> {$log} 2>&1";
 	/* daemon(8) detaches fully: the install survives the agent restart it triggers. */

@@ -41,10 +41,10 @@ only thing to paste on the firewall. Once enrolled, the firewall gets its own de
   <ol>
     <li>Install the agent package from a shell on the firewall (Diagnostics &gt; Command Prompt or SSH):
       {% if package %}
-      <pre>fetch -o /tmp/comsense.pkg {% if agent_pin %}--no-verify-peer --no-verify-hostname {% endif %}{{ agent_url }}/downloads/{{ package.name }} &amp;&amp; [ "$(sha256 -q /tmp/comsense.pkg)" = "{{ package.sha256 }}" ] &amp;&amp; pkg-static add /tmp/comsense.pkg</pre>
+      <pre>fetch -o /tmp/comsense.pkg {% if agent_pin %}--no-verify-peer --no-verify-hostname {% endif %}{{ agent_url }}/downloads/{{ package.name }} &amp;&amp; [ "$(sha256 -q /tmp/comsense.pkg)" = "{{ package.sha256 }}" ] &amp;&amp; pkg-static add -f /tmp/comsense.pkg</pre>
       <span class="small muted">The SHA-256 check guarantees the package is the one on this server{% if agent_pin %}, even though fetch cannot verify the self-issued certificate{% endif %}.</span>
       {% else %}
-      <pre>pkg-static add https://&lt;where you host it&gt;/pfSense-pkg-ComSense-&lt;version&gt;.pkg</pre>
+      <pre>pkg-static add -f https://&lt;where you host it&gt;/pfSense-pkg-ComSense-&lt;version&gt;.pkg</pre>
       <span class="small muted">Copy a built package into the server's <code>downloads</code> data folder to have it served from here with a ready-made install command. See docs/AGENT.md.</span>
       {% endif %}
     </li>

@@ -108,3 +108,17 @@ def test_device_page_follows_the_firewall(client, db, agent):
     assert queued != token
     agent.post("/api/agent/v1/checkin", json={"system": {"hostname": "fw"}}, headers=auth(creds["token"]))
     assert client.get(f"/devices/{did}/poll").json()["token"] != queued
+
+
+def test_failed_in_place_update_explains_the_one_time_manual_install(client, db, agent, settings):
+    creds = enroll(agent, make_key(db))
+    csrf = login(client)
+    client.post(f"/devices/{creds['device_id']}/update-agent", data={"csrf_token": csrf})
+    (task,) = _tasks(db, creds["device_id"], TaskType.update_agent)
+    agent.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"]))  # picks the task up
+    agent.post(f"/api/agent/v1/tasks/{task.id}/result", headers=auth(creds["token"]), json={
+        "status": "failed", "output": "The agent is still at 0.2.7 after installing 0.2.10.\nInstalling "
+        "pfSense-pkg-ComSense-0.2.10...\nthe most recent version of pfSense-pkg-ComSense-0.2.7 is already installed"})
+    db.expire_all()
+    task = db.get(Task, task.id)
+    assert task.status.value == "failed" and "pkg-static add -f" in task.output

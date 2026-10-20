@@ -53,9 +53,9 @@ From **Diagnostics > Command Prompt** or an SSH shell:
 Copy the install command from the server's *Settings > Enrollment keys* page. It looks like:
 
 ```sh
-fetch -o /tmp/comsense.pkg --no-verify-peer --no-verify-hostname https://comsense.example.com:10443/downloads/pfSense-pkg-ComSense-0.2.9.pkg \
+fetch -o /tmp/comsense.pkg --no-verify-peer --no-verify-hostname https://comsense.example.com:10443/downloads/pfSense-pkg-ComSense-0.2.10.pkg \
   && [ "$(sha256 -q /tmp/comsense.pkg)" = "<sha256 shown on the page>" ] \
-  && pkg-static add /tmp/comsense.pkg
+  && pkg-static add -f /tmp/comsense.pkg
 ```
 
 `--no-verify-peer --no-verify-hostname` are there because the agent port uses the server's own
@@ -109,7 +109,7 @@ check-in.
 When the server has a newer agent package than a firewall runs, the firewall's page shows
 *Update agent to x.y.z* (and the firewall list offers it as a bulk action). The agent downloads the
 package over its pinned, authenticated connection, checks its SHA-256, installs it with
-`pkg-static add` and restarts itself; the task turns green when the new version checks in. It needs
+`pkg-static add -f` and restarts itself; the task turns green when the new version checks in. It needs
 the **Upgrades** permission on the firewall (Services > ComSense Agent). Agents older than 0.1.9 do not know
 this task: install 0.1.9 once by hand.
 

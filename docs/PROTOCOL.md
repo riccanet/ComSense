@@ -120,7 +120,7 @@ turns pfSense's own email notifications on or off (`notifications/smtp/disable`)
 
 `update_agent` is the console's *Update agent* button. The agent downloads `file` from
 `GET /agent-package/{file}`, refuses it unless its SHA-256 matches and `version` is newer than its own,
-reports `running`, and installs it with `pkg-static add` in a detached process that then restarts the
+reports `running`, and installs it with `pkg-static add -f` (pkg refuses a plain `add` over an installed package) in a detached process that then restarts the
 agent. The next cycle, run by the new agent, reports `success` (or `failed` with the pkg output).
 Agent updates change no firewall configuration, so they are not held back by
 `CSFM_ENABLE_FIREWALL_CHANGES`.

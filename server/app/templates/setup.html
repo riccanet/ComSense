@@ -96,8 +96,8 @@
       {% if package %}
       Run this from a shell on the firewall (Diagnostics &gt; Command Prompt, or SSH). It downloads the package from this
       server, checks it and installs it:
-      <pre>fetch -o /tmp/comsense.pkg {% if agent_pin %}--no-verify-peer --no-verify-hostname {% endif %}{{ agent_url }}/downloads/{{ package.name }} &amp;&amp; [ "$(sha256 -q /tmp/comsense.pkg)" = "{{ package.sha256 }}" ] &amp;&amp; pkg-static add /tmp/comsense.pkg</pre>
-      <p>Or download it and copy it to the firewall yourself, then run <code>pkg-static add {{ package.name }}</code> there:</p>
+      <pre>fetch -o /tmp/comsense.pkg {% if agent_pin %}--no-verify-peer --no-verify-hostname {% endif %}{{ agent_url }}/downloads/{{ package.name }} &amp;&amp; [ "$(sha256 -q /tmp/comsense.pkg)" = "{{ package.sha256 }}" ] &amp;&amp; pkg-static add -f /tmp/comsense.pkg</pre>
+      <p>Or download it and copy it to the firewall yourself, then run <code>pkg-static add -f {{ package.name }}</code> there:</p>
       <p class="toolbar"><a class="button" href="/downloads/{{ package.name }}" download>Download {{ package.name }}</a></p>
       <p class="small muted">SHA-256 <span class="mono">{{ package.sha256 }}</span>. Built by this server from its own agent
       source; the same package installs on pfSense CE and pfSense Plus, on x86 and ARM.</p>
