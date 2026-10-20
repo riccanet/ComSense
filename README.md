@@ -119,3 +119,37 @@ tests, including an end-to-end run of the real PHP agent against the real server
 integration points (package hooks, GUI pages, pfSense library calls) follow the conventions of
 packages in the official pfSense ports tree but should be validated on a lab firewall for each pfSense
 version you run before production use.
+
+## Disclaimer
+
+### No warranty
+
+This project is provided "as-is" without any express or implied warranties. The authors and
+contributors assume no responsibility or liability for any errors, omissions, or potential damages
+resulting from the use or execution of this software. Use this repository completely at your own
+risk.
+
+### Educational and research use
+
+The code and documentation provided in this repository are for educational and research purposes
+only. It is explicitly not intended for use in production environments or commercial products. The
+authors are not liable for any misuse, unintended consequences, or system disruptions caused by this
+software.
+
+### Trademarks and affiliation
+
+This project is an independent open-source initiative. It is not affiliated with, authorized,
+maintained, sponsored, or endorsed by Netgate (Rubicon Communications LLC) or any of its affiliates or
+subsidiaries. All product and company names are the registered trademarks of their original owners.
+
+### Personal views
+
+The views, code, and opinions expressed in this repository are strictly my own and do not reflect
+the official policy, position, or opinions of my current or former employers.
+
+### AI-assisted development
+
+Parts of this repository have been co-authored, structured, or generated using AI tools and
+autonomous agents. While human oversight has been applied to review and test the outputs, the code
+may contain unexpected bugs or anomalies. The human maintainers retain sole responsibility for final
+merges and project oversight.
