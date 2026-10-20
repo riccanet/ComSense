@@ -65,7 +65,7 @@ reach ComSense by then, it restores its previous configuration automatically.</d
       <dt>Architecture</dt><dd>{{ device.arch|arch if device.arch else "unknown" }}</dd>
       <dt>Serial / ID</dt><dd>{{ device.serial or device.unique_id }}</dd>
       <dt>Agent</dt><dd>{{ device.agent_version }}{% if agent_old %} <span class="badge s-pending" title="This server provides {{ latest_agent }}">{{ latest_agent }} available</span>{% endif %}</dd>
-      <dt>WAN IP</dt><dd>{{ device.wan_ip }}</dd>
+      <dt>WAN IP</dt><dd>{{ (device|wan_ips)|join(", ") }}</dd>
       <dt>Checks in from</dt><dd>{{ device.last_seen_ip }}</dd>
       <dt>Last seen</dt><dd>{{ device.last_seen_at|ago }}</dd>
       <dt>Enrolled</dt><dd>{{ device.enrolled_at|dt }}</dd>

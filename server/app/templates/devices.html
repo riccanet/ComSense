@@ -43,7 +43,7 @@
         <td>{{ status_badge(d.status.value) }}</td>
         <td>{{ "Plus" if d.edition == "plus" else "CE" if d.edition == "ce" else d.edition }} {{ d.product_version }}{% if d.arch %} <span class="muted small">{{ d.arch|arch }}</span>{% endif %}</td>
         <td class="nowrap">{{ d.agent_version or "—" }}{% if latest_agent and d.agent_version and d.agent_version|agent_outdated(latest_agent) %} <span class="badge s-pending" title="This server provides {{ latest_agent }}">update</span>{% endif %}</td>
-        <td>{{ d.wan_ip }}</td>
+        <td class="nowrap">{% for ip in d|wan_ips %}{% if loop.first %}{{ ip }}{% else %}<div class="muted small">{{ ip }}</div>{% endif %}{% endfor %}</td>
         <td>{{ d.last_seen_at|ago }}</td>
         <td>{% if open_alerts.get(d.id) %}<span class="badge sev-warning">{{ open_alerts[d.id] }}</span>{% endif %}</td>
         <td>{% if d.updates.update_available %}<span class="badge s-pending">{{ d.updates.version }}</span>{% endif %}</td>

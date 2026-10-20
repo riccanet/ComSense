@@ -27,7 +27,7 @@
         <td><a href="/devices/{{ d.id }}">{{ d.name }}</a><div class="muted small">{{ d.hostname }}</div></td>
         <td>{{ status_badge(d.status.value) }}</td>
         <td>{{ "Plus" if d.edition == "plus" else "CE" if d.edition == "ce" else d.edition }} {{ d.product_version }}</td>
-        <td>{{ d.wan_ip }}</td>
+        <td class="nowrap">{% for ip in d|wan_ips %}{% if loop.first %}{{ ip }}{% else %}<div class="muted small">{{ ip }}</div>{% endif %}{% endfor %}</td>
         <td>{{ d.last_seen_at|ago }}</td>
         <td>{{ last_backup.get(d.id)|ago if last_backup.get(d.id) else "none yet" }}</td>
         <td>{% if d.updates.update_available %}<span class="badge s-pending">{{ d.updates.version }}</span>{% endif %}</td>

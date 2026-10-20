@@ -56,6 +56,20 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
+def wan_addresses(interfaces: list[Any]) -> list[str]:
+    """The firewall's WAN addresses, main one first: the interface named wan, then every other interface
+    with a gateway (a second WAN, such as a backup line). With dual WAN the "wan" interface may be the one
+    that is down, and the working line another (opt1, ...)."""
+    found = []
+    candidates = [i for i in interfaces if isinstance(i, dict)]
+    candidates.sort(key=lambda i: i.get("name") != "wan")
+    for i in candidates:
+        ip = str(i.get("ipaddr") or "").strip()
+        if ip and (i.get("name") == "wan" or str(i.get("gateway") or "").strip()) and ip not in found:
+            found.append(ip)
+    return found
+
+
 async def read_body(request: Request, limit: int, message: str = "Request body too large") -> bytes:
     """The request body, refused as soon as it passes `limit` (also when it is sent without a length)."""
     length = request.headers.get("content-length")
@@ -232,12 +246,9 @@ async def checkin(
     }
     if inventory:
         device.inventory = inventory
-        wan = next(
-            (i for i in data.get("interfaces") or [] if isinstance(i, dict) and i.get("name") == "wan"),
-            None,
-        )
-        if wan:
-            device.wan_ip = _str(wan.get("ipaddr"), 64)
+        if isinstance(data.get("interfaces"), list):
+            addresses = wan_addresses(data["interfaces"])
+            device.wan_ip = _str(addresses[0] if addresses else "", 64)
     if isinstance(data.get("updates"), dict):
         device.updates = data["updates"]
     if isinstance(data.get("applied_policies"), dict):

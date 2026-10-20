@@ -66,6 +66,7 @@ from ..services.policies import (
     validate_port_forward_rule,
 )
 from ..services.tasks import COMING_SOON, OPEN_STATES, SAFE_TASKS, TASK_CAPABILITY, TaskError, queue_task
+from ..api.agent import wan_addresses
 from ..tls import ensure_agent_tls
 from .auth import csrf_token, current_user, flash, pop_flashes, require, verify_csrf
 
@@ -174,6 +175,8 @@ TEMPLATES.env.filters["isodate"] = _fmt_isodate
 TEMPLATES.env.filters["agent_outdated"] = agent_outdated
 TEMPLATES.env.filters["arch"] = _fmt_arch
 TEMPLATES.env.filters["dt"] = _fmt_dt
+TEMPLATES.env.filters["wan_ips"] = lambda device: wan_addresses((device.inventory or {}).get("interfaces") or []) \
+    or ([device.wan_ip] if device.wan_ip else [])
 TEMPLATES.env.filters["bytes"] = _fmt_bytes
 TEMPLATES.env.filters["pretty_json"] = lambda v: json.dumps(v, indent=2, sort_keys=True)
 

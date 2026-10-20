@@ -214,3 +214,24 @@ def test_token_rotation(client, db, agent):
     new = agent.post("/api/agent/v1/token/rotate", headers=auth(creds["token"])).json()["token"]
     assert agent.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"])).status_code == 401
     assert "rotate_token" not in agent.post("/api/agent/v1/checkin", json={}, headers=auth(new)).json()
+
+
+def test_wan_address_with_dual_wan(client, db, agent):
+    from conftest import login
+    creds = enroll(agent, make_key(db))
+    interfaces = [
+        {"name": "wan", "descr": "WAN", "ipaddr": "", "status": "no carrier", "gateway": ""},
+        {"name": "lan", "descr": "LAN", "ipaddr": "192.168.1.1", "gateway": ""},
+        {"name": "opt1", "descr": "VERIZON", "ipaddr": "71.242.90.210", "gateway": "71.242.90.1"},
+    ]
+    agent.post("/api/agent/v1/checkin", json={"interfaces": interfaces}, headers=auth(creds["token"]))
+    db.expire_all()
+    assert db.get(Device, creds["device_id"]).wan_ip == "71.242.90.210"  # the working line, not the dead WAN
+    interfaces[0].update(ipaddr="203.0.113.4", status="up")
+    agent.post("/api/agent/v1/checkin", json={"interfaces": interfaces}, headers=auth(creds["token"]))
+    db.expire_all()
+    assert db.get(Device, creds["device_id"]).wan_ip == "203.0.113.4"  # WAN first when it has an address
+    login(client)
+    page = client.get("/devices").text
+    assert '203.0.113.4<div class="muted small">71.242.90.210</div>' in page and "192.168.1.1" not in page
+    assert "203.0.113.4, 71.242.90.210" in client.get(f"/devices/{creds['device_id']}").text
