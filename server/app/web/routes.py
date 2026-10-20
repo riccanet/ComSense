@@ -377,7 +377,9 @@ def devices(
     user: User = Depends(viewer),
     db: Session = Depends(get_db),
 ):
-    stmt = select(Device).order_by(Device.name)
+    # By customer, then firewall; firewalls without a customer last.
+    stmt = (select(Device).outerjoin(Organization, Device.organization_id == Organization.id)
+            .order_by(Organization.name.is_(None), func.lower(Organization.name), func.lower(Device.name)))
     if org == "none":
         stmt = stmt.where(Device.organization_id.is_(None))
     elif org.isdigit():
@@ -457,31 +459,6 @@ def pending_banner(request: Request, page: str = "/", user: User = Depends(viewe
     return TEMPLATES.TemplateResponse(request, "_pending_banner.html", {
         "request": request, "csrf_token": csrf_token(request), "pending_devices": pending_devices(user),
         "banner_page": local_path(page, "/")})
-
-
-@router.post("/devices/assign")
-async def devices_assign(request: Request, user: User = Depends(operator), db: Session = Depends(get_db)):
-    """Set (or clear) the customer of the selected firewalls."""
-    form = await request.form()
-    org_id = str(form.get("organization_id", ""))
-    org = db.get(Organization, int(org_id)) if org_id.isdigit() else None
-    if org_id and org is None:
-        raise HTTPException(400, "Unknown customer")
-    moved = []
-    for device_id in form.getlist("device_ids"):
-        device = db.get(Device, str(device_id))
-        if device is not None:
-            device.organization_id = org.id if org else None
-            moved.append(device.name)
-    if not moved:
-        flash(request, "Select at least one firewall.", "error")
-        return redirect("/devices")
-    audit(db, user.username, "device.assigned", target=org.name if org else "no customer",
-          detail=", ".join(moved)[:500], ip=_ip(request))
-    db.commit()
-    flash(request, f"{len(moved)} firewall(s) " + (f"assigned to {org.name}." if org else "no longer assigned to a customer."),
-          "success")
-    return redirect("/devices")
 
 
 @router.get("/devices/{device_id}", response_class=HTMLResponse)

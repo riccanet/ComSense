@@ -57,7 +57,7 @@ reach ComSense by then, it restores its previous configuration automatically.</d
   <section class="card">
     <h2>System</h2>
     <dl>
-      <dt>Customer</dt><dd>{% if device.organization %}<a href="/customers/{{ device.organization.id }}">{{ device.organization.name }}</a>{% else %}<span class="muted">not assigned</span>{% if can_operate %} <a class="small" href="/devices?org=none" title="Select it in the list and choose a customer, or add it from the customer's page">Assign</a>{% endif %}{% endif %}</dd>
+      <dt>Customer</dt><dd>{% if device.organization %}<a href="/customers/{{ device.organization.id }}">{{ device.organization.name }}</a>{% else %}<span class="muted">not assigned</span>{% if can_operate %} <a class="small" href="/customers" title="Open the customer and add it under Firewalls">Assign</a>{% endif %}{% endif %}</dd>
       <dt>Hostname</dt><dd>{{ device.hostname }}</dd>
       <dt>Edition</dt><dd>{{ "pfSense Plus" if device.edition == "plus" else "pfSense CE" if device.edition == "ce" else device.edition }}</dd>
       <dt>Version</dt><dd>{{ device.product_version }}</dd>

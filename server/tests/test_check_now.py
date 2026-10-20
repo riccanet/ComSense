@@ -140,3 +140,18 @@ def test_firewalls_list_shows_the_agent_version(client, db, agent, settings):
     new_row = page[page.index("new-fw"):page.index("</tr>", page.index("new-fw"))]
     assert "0.2.7" in old_row and ">update<" in old_row
     assert package["version"] in new_row and ">update<" not in new_row
+
+
+def test_firewalls_list_is_by_customer_with_run_task_at_the_top(client, db, agent):
+    from app.models import Organization
+    zeta, acme = Organization(name="Zeta Corp"), Organization(name="acme")
+    db.add_all([zeta, acme])
+    db.commit()
+    for host, org in (("a-fw", zeta), ("b-fw", acme), ("c-fw", None), ("d-fw", acme)):
+        enroll(agent, make_key(db, organization_id=org.id if org else None), system={"hostname": host, "unique_id": host})
+    login(client)
+    page = client.get("/devices").text
+    order = [h for h in ("b-fw", "d-fw", "a-fw", "c-fw")]
+    assert sorted(order, key=page.index) == order  # acme, Zeta Corp, then no customer
+    assert page.index("Run Task:") < page.index("<table")
+    assert "With selected" not in page and "/devices/assign" not in page

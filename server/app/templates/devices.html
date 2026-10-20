@@ -2,7 +2,18 @@
 {% from "macros.html" import status_badge, csrf with context %}
 {% block title %}Firewalls{% endblock %}
 {% block content %}
-<h1>Firewalls</h1>
+<div class="heading">
+  <h1>Firewalls</h1>
+  {% if user.role.value != "viewer" and devices %}
+  <div class="actions">
+    <label for="bulk-task">Run Task:</label>
+    <select id="bulk-task" name="task_type" form="bulk">
+      {% for value, label in bulk_tasks.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+    </select>
+    <button class="primary" form="bulk">Queue</button>
+  </div>
+  {% endif %}
+</div>
 <form method="get" class="toolbar">
   <input name="q" value="{{ q }}" placeholder="Search name, hostname or WAN IP">
   <select name="org">
@@ -13,7 +24,7 @@
   <button>Filter</button>
 </form>
 
-<form method="post" action="/devices/bulk">
+<form method="post" action="/devices/bulk" id="bulk">
   {{ csrf() }}
   <table class="list">
     <thead>
@@ -42,22 +53,5 @@
     {% endfor %}
     </tbody>
   </table>
-  {% if user.role.value != "viewer" and devices %}
-  <div class="toolbar">
-    <label>With selected:
-      <select name="task_type">
-        {% for value, label in bulk_tasks.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-      </select>
-    </label>
-    <button>Queue</button>
-    <label>Customer:
-      <select name="organization_id">
-        <option value="">None</option>
-        {% for o in orgs %}<option value="{{ o.id }}">{{ o.name }}</option>{% endfor %}
-      </select>
-    </label>
-    <button formaction="/devices/assign">Assign</button>
-  </div>
-  {% endif %}
 </form>
 {% endblock %}

@@ -91,23 +91,6 @@ def test_adding_and_removing_firewalls_on_the_customer_page(client, db, agent):
                        data={"device_id": taken["device_id"], "csrf_token": csrf}).status_code == 404
 
 
-def test_assigning_firewalls_in_bulk_from_the_list(client, db, agent):
-    csrf = login(client)
-    _add(client, csrf, "Acme Corp")
-    acme = db.scalar(select(Organization))
-    ids = [enroll(agent, make_key(db), system={"hostname": f"fw-{i}", "unique_id": f"b{i}"})["device_id"] for i in range(2)]
-    assert 'formaction="/devices/assign"' in client.get("/devices").text
-    r = client.post("/devices/assign", data={"device_ids": ids, "organization_id": str(acme.id), "csrf_token": csrf})
-    assert "2 firewall(s) assigned to Acme Corp" in r.text
-    db.expire_all()
-    assert {db.get(Device, i).organization_id for i in ids} == {acme.id}
-    client.post("/devices/assign", data={"device_ids": ids[:1], "organization_id": "", "csrf_token": csrf})
-    db.expire_all()
-    assert db.get(Device, ids[0]).organization_id is None
-    assert client.post("/devices/assign", data={"device_ids": ids, "organization_id": "999",
-                                                "csrf_token": csrf}).status_code == 400
-
-
 def test_update_and_delete_customer(client, db, agent):
     csrf = login(client)
     _add(client, csrf, "Acme Corp")
