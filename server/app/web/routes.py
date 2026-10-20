@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import secrets
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -81,6 +82,20 @@ def changes_allowed(user: User = Depends(current_user), settings: Settings = Dep
 
 CHANGES = [Depends(changes_allowed)]
 login_limiter = RateLimiter(limit=10, window_seconds=300)
+# Failed passwords per username, whatever address they come from (behind a proxy that passes
+# X-Forwarded-For through, the address can be forged).
+failed_login_limiter = RateLimiter(limit=20, window_seconds=900)
+_dummy_hash: list[str] = []
+
+
+def _password_matches(user: User | None, password: str) -> bool:
+    """Checks the password, taking as long for an unknown username as for a known one."""
+    if user is None:
+        if not _dummy_hash:
+            _dummy_hash.append(hash_password(secrets.token_urlsafe(16)))
+        verify_password(password, _dummy_hash[0])
+        return False
+    return verify_password(password, user.password_hash)
 
 viewer = require(Role.viewer)
 operator = require(Role.operator)
@@ -250,8 +265,15 @@ def login(
     if not login_limiter.allow(ip):
         flash(request, "Too many login attempts. Wait a few minutes and try again.", "error")
         return render(request, "login.html", status_code=429)
+    account = username.strip().lower()[:64]
+    if failed_login_limiter.blocked(account):
+        audit(db, username[:64], "login.locked", detail="too many failed passwords", ip=ip)
+        db.commit()
+        flash(request, "Too many failed sign-ins for this account. Wait 15 minutes and try again.", "error")
+        return render(request, "login.html", status_code=429)
     user = db.scalar(select(User).where(User.username == username.strip()))
-    if user is None or not user.active or not verify_password(password, user.password_hash):
+    if not _password_matches(user, password) or not user.active:
+        failed_login_limiter.allow(account)
         audit(db, username[:64], "login.failed", ip=ip)
         db.commit()
         flash(request, "Invalid username or password.", "error")
@@ -1218,7 +1240,7 @@ def backup_download(
     backup_id: int,
     request: Request,
     settings: Settings = Depends(get_settings),
-    user: User = Depends(operator),
+    user: User = Depends(admin),  # the whole config.xml, secrets included
     db: Session = Depends(get_db),
 ):
     backup = _get_backup(db, backup_id)

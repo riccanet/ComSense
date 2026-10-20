@@ -23,6 +23,10 @@ on:
         type: boolean
         default: false
 
+# Read-only token: CI only checks out and tests the code.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true

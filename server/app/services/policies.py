@@ -47,15 +47,30 @@ SYSTEM_KEYS = {
     "language",
 }
 RELOADABLE = {"filter", "dns", "ntp", "webgui", "hostname", "routing", "unbound", "dnsmasq"}
-# Config paths that a config_set policy may never touch: identity, accounts and this package.
+# Config paths that a config_set policy may never touch, nor any path above them (writing "system"
+# whole would replace its users): identity and accounts, this package's local permissions, and
+# everything that runs commands as root (shellcmd, cron, the Filer and Sudo packages).
 CONFIG_SET_DENY_PREFIXES = (
     "system/user",
     "system/group",
     "system/authserver",
+    "system/shellcmd",
+    "system/earlyshellcmd",
+    "system/afterfilterchangeshellcmd",
     "cert",
     "ca",
+    "cron",
     "installedpackages/comsense",
+    "installedpackages/shellcmdsettings",
+    "installedpackages/filer",
+    "installedpackages/sudo",
+    "installedpackages/cron",
 )
+
+
+def config_path_protected(path: str) -> bool:
+    """A protected path, one under it, or one above it."""
+    return any(path == p or path.startswith(p + "/") or p.startswith(path + "/") for p in CONFIG_SET_DENY_PREFIXES)
 
 
 TYPE_LABELS = {
@@ -311,10 +326,7 @@ def _validate_config_set(content: dict[str, Any]) -> None:
         _require(isinstance(item, dict), f"{where} must be an object")
         path = item.get("path", "")
         _require(isinstance(path, str) and CONFIG_PATH_RE.match(path), f"{where}.path is invalid")
-        _require(
-            not any(path == p or path.startswith(p + "/") for p in CONFIG_SET_DENY_PREFIXES),
-            f"{where}.path '{path}' is protected and cannot be managed by policy",
-        )
+        _require(not config_path_protected(path), f"{where}.path '{path}' is protected and cannot be managed by policy")
         _require(("value" in item) != bool(item.get("delete")), f"{where} needs either value or delete")
     reload = _str_list(content.get("reload", []), "config_set.reload")
     _require(set(reload) <= RELOADABLE, f"config_set.reload must be a subset of {sorted(RELOADABLE)}")
@@ -406,6 +418,8 @@ def reconcile_device_policies(
 
     # The agent keeps its own record of what each policy created, so removal only needs the id.
     for pid in applied:
+        if not str(pid).isdigit():
+            continue  # reported by the firewall; ignore anything that is not a policy id
         if pid in desired_ids or pid in open_tasks or rolled_back.get(pid) == "remove":
             continue
         task = Task(

@@ -204,8 +204,8 @@ reach ComSense by then, it restores its previous configuration automatically.</d
         <td>{{ b.size|bytes }}</td>
         <td class="mono small">{{ b.sha256[:12] }}</td>
         <td class="nowrap">
+          {% if is_admin %}<a class="button small" href="/backups/{{ b.id }}/download">Download</a>{% endif %}
           {% if can_operate %}
-          <a class="button small" href="/backups/{{ b.id }}/download">Download</a>
           {{ post_button("/backups/" ~ b.id ~ "/pin", "Unpin" if b.pinned else "Pin", "small") }}
           {% endif %}
           {% if is_admin and not changes_enabled %}

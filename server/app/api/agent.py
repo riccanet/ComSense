@@ -56,13 +56,25 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
-async def read_json(request: Request) -> dict[str, Any]:
+async def read_body(request: Request, limit: int, message: str = "Request body too large") -> bytes:
+    """The request body, refused as soon as it passes `limit` (also when it is sent without a length)."""
     length = request.headers.get("content-length")
-    if length and int(length) > MAX_JSON_BODY:
-        raise HTTPException(413, "Request body too large")
-    body = await request.body()
-    if len(body) > MAX_JSON_BODY:
-        raise HTTPException(413, "Request body too large")
+    if length is not None:
+        if not length.isdigit():
+            raise HTTPException(400, "Invalid Content-Length")
+        if int(length) > limit:
+            raise HTTPException(413, message)
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            raise HTTPException(413, message)
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def read_json(request: Request) -> dict[str, Any]:
+    body = await read_body(request, MAX_JSON_BODY)
     try:
         data = json.loads(body or b"{}")
     except json.JSONDecodeError as exc:
@@ -163,7 +175,9 @@ async def enroll(
     device.token_hash = hash_secret(token)
     device.token_rotated_at = utcnow()
     device.enrollment_key_id = key.id
-    device.status = DeviceStatus.pending if key.require_approval else DeviceStatus.online
+    # Taking over an existing firewall's record (and its queued tasks) always needs an admin's approval:
+    # its unique id is not a secret, so anyone with an enrollment key could claim it otherwise.
+    device.status = DeviceStatus.pending if key.require_approval or reenrolled else DeviceStatus.online
     device.last_seen_at = utcnow()
     device.last_seen_ip = ip
     device.applied_policies = {} if not reenrolled else device.applied_policies
@@ -401,10 +415,7 @@ async def upload_backup(
     x_csfm_task_id: str = Header(default=""),
 ) -> dict[str, Any]:
     require_approved(device)
-    length = request.headers.get("content-length")
-    if length and int(length) > settings.max_backup_bytes:
-        raise HTTPException(413, "Backup too large")
-    body = await request.body()
+    body = await read_body(request, settings.max_backup_bytes, "Backup too large")
     task_id = int(x_csfm_task_id) if x_csfm_task_id.isdigit() else None
     if task_id is not None:
         task = db.get(Task, task_id)

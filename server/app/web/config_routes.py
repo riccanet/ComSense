@@ -359,6 +359,15 @@ def configuration_new(request: Request, type: str = "aliases", settings: Setting
     return _editor(request, settings, db, None, ptype, content)
 
 
+# Raw config.xml writes reach far into the firewall, so only admins write them.
+ADMIN_ONLY_TYPES = frozenset({PolicyType.config_set})
+
+
+def _require_admin_for(ptype: PolicyType, user: User) -> None:
+    if ptype in ADMIN_ONLY_TYPES and user.role != Role.admin:
+        raise HTTPException(403, "Only admins can create or change this type of configuration")
+
+
 @router.post("/configurations")
 async def configuration_create(request: Request, settings: Settings = Depends(get_settings),
                                user: User = Depends(operator), db: Session = Depends(get_db)):
@@ -367,6 +376,7 @@ async def configuration_create(request: Request, settings: Settings = Depends(ge
     if raw_type not in PolicyType.__members__:
         raise HTTPException(400, "Unknown configuration type")
     ptype = PolicyType(raw_type)
+    _require_admin_for(ptype, user)
     name = str(form.get("name", "")).strip()[:128]
     description = str(form.get("description", "")).strip()
     content: dict[str, Any] = {}
@@ -404,6 +414,7 @@ def configuration_page(policy_id: int, request: Request, settings: Settings = De
 async def configuration_update(policy_id: int, request: Request, settings: Settings = Depends(get_settings),
                                user: User = Depends(operator), db: Session = Depends(get_db)):
     policy = _get_policy(db, policy_id)
+    _require_admin_for(policy.type, user)
     form = await request.form()
     try:
         content = content_from_form(policy.type, form)

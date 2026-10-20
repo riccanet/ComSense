@@ -196,7 +196,12 @@ def test_reenroll_same_hardware_reuses_device_and_rotates_token(client, db, agen
     second = enroll(agent, key)
     assert first["device_id"] == second["device_id"]
     assert agent.post("/api/agent/v1/checkin", json={}, headers=auth(first["token"])).status_code == 401
-    assert agent.post("/api/agent/v1/checkin", json={}, headers=auth(second["token"])).status_code == 200
+    resp = agent.post("/api/agent/v1/checkin", json={}, headers=auth(second["token"]))
+    assert resp.status_code == 200
+    # Taking over the record needs an admin's approval, even with a key that otherwise needs none.
+    assert resp.json()["status"] == "pending" and resp.json()["tasks"] == []
+    db.expire_all()
+    assert db.get(Device, second["device_id"]).status == DeviceStatus.pending
 
 
 def test_token_rotation(client, db, agent):

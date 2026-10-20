@@ -74,7 +74,17 @@ function config_del_path($path) {
 function csfm_test_render_xml() {
 	global $config;
 	$desc = htmlspecialchars($config['revision']['description'] ?? 'initial');
-	$pkgs = isset($config['installedpackages']['comsense']) ? "\t<installedpackages><comsense/></installedpackages>\n" : '';
+	$pkgs = '';
+	if (isset($config['installedpackages']['comsense'])) {
+		/* The agent's own settings as real XML (a restore keeps the live ones; tasks.inc). */
+		$fields = '';
+		foreach ((array)($config['installedpackages']['comsense']['config'][0] ?? array()) as $k => $v) {
+			if (is_scalar($v) && preg_match('/^[a-z_]+$/', $k)) {
+				$fields .= "<{$k}>" . htmlspecialchars((string)$v) . "</{$k}>";
+			}
+		}
+		$pkgs = "\t<installedpackages><comsense><config>{$fields}</config></comsense></installedpackages>\n";
+	}
 	return "<?xml version=\"1.0\"?>\n<pfsense>\n\t<version>23.3</version>\n"
 	    . "\t<revision><description>{$desc}</description></revision>\n" . $pkgs
 	    . "\t<!-- " . base64_encode(json_encode($config)) . " -->\n</pfsense>\n";

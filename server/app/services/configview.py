@@ -26,8 +26,10 @@ SECRET_TAGS = (
     "password", "bcrypt-hash", "sha512-hash", "md5-hash", "nt-hash", "prv", "pre-shared-key", "psk",
     "shared_key", "tls", "privatekey", "secret", "ldap_bindpw", "radius_secret", "apikey", "authorizedkeys",
     "ipsecpsk", "passwordenc", "encryption_password", "auth_pass",
+    "presharedkey", "rocommunity", "rwcommunity", "radius_secret2", "radiussecret", "radiuskey",
+    "ddnsdomainkey", "keydata", "accountkey", "sshkey", "pkcs11pin", "secret_key", "privkey",
 )
-_SECRET_RE = re.compile(r"<(" + "|".join(re.escape(t) for t in SECRET_TAGS) + r")>(.*?)</\1>", re.S | re.I)
+_SECRET_RE = re.compile(r"<(" + "|".join(re.escape(t) for t in SECRET_TAGS) + r")(\s[^>]*)?>(.*?)</\1>", re.S | re.I)
 
 _nat_cache: OrderedDict[tuple[int, str], dict[str, Any]] = OrderedDict()
 _NAT_CACHE_SIZE = 64
@@ -43,7 +45,7 @@ def current_backup(db: Session, device: Device) -> Backup | None:
 
 
 def redact(xml: str) -> str:
-    return _SECRET_RE.sub(lambda m: f"<{m.group(1)}>[hidden]</{m.group(1)}>", xml)
+    return _SECRET_RE.sub(lambda m: f"<{m.group(1)}{m.group(2) or ''}>[hidden]</{m.group(1)}>", xml)
 
 
 def _parse(xml: bytes) -> ET.Element:

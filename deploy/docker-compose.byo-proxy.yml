@@ -77,7 +77,7 @@ services:
       # true: allow configurations, upgrades, restores and reboots to be sent to firewalls.
       CSFM_ENABLE_FIREWALL_CHANGES: ${CSFM_ENABLE_FIREWALL_CHANGES:-false}
       # Only the proxy can reach the web port, so trust its X-Forwarded-For.
-      CSFM_FORWARDED_ALLOW_IPS: ${CSFM_FORWARDED_ALLOW_IPS:-*}
+      CSFM_FORWARDED_ALLOW_IPS: ${CSFM_FORWARDED_ALLOW_IPS:-127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10}
     ports:
       - "${CSFM_WEB_BIND:-127.0.0.1}:${CSFM_WEB_PORT_PUBLIC:-8000}:8000"
       - "${CSFM_AGENT_BIND:-0.0.0.0}:${CSFM_AGENT_PORT_PUBLIC:-10443}:10443"

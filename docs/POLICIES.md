@@ -143,6 +143,8 @@ For settings without a dedicated policy type. Paths are pfSense config paths (as
 ```
 
 * `reload`: any of `filter`, `dns`, `unbound`, `dnsmasq`, `ntp`, `hostname`, `routing`, `webgui`.
-* Users, groups, authentication servers, certificates, CAs and the ComSense package settings are
-  protected and cannot be changed by policy.
+* Users, groups, authentication servers, certificates, CAs, the ComSense package settings and anything
+  that runs commands as root (`system/shellcmd`, `system/earlyshellcmd`, `cron`, the Filer, Sudo and
+  Shellcmd packages) are protected, as is every path above them (writing `system` whole would replace
+  its users). Only admins can create or change a `config_set` configuration.
 * Original values are restored when the policy is removed.

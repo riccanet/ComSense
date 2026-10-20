@@ -1,11 +1,13 @@
+# Lower bounds are the first releases without known security advisories.
 fastapi>=0.115,<1.0
+starlette>=0.49.1
 uvicorn[standard]>=0.30
 sqlalchemy>=2.0,<3.0
 psycopg[binary]>=3.2
-jinja2>=3.1
-python-multipart>=0.0.9
+jinja2>=3.1.6
+python-multipart>=0.0.18
 itsdangerous>=2.2
-cryptography>=43
+cryptography>=44.0.1
 segno>=1.6
 tzdata>=2024.1
-signxml>=4.0
+signxml>=4.0.3

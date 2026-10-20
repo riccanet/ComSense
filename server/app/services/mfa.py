@@ -140,17 +140,28 @@ def use_recovery_code(user: User, code: str) -> bool:
 # --------------------------------------------------------------- email codes
 
 
-def new_email_code() -> tuple[str, dict]:
-    """A six-digit code and the record to keep in the session (hashed, with its expiry)."""
+def _email_code_mac(key: str, purpose: str, nonce: str, code: str) -> str:
+    return hmac.new(key.encode(), f"{purpose}:{nonce}:{code}".encode(), "sha256").hexdigest()
+
+
+def new_email_code(key: str, purpose: str) -> tuple[str, dict]:
+    """A six-digit code and the record to keep in the session, with its expiry.
+
+    The session cookie is signed but readable, so the record holds a MAC keyed with the server's
+    secret (not a plain hash, which a million guesses would reverse), bound to its purpose and user.
+    """
     code = f"{secrets.randbelow(10**6):06d}"
-    return code, {"hash": hash_secret(code), "expires": time.time() + EMAIL_CODE_TTL}
+    nonce = secrets.token_urlsafe(12)
+    return code, {"mac": _email_code_mac(key, purpose, nonce, code), "nonce": nonce,
+                  "expires": time.time() + EMAIL_CODE_TTL}
 
 
-def check_email_code(record: dict | None, code: str) -> bool:
-    if not record or time.time() > float(record.get("expires", 0)):
+def check_email_code(record: dict | None, code: str, key: str, purpose: str) -> bool:
+    if not record or time.time() > float(record.get("expires", 0)) or "mac" not in record:
         return False
     code = "".join(c for c in code if c.isdigit())
-    return len(code) == 6 and hmac.compare_digest(hash_secret(code), str(record.get("hash", "")))
+    expected = _email_code_mac(key, purpose, str(record.get("nonce", "")), code)
+    return len(code) == 6 and hmac.compare_digest(expected, str(record["mac"]))
 
 
 # --------------------------------------------------------------------- policy

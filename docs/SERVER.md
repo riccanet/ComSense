@@ -186,7 +186,7 @@ All settings are environment variables:
 | `CSFM_ENABLE_FIREWALL_CHANGES` | false | Turns on the "coming soon" features that change firewalls: policies, package installs and upgrades, pfSense upgrades, service restarts, restores and reboots. Off, ComSense only monitors, checks for updates and takes backups. |
 | `CSFM_PUBLIC_URL` | | Web console URL |
 | `CSFM_WEB_HOST` / `CSFM_WEB_PORT` | `0.0.0.0` / 8000 | Web console listener (plain HTTP, for the proxy) |
-| `CSFM_FORWARDED_ALLOW_IPS` | `*` | Proxies trusted for `X-Forwarded-For` on the web listener |
+| `CSFM_FORWARDED_ALLOW_IPS` | `127.0.0.1` (Docker: private ranges) | Proxies trusted for `X-Forwarded-For` on the web listener. Never `*` behind a proxy that appends to the header: the client could then choose its own address |
 | `CSFM_AGENT_HOST` / `CSFM_AGENT_PORT` | `0.0.0.0` / 10443 | Agent listener (TLS) |
 | `CSFM_AGENT_URL` | `https://<public host>:10443` | Default address firewalls use; the Settings page can override it |
 | `CSFM_AGENT_TLS_CERT` / `_KEY` | self-issued | Use your own certificate for the agent listener |

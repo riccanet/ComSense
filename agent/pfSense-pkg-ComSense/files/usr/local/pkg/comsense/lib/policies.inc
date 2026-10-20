@@ -15,9 +15,15 @@ require_once(__DIR__ . '/collect.inc');
 
 define('CSFM_RULE_PREFIX', '[CSFM] ');
 
-/* Paths a config_set policy may never modify (mirrors the server's deny list). */
+/*
+ * Paths a config_set policy may never modify, nor any path above them (mirrors the server's deny
+ * list): accounts, this package's local permissions, and whatever runs commands as root.
+ */
 $csfm_protected_paths = array(
-	'system/user', 'system/group', 'system/authserver', 'cert', 'ca', 'installedpackages/comsense',
+	'system/user', 'system/group', 'system/authserver', 'system/shellcmd', 'system/earlyshellcmd',
+	'system/afterfilterchangeshellcmd', 'cert', 'ca', 'cron', 'installedpackages/comsense',
+	'installedpackages/shellcmdsettings', 'installedpackages/filer', 'installedpackages/sudo',
+	'installedpackages/cron',
 );
 
 class CsfmPolicyError extends Exception {
@@ -900,7 +906,7 @@ function csfm_apply_system($pid, $content, $prev) {
 function csfm_path_protected($path) {
 	global $csfm_protected_paths;
 	foreach ($csfm_protected_paths as $p) {
-		if ($path === $p || strpos($path, $p . '/') === 0) {
+		if ($path === $p || strpos($path, $p . '/') === 0 || strpos($p, $path . '/') === 0) {
 			return true;
 		}
 	}

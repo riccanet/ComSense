@@ -531,6 +531,29 @@ function csfm_task_notifications($client, $id, $payload) {
 	return array('output' => csfm_set_smtp_notifications($payload['smtp']));
 }
 
+/*
+ * A restored backup keeps the firewall's current ComSense settings (installedpackages/comsense): the
+ * permissions its owner allows now (shell, restore, policies...), not the ones the backup had.
+ */
+function csfm_keep_local_settings($xml) {
+	$current = @file_get_contents(csfm_config_file());
+	if ($current === false || !class_exists('DOMDocument')) {
+		return $xml;
+	}
+	$restored = new DOMDocument();
+	$live = new DOMDocument();
+	if (!@$restored->loadXML($xml, LIBXML_NONET) || !@$live->loadXML($current, LIBXML_NONET)) {
+		return $xml;
+	}
+	$mine = (new DOMXPath($live))->query('/pfsense/installedpackages/comsense')->item(0);
+	$theirs = (new DOMXPath($restored))->query('/pfsense/installedpackages/comsense')->item(0);
+	if ($mine === null || $theirs === null) {
+		return $xml;
+	}
+	$theirs->parentNode->replaceChild($restored->importNode($mine, true), $theirs);
+	return $restored->saveXML();
+}
+
 function csfm_task_restore_backup($client, $id, $payload) {
 	$backupId = (int)($payload['backup_id'] ?? 0);
 	list($gz, $headers) = $client->download("/backups/{$backupId}");
@@ -553,6 +576,7 @@ function csfm_task_restore_backup($client, $id, $payload) {
 		throw new Exception('This backup does not contain the ComSense agent settings; restoring it would '
 		    . 'disconnect the firewall from ComSense, so it was not restored.');
 	}
+	$xml = csfm_keep_local_settings($xml);
 	$tmp = CSFM_DB_DIR . '/restore-config.xml';
 	file_put_contents($tmp, $xml);
 	chmod($tmp, 0600);

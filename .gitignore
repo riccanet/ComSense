@@ -6,3 +6,9 @@ venv/
 deploy/.env
 agent/dist/
 *.db
+.env
+*.env
+!deploy/.env.example
+*.pem
+*.key
+.ruff_cache/

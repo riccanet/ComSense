@@ -69,6 +69,7 @@ def settings(tmp_path: Path, request) -> Settings:
 def client(settings: Settings):
     agent_api.enroll_limiter.reset()
     web_routes.login_limiter.reset()
+    web_routes.failed_login_limiter.reset()
     agent_api.auth_failure_limiter.reset()
     app = create_app(settings)
     # First start created "admin" with a random one-time password; give it a known

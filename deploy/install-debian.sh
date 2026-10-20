@@ -108,7 +108,7 @@ CADDY
 	} > /etc/caddy/Caddyfile
 else
 	set_env CSFM_WEB_HOST "$WEB_BIND"
-	set_env CSFM_FORWARDED_ALLOW_IPS "*"
+	set_env CSFM_FORWARDED_ALLOW_IPS "127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10"
 fi
 
 systemctl daemon-reload

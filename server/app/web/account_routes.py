@@ -14,7 +14,7 @@ from ..audit import audit
 from ..config import Settings, get_settings
 from ..db import get_db, session_factory
 from ..models import Role, User, utcnow
-from ..security import RateLimiter, hash_password
+from ..security import RateLimiter, hash_password, verify_password
 from ..services.appsettings import (
     SEVERITIES,
     SMTP_SECURITY,
@@ -426,12 +426,19 @@ def account_profile(
     request: Request,
     email: str = Form(""),
     email_alerts: bool = Form(False),
+    password: str = Form(""),
     user: User = Depends(viewer),
     db: Session = Depends(get_db),
 ):
     email = email.strip()
     if email and not valid_email(email):
         flash(request, "That is not a valid email address.", "error")
+        return redirect("/account")
+    # Reset links and emailed sign-in codes go to this address: a borrowed session must not redirect
+    # them. Single sign-on users have no ComSense password; their provider vouched for them.
+    if (email.lower() != (user.email or "").lower() and request.session.get("auth") != "sso"
+            and not verify_password(password, user.password_hash)):
+        flash(request, "Enter your current password to change your email address.", "error")
         return redirect("/account")
     user.email = email
     user.email_alerts = email_alerts and bool(email)

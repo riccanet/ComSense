@@ -104,7 +104,7 @@ def _send_login_code(request: Request, db: Session, settings: Settings, user: Us
     if not email_limiter.allow(f"login:{user.id}"):
         flash(request, "Too many codes requested. Wait a few minutes.", "error")
         return
-    code, record = mfa.new_email_code()
+    code, record = mfa.new_email_code(settings.secret_key, f"login:{user.id}")
     try:
         _send_code(db, settings, user, code, "sign-in")
     except MailError as exc:
@@ -146,7 +146,8 @@ def login_mfa(
     method = ""
     if "totp" in pending["methods"] and mfa.verify_user_totp(user, code, settings.secret_key):
         method = "totp"
-    elif "email" in pending["methods"] and mfa.check_email_code(pending.get("email_code"), code):
+    elif "email" in pending["methods"] and mfa.check_email_code(pending.get("email_code"), code, settings.secret_key,
+                                                                           f"login:{user.id}"):
         method = "email"
     elif "totp" in pending["methods"] and mfa.use_recovery_code(user, code):
         method = "recovery"
@@ -208,6 +209,10 @@ def _last_method_required(db: Session, user: User, method: str) -> bool:
 def totp_start(request: Request, user: User = Depends(viewer), db: Session = Depends(get_db)):
     if not get_security_settings(db).allow_totp:
         raise HTTPException(403, "Authenticator apps are turned off in Settings > Security")
+    if user.totp_enabled:
+        # Replacing it would also hand over the terminal's approval codes; turn it off first (password).
+        flash(request, "An authenticator app is already set up. Turn it off first to set up another.", "error")
+        return redirect("/account#mfa")
     request.session["totp_setup"] = mfa.new_totp_secret()
     return redirect("/account#mfa")
 
@@ -222,12 +227,17 @@ def totp_cancel(request: Request, user: User = Depends(viewer)):
 def totp_confirm(
     request: Request,
     code: str = Form(""),
+    password: str = Form(""),
     settings: Settings = Depends(get_settings),
     user: User = Depends(viewer),
     db: Session = Depends(get_db),
 ):
     secret = request.session.get("totp_setup")
-    if not secret:
+    if not secret or user.totp_enabled:
+        return redirect("/account#mfa")
+    # A borrowed session must not be enough to enroll (the codes also approve root terminals). People
+    # who sign in with single sign-on have no ComSense password; their provider vouched for them.
+    if request.session.get("auth") != "sso" and not _check_password(request, user, password):
         return redirect("/account#mfa")
     step = mfa.match_totp(secret, code)
     if step is None:
@@ -284,7 +294,7 @@ def email_start(
     if not email_limiter.allow(f"setup:{user.id}"):
         flash(request, "Too many codes requested. Wait a few minutes.", "error")
         return redirect("/account#mfa")
-    code, record = mfa.new_email_code()
+    code, record = mfa.new_email_code(settings.secret_key, f"setup:{user.id}")
     try:
         _send_code(db, settings, user, code, "verification")
     except MailError as exc:
@@ -297,9 +307,13 @@ def email_start(
 
 @router.post("/account/mfa/email/confirm")
 def email_confirm(
-    request: Request, code: str = Form(""), user: User = Depends(viewer), db: Session = Depends(get_db)
+    request: Request, code: str = Form(""), settings: Settings = Depends(get_settings),
+    user: User = Depends(viewer), db: Session = Depends(get_db)
 ):
-    if not mfa.check_email_code(request.session.get("email_setup"), code):
+    if not code_limiter.allow(f"setup:{user.id}"):
+        flash(request, "Too many attempts. Wait a few minutes.", "error")
+        return redirect("/account#mfa")
+    if not mfa.check_email_code(request.session.get("email_setup"), code, settings.secret_key, f"setup:{user.id}"):
         flash(request, "That code is not valid or has expired.", "error")
         return redirect("/account#mfa")
     request.session.pop("email_setup", None)

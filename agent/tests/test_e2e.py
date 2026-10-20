@@ -352,10 +352,13 @@ def test_full_lifecycle(env):
         reboot = db.get(Task, reboot_id)
         assert reboot.status == TaskStatus.failed and "not allowed" in reboot.output
 
-    # 7. Restore a stored backup.
+    # 7. Restore a stored backup. It keeps the firewall's current ComSense settings, not the backup's.
+    cfg = fw_config(env)
+    cfg["installedpackages"]["comsense"]["config"][0]["restore_marker"] = "current-permissions"
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
     with env["db"]() as db:
         device = db.get(Device, creds["device_id"])
-        backup = db.scalar(select(Backup).where(Backup.device_id == device.id).order_by(Backup.id))
+        backup = db.scalar(select(Backup).where(Backup.device_id == device.id).order_by(Backup.id.desc()))
         restore = queue_task(db, device, TaskType.restore_backup, {"backup_id": backup.id}, actor="e2e", changes_enabled=True)
         db.commit()
         restore_id = restore.id
@@ -368,7 +371,7 @@ def test_full_lifecycle(env):
     guard = json.loads((guard_dir / "guard.json").read_text())
     assert guard["mode"] == "reboot" and guard["tasks"][0]["id"] == restore_id
     restored = (env["fw"] / "conf" / "config.xml").read_text()
-    assert "<pfsense>" in restored
+    assert "<pfsense>" in restored and "<restore_marker>current-permissions</restore_marker>" in restored
 
     # 8. Between check-ins the agent waits on the server, which answers early when work is queued.
     def wait(seconds: str):

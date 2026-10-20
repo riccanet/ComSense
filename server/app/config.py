@@ -51,7 +51,7 @@ class Settings:
     # Proxies whose X-Forwarded-For the web listener trusts ("*" when only the
     # proxy can reach the web port, as in the provided deployments).
     forwarded_allow_ips: str = field(
-        default_factory=lambda: os.environ.get("CSFM_FORWARDED_ALLOW_IPS", "*")
+        default_factory=lambda: os.environ.get("CSFM_FORWARDED_ALLOW_IPS", "127.0.0.1")
     )
     agent_host: str = field(default_factory=lambda: os.environ.get("CSFM_AGENT_HOST", "0.0.0.0"))
     agent_port: int = field(default_factory=lambda: _int("CSFM_AGENT_PORT", 10443))

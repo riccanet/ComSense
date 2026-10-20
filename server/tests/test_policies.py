@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import pytest
-from conftest import auth, enroll, make_key
+from conftest import auth, enroll, login, make_key
+from sqlalchemy import select
 
-from app.models import Device, Policy, PolicyAssignment, PolicyType, Task, TaskStatus, TaskType
+from app.models import Device, Policy, PolicyAssignment, PolicyType, Role, Task, TaskStatus, TaskType, User
+from app.security import hash_password
 from app.services.policies import PolicyError, validate_policy
 from app.services.policy_examples import EXAMPLES
 
@@ -106,3 +108,29 @@ def test_pending_task_superseded_by_new_revision(client, db, agent):
     db.commit()
     assert db.get(Task, first[0].id).status == TaskStatus.cancelled
     assert second[0].payload["policy"]["content"] == {"timezone": "Europe/Paris"}
+
+
+@pytest.mark.parametrize("path", [
+    "system", "system/user", "system/user/0/bcrypt-hash", "system/shellcmd", "system/earlyshellcmd",
+    "installedpackages", "installedpackages/comsense/config", "installedpackages/filer", "cron", "cron/item",
+    "cert", "ca",
+])
+def test_config_set_refuses_protected_paths_and_everything_above_them(path):
+    with pytest.raises(PolicyError, match="protected"):
+        validate_policy(PolicyType.config_set, {"items": [{"path": path, "value": "x"}]})
+
+
+def test_config_set_allows_ordinary_paths():
+    validate_policy(PolicyType.config_set, {"items": [{"path": "system/timeservers", "value": "pool.ntp.org"},
+                                                      {"path": "installedpackages/acme/enable", "delete": True}]})
+
+
+def test_only_admins_write_raw_config_set_configurations(client, db):
+    db.add(User(username="op", password_hash=hash_password("operator-password-1"), role=Role.operator))
+    db.commit()
+    csrf = login(client, "op", "operator-password-1")
+    r = client.post("/configurations", data={"type": "config_set", "name": "x", "csrf_token": csrf,
+                                              "content": '{"items": [{"path": "system/timeservers", "value": "a"}]}'})
+    assert r.status_code == 403
+    r = client.post("/configurations", data={"type": "notifications", "name": "quiet", "smtp": "off", "csrf_token": csrf})
+    assert r.status_code == 200 and db.scalar(select(Policy).where(Policy.name == "quiet")) is not None

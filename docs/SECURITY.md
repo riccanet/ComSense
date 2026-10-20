@@ -88,7 +88,10 @@ guarded on both sides:
   needed by xterm.js); scripts stay restricted to the console's own files.
 
 Policies are validated on both ends; `config_set` cannot touch users, groups, authentication servers,
-certificates or the agent's own settings. Every configuration change (policies and restores) is
+certificates, the agent's own settings or anything that runs commands (shellcmd, cron, the Filer and Sudo
+packages), nor any path above those (`system` as a whole), and only admins can create or change one.
+A backup restore keeps the firewall's current ComSense settings, so it cannot turn local permissions
+back on. Re-enrolling an existing firewall always waits for an admin's approval. Every configuration change (policies and restores) is
 verified afterwards and kept on probation; if the firewall loses contact with the server, the agent
 restores the previous configuration on its own, also after a reboot.
 

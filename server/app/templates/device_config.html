@@ -10,7 +10,7 @@
       {% if show_secrets %}<a class="button" href="?backup={{ chosen.id }}">Hide secrets</a>
       {% else %}<a class="button" href="?backup={{ chosen.id }}&amp;secrets=1" title="Shows passwords, hashes and private keys; recorded in the audit log">Show secrets</a>{% endif %}
     {% endif %}
-    <a class="button" href="/backups/{{ chosen.id }}/download">Download</a>
+    {% if user.role.value == "admin" %}<a class="button" href="/backups/{{ chosen.id }}/download">Download</a>{% endif %}
     {% endif %}
   </div>
 </div>

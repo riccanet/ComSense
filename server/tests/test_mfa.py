@@ -4,6 +4,7 @@ import base64
 import re
 
 import pytest
+from sqlalchemy import select
 from conftest import ADMIN_PASSWORD, csrf_from, login
 
 from app.models import User
@@ -27,13 +28,14 @@ def _password_step(client, username="admin", password=ADMIN_PASSWORD):
                        follow_redirects=False)
 
 
-def _enable_totp(client, csrf) -> tuple[str, list[str]]:
+def _enable_totp(client, csrf, password=ADMIN_PASSWORD) -> tuple[str, list[str]]:
     client.post("/account/mfa/totp/start", data={"csrf_token": csrf})
     page = client.get("/account").text
     assert '<svg' in page and 'class="qr"' in page
     secret = re.search(r'enter this key by hand: <span class="mono">([A-Z2-7]+)</span>', page).group(1)
     code = mfa.totp_code(secret, mfa.current_step())
-    page = client.post("/account/mfa/totp/confirm", data={"code": code, "csrf_token": csrf}).text
+    page = client.post("/account/mfa/totp/confirm", data={"code": code, "password": password,
+                                                          "csrf_token": csrf}).text
     codes = _recovery_codes(page)
     assert len(codes) == 10
     assert not _recovery_codes(client.get("/account").text)  # shown once
@@ -110,7 +112,7 @@ def sent_codes(monkeypatch, db, settings):
 
 def test_email_codes(client, db, sent_codes):
     csrf = login(client)
-    client.post("/account/profile", data={"email": "admin@example.com", "csrf_token": csrf})
+    client.post("/account/profile", data={"email": "admin@example.com", "password": ADMIN_PASSWORD, "csrf_token": csrf})
     client.post("/account/mfa/email/start", data={"csrf_token": csrf})
     r = client.post("/account/mfa/email/confirm", data={"code": "000000", "csrf_token": csrf})
     db.expire_all()
@@ -158,3 +160,26 @@ def test_admin_can_reset_a_users_mfa(client, db):
     db.expire_all()
     other = db.get(User, other.id)
     assert not other.totp_enabled and not other.totp_secret and not other.recovery_codes
+
+
+def test_setting_up_an_authenticator_needs_the_password_and_never_replaces_one(client, db):
+    csrf = login(client)
+    client.post("/account/mfa/totp/start", data={"csrf_token": csrf})
+    secret = re.search(r'enter this key by hand: <span class="mono">([A-Z2-7]+)</span>', client.get("/account").text).group(1)
+    code = mfa.totp_code(secret, mfa.current_step())
+    page = client.post("/account/mfa/totp/confirm", data={"code": code, "password": "wrong", "csrf_token": csrf}).text
+    assert "Your password is not correct" in page
+    db.expire_all()
+    assert not db.scalar(select(User).where(User.username == "admin")).totp_enabled
+    _enable_totp(client, csrf)
+    page = client.post("/account/mfa/totp/start", data={"csrf_token": csrf}).text
+    assert "already set up" in page and "enter this key by hand" not in page
+
+
+def test_email_codes_in_the_session_cookie_cannot_be_reversed():
+    code, record = mfa.new_email_code("k" * 48, "login:1")
+    assert "hash" not in record and code not in str(record)
+    # A plain SHA-256 of the code would be found by trying a million codes; the MAC needs the server key.
+    assert not any(mfa.check_email_code(record, code, "x" * 48, "login:1") for _ in [0])
+    assert not mfa.check_email_code(record, code, "k" * 48, "login:2")  # bound to its user and purpose
+    assert mfa.check_email_code(record, code, "k" * 48, "login:1")

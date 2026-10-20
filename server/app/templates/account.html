@@ -22,6 +22,8 @@
     {{ csrf() }}
     <label>Email address <input type="email" name="email" value="{{ user.email }}" autocomplete="email"></label>
     <label class="check"><input type="checkbox" name="email_alerts" value="true"{% if user.email_alerts %} checked{% endif %}> Email me firewall alerts</label>
+    {% if request.session.get("auth") != "sso" %}<label>Current password <span class="muted small">(needed to change the address)</span>
+      <input type="password" name="password" autocomplete="current-password"></label>{% endif %}
     <p class="small muted">Your email address is also where password reset links are sent.</p>
     <button>Save</button>
   </form>
@@ -58,7 +60,8 @@
     <div class="qr-box">{{ totp_qr|safe }}</div>
     <p class="small muted">Or enter this key by hand: <span class="mono">{{ totp_setup }}</span></p>
     <form method="post" action="/account/mfa/totp/confirm" class="toolbar">
-      {{ csrf() }}<input name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" required>
+      {{ csrf() }}<input name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" required aria-label="Code from the app">
+      {% if request.session.get("auth") != "sso" %}<input name="password" type="password" autocomplete="current-password" placeholder="Your password" required aria-label="Your password">{% endif %}
       <button class="primary">Turn on</button>
     </form>
     <form method="post" action="/account/mfa/totp/cancel" class="inline">{{ csrf() }}<button class="link">Cancel</button></form>

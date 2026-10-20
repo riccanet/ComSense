@@ -208,7 +208,7 @@ def _alerts_on(client, csrf, **extra):
 def test_alert_emails(client, db, agent, smtp, settings):
     csrf = login(client)
     _configure_email(client, smtp, csrf)
-    client.post("/account/profile", data={"email": "admin@example.com", "email_alerts": "true", "csrf_token": csrf})
+    client.post("/account/profile", data={"email": "admin@example.com", "password": ADMIN_PASSWORD, "email_alerts": "true", "csrf_token": csrf})
     creds = enroll(agent, make_key(db))
     # An alert that existed before alert email was switched on is never sent.
     agent.post("/api/agent/v1/checkin", json={"gateways": [{"name": "OLD", "status": "down"}]}, headers=auth(creds["token"]))
@@ -271,8 +271,8 @@ def test_alert_emails_respect_severity_and_retry_on_failure(client, db, agent, s
 
 def test_profile_email_and_alert_opt_in(client, db):
     csrf = login(client)
-    assert "not a valid email" in client.post("/account/profile", data={"email": "nope", "csrf_token": csrf}).text
-    client.post("/account/profile", data={"email": "me@example.com", "email_alerts": "true", "csrf_token": csrf})
+    assert "not a valid email" in client.post("/account/profile", data={"email": "nope", "password": ADMIN_PASSWORD, "csrf_token": csrf}).text
+    client.post("/account/profile", data={"email": "me@example.com", "password": ADMIN_PASSWORD, "email_alerts": "true", "csrf_token": csrf})
     admin = db.scalar(select(User).where(User.username == "admin"))
     db.refresh(admin)
     assert admin.email == "me@example.com" and admin.email_alerts
@@ -318,3 +318,11 @@ def test_smtp_server_looked_up_through_configured_dns_servers(client, db, smtp, 
     finally:
         dns.shutdown()
         dns.server_close()
+
+
+def test_changing_the_email_address_needs_the_password(client, db):
+    csrf = login(client)
+    r = client.post("/account/profile", data={"email": "attacker@example.com", "csrf_token": csrf})
+    assert "Enter your current password" in r.text
+    db.expire_all()
+    assert db.scalar(select(User).where(User.username == "admin")).email != "attacker@example.com"

@@ -124,6 +124,9 @@ def create_web_app(settings: Settings) -> FastAPI:
         )
         if settings.secure_cookies:
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+        if not request.url.path.startswith(("/static/", "/brand/")):
+            # Pages show recovery codes, setup keys and configurations: keep them out of browser caches.
+            response.headers.setdefault("Cache-Control", "no-store")
         return response
 
     @app.exception_handler(LoginRequired)
