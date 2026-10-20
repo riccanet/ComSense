@@ -125,3 +125,18 @@ def test_failed_in_place_update_explains_the_one_time_manual_install(client, db,
     db.expire_all()
     task = db.get(Task, task.id)
     assert task.status.value == "failed" and "pkg-static add -f" in task.output
+
+
+def test_firewalls_list_shows_the_agent_version(client, db, agent, settings):
+    package = agentpkg.latest_package(settings.data_dir / "downloads")
+    old = enroll(agent, make_key(db), system={"hostname": "old-fw", "unique_id": "o1"})
+    new = enroll(agent, make_key(db), system={"hostname": "new-fw", "unique_id": "n1"})
+    agent.post("/api/agent/v1/checkin", json={"agent_version": "0.2.7"}, headers=auth(old["token"]))
+    agent.post("/api/agent/v1/checkin", json={"agent_version": package["version"]}, headers=auth(new["token"]))
+    login(client)
+    page = client.get("/devices").text
+    assert "<th>Agent</th>" in page
+    old_row = page[page.index("old-fw"):page.index("</tr>", page.index("old-fw"))]
+    new_row = page[page.index("new-fw"):page.index("</tr>", page.index("new-fw"))]
+    assert "0.2.7" in old_row and ">update<" in old_row
+    assert package["version"] in new_row and ">update<" not in new_row

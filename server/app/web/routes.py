@@ -400,6 +400,7 @@ def devices(
         org=org,
         q=q,
         open_alerts=open_alerts,
+        latest_agent=_latest_agent_version(request),
         bulk_tasks=BULK_LABELS,
     )
 

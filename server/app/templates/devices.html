@@ -19,7 +19,7 @@
     <thead>
       <tr>
         <th><input type="checkbox" data-select-all="device_ids" aria-label="Select all"></th>
-        <th>Name</th><th>Customer</th><th>Status</th><th>Edition / version</th>
+        <th>Name</th><th>Customer</th><th>Status</th><th>Edition / version</th><th>Agent</th>
         <th>WAN IP</th><th>Last seen</th><th>Alerts</th><th>Updates</th>
       </tr>
     </thead>
@@ -31,13 +31,14 @@
         <td>{% if d.organization %}<a href="/customers/{{ d.organization.id }}">{{ d.organization.name }}</a>{% else %}—{% endif %}</td>
         <td>{{ status_badge(d.status.value) }}</td>
         <td>{{ "Plus" if d.edition == "plus" else "CE" if d.edition == "ce" else d.edition }} {{ d.product_version }}{% if d.arch %} <span class="muted small">{{ d.arch|arch }}</span>{% endif %}</td>
+        <td class="nowrap">{{ d.agent_version or "—" }}{% if latest_agent and d.agent_version and d.agent_version|agent_outdated(latest_agent) %} <span class="badge s-pending" title="This server provides {{ latest_agent }}">update</span>{% endif %}</td>
         <td>{{ d.wan_ip }}</td>
         <td>{{ d.last_seen_at|ago }}</td>
         <td>{% if open_alerts.get(d.id) %}<span class="badge sev-warning">{{ open_alerts[d.id] }}</span>{% endif %}</td>
         <td>{% if d.updates.update_available %}<span class="badge s-pending">{{ d.updates.version }}</span>{% endif %}</td>
       </tr>
     {% else %}
-      <tr><td colspan="9" class="muted">No firewalls yet. Create an <a href="/keys">enrollment key</a> and install the agent package on a firewall.</td></tr>
+      <tr><td colspan="10" class="muted">No firewalls yet. Create an <a href="/keys">enrollment key</a> and install the agent package on a firewall.</td></tr>
     {% endfor %}
     </tbody>
   </table>
