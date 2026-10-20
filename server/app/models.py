@@ -399,6 +399,29 @@ class PasswordResetToken(Base):
     requested_ip: Mapped[str] = mapped_column(String(64), default="")
 
 
+class ApiKey(Base):
+    """A key for the REST API (/api/v1) and the MCP server. It acts with its own role, never more
+    than an operator: admin tasks (users, keys, settings, restores) stay in the console."""
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    prefix: Mapped[str] = mapped_column(String(32))
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    role: Mapped[Role] = mapped_column(Enum(Role, native_enum=False), default=Role.viewer)
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_ip: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+
+    def usable(self, now: datetime | None = None) -> bool:
+        now = now or utcnow()
+        return not self.revoked and (self.expires_at is None or aware(self.expires_at) > now)
+
+
 class SsoProvider(Base):
     """A SAML 2.0 identity provider users can sign in with (Settings > Single sign-on).
     The provider enforces its own MFA, so a sign-in through it counts as two-factor."""

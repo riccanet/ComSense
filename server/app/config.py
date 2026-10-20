@@ -48,6 +48,9 @@ class Settings:
     # it can be exposed separately from the console.
     web_host: str = field(default_factory=lambda: os.environ.get("CSFM_WEB_HOST", "0.0.0.0"))
     web_port: int = field(default_factory=lambda: _int("CSFM_WEB_PORT", 8000))
+    # The MCP server (plain HTTP, like the console: publish it through an HTTPS proxy). 0 turns it off.
+    mcp_host: str = field(default_factory=lambda: os.environ.get("CSFM_MCP_HOST", "127.0.0.1"))
+    mcp_port: int = field(default_factory=lambda: _int("CSFM_MCP_PORT", 8090))
     # Proxies whose X-Forwarded-For the web listener trusts ("*" when only the
     # proxy can reach the web port, as in the provided deployments).
     forwarded_allow_ips: str = field(

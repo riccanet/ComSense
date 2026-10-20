@@ -8,6 +8,8 @@
 #   80, 443  web console (80 is needed for certificate issuance). Restrict 443 to
 #            admins if you like; firewalls never use it.
 #   10443     agents (CSFM_AGENT_PORT_PUBLIC changes it).
+#   8443      MCP server for AI assistants, HTTPS (CSFM_MCP_PORT_PUBLIC changes it); API keys
+#             from Settings > API keys. Leave it closed if you do not use it.
 #
 # Required: CSFM_DOMAIN, POSTGRES_PASSWORD, CSFM_SECRET_KEY, CSFM_BACKUP_ENCRYPTION_KEY
 # (generate the keys with:
@@ -66,6 +68,9 @@ services:
       CSFM_AGENT_TLS_NAMES: ${CSFM_AGENT_TLS_NAMES:-}
       # Caddy reaches the app over the compose network and sets X-Forwarded-For itself.
       CSFM_FORWARDED_ALLOW_IPS: ${CSFM_FORWARDED_ALLOW_IPS:-127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      # MCP server for AI assistants; Caddy publishes it with HTTPS on CSFM_MCP_PORT_PUBLIC (8443).
+      CSFM_MCP_HOST: 0.0.0.0
+      CSFM_MCP_PORT: 8090
       CSFM_SECRET_KEY: ${CSFM_SECRET_KEY:?CSFM_SECRET_KEY is required}
       CSFM_BACKUP_ENCRYPTION_KEY: ${CSFM_BACKUP_ENCRYPTION_KEY:?CSFM_BACKUP_ENCRYPTION_KEY is required}
       CSFM_INITIAL_ADMIN_USER: ${CSFM_INITIAL_ADMIN_USER:-admin}
@@ -98,11 +103,19 @@ services:
     restart: unless-stopped
     depends_on:
       - app
-    # Automatic HTTPS for the console; no Caddyfile needed.
-    command: caddy reverse-proxy --from ${CSFM_DOMAIN} --to app:8000
+    # Automatic HTTPS for the console (443) and the MCP server (8443, the same certificate).
+    command:
+      - sh
+      - -c
+      - |
+        printf '%s {\n\treverse_proxy app:8000\n}\n%s:8443 {\n\treverse_proxy app:8090\n}\n' "$$DOMAIN" "$$DOMAIN" > /etc/caddy/Caddyfile
+        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    environment:
+      DOMAIN: ${CSFM_DOMAIN}
     ports:
       - "80:80"
       - "443:443"
+      - "${CSFM_MCP_PORT_PUBLIC:-8443}:8443"
     volumes:
       - caddy-data:/data
       - caddy-config:/config

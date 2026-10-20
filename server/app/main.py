@@ -15,6 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import __version__
 from .api import agent as agent_api
+from .api.rest import create_rest_app
 from .config import Settings, get_settings
 from .db import init_engine, session_factory, upgrade_schema
 from .models import Role, User
@@ -24,6 +25,7 @@ from .security import generate_temporary_password, hash_password
 from .services.agentpkg import ensure_package
 from .web import (
     account_routes,
+    apikey_routes,
     config_routes,
     customer_routes,
     mfa_routes,
@@ -154,7 +156,10 @@ def create_web_app(settings: Settings) -> FastAPI:
 
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
     _mount_downloads(app, settings)
+    # REST API for scripts and integrations (API keys; no cookies, so no CSRF).
+    app.mount("/api/v1", create_rest_app(settings))
     app.include_router(account_routes.router)
+    app.include_router(apikey_routes.router)
     app.include_router(config_routes.router)
     app.include_router(customer_routes.router)
     app.include_router(mfa_routes.router)

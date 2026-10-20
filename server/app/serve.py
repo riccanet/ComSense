@@ -3,7 +3,7 @@
     python -m app.serve
 
 The web console listens on CSFM_WEB_HOST:CSFM_WEB_PORT (plain HTTP, for an HTTPS
-reverse proxy). The agent API listens on CSFM_AGENT_HOST:CSFM_AGENT_PORT and
+reverse proxy), the MCP server on CSFM_MCP_HOST:CSFM_MCP_PORT (the same; 0 turns it off). The agent API listens on CSFM_AGENT_HOST:CSFM_AGENT_PORT and
 terminates TLS itself. Both share the database and one housekeeping scheduler,
 so run a single process.
 """
@@ -89,16 +89,34 @@ async def serve() -> None:
         )
     )
 
+    servers = [web, agent]
+    mcp = None
+    if settings.mcp_port:
+        from .mcp_server import create_mcp_app  # noqa: PLC0415 - only when the MCP port is on
+
+        mcp = _Server(
+            uvicorn.Config(
+                create_mcp_app(settings),
+                host=settings.mcp_host,
+                port=settings.mcp_port,
+                proxy_headers=True,
+                forwarded_allow_ips=settings.forwarded_allow_ips,
+                server_header=False,
+            )
+        )
+        servers.append(mcp)
+        log.info("MCP server on %s:%d (/mcp, API keys from Settings > API keys)", settings.mcp_host, settings.mcp_port)
+
     loop = asyncio.get_running_loop()
 
     def stop() -> None:
-        web.should_exit = True
-        agent.should_exit = True
+        for server in servers:
+            server.should_exit = True
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop)
     try:
-        await asyncio.gather(web.serve(), agent.serve(sockets=[inner]))
+        await asyncio.gather(web.serve(), agent.serve(sockets=[inner]), *([mcp.serve()] if mcp else []))
     finally:
         front.close()
         await front.wait_closed()

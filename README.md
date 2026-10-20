@@ -51,6 +51,11 @@ The server has two separate listeners, so it needs only two ports forwarded thro
 | **Customers** | Group each client's firewalls under a customer with contact details; a customer page shows its firewalls, open alerts, last backups and enrollment keys, and keys made for a customer drop new firewalls straight into it. Bulk actions, users with admin/operator/viewer roles, full audit log. Light, dark and automatic (follow the OS) themes. |
 | **Security** | Two-factor sign-in with an authenticator app (TOTP, with recovery codes) or email codes, optional or required for admins or everyone. Separate agent port serving only the agent API, with the server's own certificate pinned by every agent; failed-token lockout per address. One-time, expiring, revocable enrollment keys (optionally requiring approval); per-device tokens stored hashed and rotated every 30 days; strict TLS on the agent with optional private CA and public-key pinning; every remote action must also be allowed locally on the firewall. See [docs/SECURITY.md](docs/SECURITY.md). |
 
+### REST API and MCP server
+
+Scripts and integrations can use the REST API (`/api/v1`), and AI assistants the MCP server on its
+own port, both with API keys from Settings > API keys: [docs/API.md](docs/API.md).
+
 ## Repository layout
 
 ```

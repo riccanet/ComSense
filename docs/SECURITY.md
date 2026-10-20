@@ -136,3 +136,12 @@ restores the previous configuration on its own, also after a reboot.
 * Use short-lived, single-customer keys with approval for each rollout, and revoke them after.
 * Keep `CSFM_BACKUP_ENCRYPTION_KEY` and `CSFM_SECRET_KEY` in a secrets manager and back them up
   separately from the data.
+
+## API keys (REST API and MCP server)
+
+API keys are 256-bit random values (`csfm_api_...`) stored as SHA-256 hashes, shown once at creation.
+A key acts with its own role and never more than an operator can in the console: no users, keys,
+settings, configurations or restores. Keys can expire and be revoked; changes made with one are
+audited as `api:<key name>`, and repeated failed keys from one address are blocked for a while. The
+MCP server is a separate listener (`CSFM_MCP_PORT`, 0 turns it off) that refuses any request without a
+valid key before the MCP layer sees it; like the console it is plain HTTP for an HTTPS proxy.

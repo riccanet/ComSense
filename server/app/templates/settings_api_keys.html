@@ -1,0 +1,57 @@
+{% extends "settings_layout.html" %}
+{% from "macros.html" import csrf, post_button with context %}
+{% block title %}API keys · Settings{% endblock %}
+{% block settings %}
+{% if new_key %}
+<section class="card highlight">
+  <h2>New API key</h2>
+  <p>Copy it now: it is shown only this once and stored only as a hash.</p>
+  <pre class="mono">{{ new_key }}</pre>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>API keys</h2>
+  <p>Keys for scripts and integrations (the REST API) and for AI assistants (the MCP server). Send one as
+  <span class="mono">Authorization: Bearer csfm_api_…</span>. A <strong>viewer</strong> key reads; an
+  <strong>operator</strong> or <strong>admin</strong> key can also queue tasks on firewalls, acknowledge
+  alerts and move firewalls between customers, with the same checks as the console. Users, keys, settings
+  and restores stay in the console.</p>
+  <table class="list">
+    <thead><tr><th>Name</th><th>Key</th><th>Role</th><th>Created</th><th>Expires</th><th>Last used</th><th>State</th><th></th></tr></thead>
+    <tbody>
+    {% for k in keys %}
+      <tr{% if not k.usable(now) %} class="muted"{% endif %}>
+        <td>{{ k.name }}</td>
+        <td class="mono small">{{ k.prefix }}…</td>
+        <td>{{ k.role.value }}</td>
+        <td class="small">{{ k.created_at|dt }}<div class="muted">{{ k.created_by }}</div></td>
+        <td class="small">{{ k.expires_at|dt if k.expires_at else "never" }}</td>
+        <td class="small">{% if k.last_used_at %}{{ k.last_used_at|ago }}<div class="muted">{{ k.last_used_ip }}</div>{% else %}never{% endif %}</td>
+        <td>{% if k.revoked %}<span class="badge s-disabled">revoked</span>{% elif k.usable(now) %}<span class="badge s-online">active</span>{% else %}<span class="badge s-offline">expired</span>{% endif %}</td>
+        <td>{% if not k.revoked %}{{ post_button("/settings/api-keys/" ~ k.id ~ "/revoke", "Revoke", "small danger", "Revoke " ~ k.name ~ "? Anything using it is refused from now on.") }}{% endif %}</td>
+      </tr>
+    {% else %}<tr><td colspan="8" class="muted">No API keys yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <form method="post" action="/settings/api-keys" class="grid-form">
+    {{ csrf() }}
+    <label>Name <input name="name" required maxlength="128" placeholder="n8n, PSA sync, Claude…"></label>
+    <label>Role <select name="role">{% for r in roles %}<option value="{{ r.value }}">{{ r.value }}</option>{% endfor %}</select></label>
+    <label>Expires <select name="expires_days">
+      <option value="0">never</option><option value="30">in 30 days</option><option value="90">in 90 days</option><option value="365">in a year</option>
+    </select></label>
+    <div><button class="primary">Create API key</button></div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Where to use them</h2>
+  <dl>
+    <dt>REST API</dt><dd><span class="mono">{{ api_url }}</span> · description at <span class="mono">{{ api_url }}/openapi.json</span></dd>
+    <dt>MCP server</dt><dd>{% if mcp_port %}Port <span class="mono">{{ mcp_port }}</span> of this server, path <span class="mono">/mcp</span> (Streamable HTTP).
+      Like the console it speaks plain HTTP: publish it through your HTTPS proxy.{% else %}Turned off (<span class="mono">CSFM_MCP_PORT=0</span>).{% endif %}</dd>
+  </dl>
+  <p class="small muted">See docs/API.md for the endpoints, the MCP tools and examples.</p>
+</section>
+{% endblock %}

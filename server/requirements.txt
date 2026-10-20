@@ -11,3 +11,5 @@ cryptography>=44.0.1
 segno>=1.6
 tzdata>=2024.1
 signxml>=4.0.3
+# The MCP server (app/mcp_server.py): mcp 2.x, whose server class is MCPServer.
+mcp>=2.2,<3
