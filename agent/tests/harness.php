@@ -137,6 +137,18 @@ function get_system_pkg_version($baseonly = false, $use_cache = true) {
 	return array('version' => '2.7.2-RELEASE', 'installed_version' => '2.7.0-RELEASE', 'pkg_version_compare' => '<');
 }
 
+define('DYNDNS_PROVIDER_VALUES', 'cloudflare cloudflare-v6 custom namecheap noip');
+define('DYNDNS_PROVIDER_DESCRIPTIONS', 'Cloudflare,Cloudflare (v6),Custom,Namecheap,No-IP');
+
+/* System > Update branches, as pkg-utils.inc lists them. */
+function pkg_list_repos() {
+	return array(
+		array('name' => 'Stable', 'path' => '/usr/local/share/pfSense/pkg/repos/pfSense-repo.conf', 'descr' => 'Latest stable version (2.7.2)', 'default' => true),
+		array('name' => 'Devel', 'path' => '/usr/local/share/pfSense/pkg/repos/pfSense-repo-devel.conf', 'descr' => 'Latest development snapshots (2.8.0)'),
+	);
+}
+function pkg_switch_repo($path) { csfm_test_action("pkg_switch_repo {$path}"); }
+
 require_once(getenv('CSFM_AGENT_DIR') . '/lib/agent.inc');
 
 @mkdir(g_get('conf_path'), 0700, true);

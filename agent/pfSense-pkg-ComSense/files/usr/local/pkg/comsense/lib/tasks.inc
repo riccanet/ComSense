@@ -38,12 +38,16 @@ $csfm_task_capability = array(
 	'alias_add' => 'policy',
 	'alias_edit' => 'policy',
 	'alias_remove' => 'policy',
+	'ddns_add' => 'policy',
+	'ddns_edit' => 'policy',
+	'ddns_remove' => 'policy',
+	'update_branch' => 'upgrade',
 	'notifications' => 'policy',
 );
 
 /* Tasks that change the configuration and run under the change guard (guard.inc). */
 $csfm_guarded_tasks = array('apply_policy', 'remove_policy', 'nat_add', 'nat_remove', 'nat_edit',
-	'alias_add', 'alias_edit', 'alias_remove');
+	'alias_add', 'alias_edit', 'alias_remove', 'ddns_add', 'ddns_edit', 'ddns_remove');
 
 class CsfmTaskDeferred extends Exception {
 	/* Thrown by tasks that already reported their own result. */
@@ -156,6 +160,15 @@ function csfm_task_label($type, $payload) {
 	}
 	if ($type === 'alias_remove') {
 		return 'remove alias ' . ($payload['name'] ?? '');
+	}
+	if ($type === 'ddns_add' || $type === 'ddns_edit') {
+		return ($type === 'ddns_add' ? 'add' : 'change') . ' dynamic DNS ' . ($payload['entry']['host'] ?? '');
+	}
+	if ($type === 'ddns_remove') {
+		return 'remove dynamic DNS ' . ($payload['descr'] ?? '');
+	}
+	if ($type === 'update_branch') {
+		return 'switch the update branch to ' . ($payload['branch'] ?? '?');
 	}
 	if ($type === 'nat_edit') {
 		return 'change port forward ' . ($payload['rule']['descr'] ?? '');
@@ -461,6 +474,54 @@ function csfm_task_alias_edit($client, $id, $payload) {
 
 function csfm_task_alias_remove($client, $id, $payload) {
 	return array('output' => csfm_remove_alias((string)($payload['name'] ?? '')));
+}
+
+function csfm_ddns_payload($payload) {
+	$r = $payload['entry'] ?? null;
+	if (!is_array($r) || !preg_match('/^[a-z0-9._-]{1,32}$/i', (string)($r['type'] ?? ''))
+	    || (string)($r['interface'] ?? '') === '') {
+		throw new Exception('Malformed dynamic DNS entry');
+	}
+	return $r;
+}
+
+function csfm_ddns_reference($payload) {
+	$fp = (string)($payload['fingerprint'] ?? '');
+	if (!preg_match('/^[0-9a-f]{16}$/', $fp)) {
+		throw new Exception('Malformed dynamic DNS reference');
+	}
+	return $fp;
+}
+
+function csfm_task_ddns_add($client, $id, $payload) {
+	return array('output' => csfm_add_ddns(csfm_ddns_payload($payload)));
+}
+
+function csfm_task_ddns_edit($client, $id, $payload) {
+	return array('output' => csfm_edit_ddns(csfm_ddns_reference($payload), csfm_ddns_payload($payload)));
+}
+
+function csfm_task_ddns_remove($client, $id, $payload) {
+	return array('output' => csfm_remove_ddns(csfm_ddns_reference($payload)));
+}
+
+/* System > Update > Update Settings > Branch, as pfSense's own page saves it. */
+function csfm_task_update_branch($client, $id, $payload) {
+	$name = (string)($payload['branch'] ?? '');
+	foreach (csfm_update_branches() as $repo) {
+		if ((string)($repo['name'] ?? '') !== $name) {
+			continue;
+		}
+		csfm_cfg_set('system/pkg_repo_conf_path', (string)$repo['path']);
+		write_config("ComSense: update branch set to {$name}");
+		if (function_exists('pkg_switch_repo')) {
+			pkg_switch_repo((string)$repo['path']);
+		}
+		csfm_forget_updates();
+		csfm_schedule_update_check(true);
+		return array('output' => 'Update branch set to ' . ($repo['descr'] ?? $name) . '; checking for updates on it');
+	}
+	throw new Exception("This firewall does not offer the update branch '{$name}'");
 }
 
 function csfm_task_notifications($client, $id, $payload) {

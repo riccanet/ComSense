@@ -584,6 +584,160 @@ function csfm_edit_port_forward($fingerprint, $r) {
 	throw new CsfmPolicyError('That port forward is no longer on the firewall (it may have been changed there)');
 }
 
+/* ------------------------------------------------- dynamic DNS (Services > Dynamic DNS) */
+
+/* Fields the console sets; everything else on an entry (check IP mode, curl options...) is kept. */
+$csfm_ddns_fields = array('type', 'interface', 'host', 'domainname', 'username', 'zoneid', 'ttl', 'mx',
+	'updateurl', 'resultmatch', 'descr');
+$csfm_ddns_flags = array('wildcard', 'proxied', 'verboselog');
+
+/*
+ * Identifies one DDNS client across the server and the firewall (the server computes the same from
+ * config.xml): interface, provider, host name, domain name and description.
+ */
+function csfm_ddns_fingerprint($d) {
+	$parts = array((string)($d['interface'] ?? ''), (string)($d['type'] ?? ''), (string)($d['host'] ?? ''),
+		(string)($d['domainname'] ?? ''), (string)($d['descr'] ?? ''));
+	return substr(hash('sha256', implode("\x1f", $parts)), 0, 16);
+}
+
+function csfm_ddns_entries() {
+	$list = csfm_cfg_get('dyndnses/dyndns', array());
+	return is_array($list) ? array_values($list) : array();
+}
+
+/* The status pfSense caches per client: /conf/dyndns_<if><type>'<host>'<id>.cache holds "ip|time". */
+function csfm_ddns_cache_files($d, $id) {
+	$dir = function_exists('g_get') ? (g_get('conf_path') ?: '/conf') : '/conf';
+	$prefix = $dir . '/dyndns_' . ($d['interface'] ?? '') . ($d['type'] ?? '');
+	return array_merge(glob($prefix . "*{$id}.cache") ?: array(), glob($prefix . "*{$id}_v6.cache") ?: array());
+}
+
+/* The DDNS providers this pfSense version supports, as its own page lists them. */
+function csfm_ddns_providers() {
+	if (!defined('DYNDNS_PROVIDER_VALUES')) {
+		return array();
+	}
+	$values = explode(' ', constant('DYNDNS_PROVIDER_VALUES'));
+	$names = defined('DYNDNS_PROVIDER_DESCRIPTIONS') ? explode(',', constant('DYNDNS_PROVIDER_DESCRIPTIONS')) : array();
+	$out = array();
+	foreach ($values as $i => $v) {
+		if ($v !== '') {
+			$out[] = array('value' => $v, 'name' => trim($names[$i] ?? $v));
+		}
+	}
+	return $out;
+}
+
+function csfm_collect_ddns() {
+	$out = array();
+	foreach (csfm_ddns_entries() as $i => $d) {
+		$id = isset($d['id']) ? (int)$d['id'] : $i;
+		$ip = '';
+		$when = 0;
+		foreach (csfm_ddns_cache_files($d, $id) as $file) {
+			$parts = explode('|', trim((string)@file_get_contents($file)));
+			if (($parts[0] ?? '') !== '' && (int)($parts[1] ?? 0) >= $when) {
+				$ip = $parts[0];
+				$when = (int)($parts[1] ?? 0);
+			}
+		}
+		$out[] = array('fingerprint' => csfm_ddns_fingerprint($d), 'cached_ip' => $ip,
+			'updated' => $when ? gmdate('c', $when) : '');
+	}
+	return array('clients' => $out, 'providers' => csfm_ddns_providers());
+}
+
+function csfm_ddns_save($entries, $message, $forceIndex = null) {
+	foreach ($entries as $i => $d) {
+		$entries[$i]['id'] = (string)$i; /* pfSense numbers its clients; the number is part of the cache name */
+	}
+	if ($forceIndex !== null && isset($entries[$forceIndex])) {
+		foreach (csfm_ddns_cache_files($entries[$forceIndex], $forceIndex) as $file) {
+			@unlink($file); /* without its cache, the next update sends the address again */
+		}
+	}
+	csfm_cfg_set('dyndnses/dyndns', array_values($entries));
+	write_config($message);
+	if (function_exists('mwexec_bg') && file_exists('/etc/rc.dyndns.update')) {
+		mwexec_bg('/etc/rc.dyndns.update'); /* in the background: providers can be slow to answer */
+	}
+}
+
+function csfm_ddns_apply_fields($entry, $r, $keepPassword) {
+	global $csfm_ddns_fields, $csfm_ddns_flags;
+	foreach ($csfm_ddns_fields as $k) {
+		$entry[$k] = (string)($r[$k] ?? '');
+	}
+	foreach ($csfm_ddns_flags as $k) {
+		unset($entry[$k]);
+		if (!empty($r[$k])) {
+			$entry[$k] = 'yes';
+		}
+	}
+	if (!$keepPassword || isset($r['password']) && $r['password'] !== '') {
+		$entry['password'] = (string)($r['password'] ?? '');
+	}
+	unset($entry['enable']);
+	if (!empty($r['enable'])) {
+		$entry['enable'] = true;
+	}
+	return $entry;
+}
+
+function csfm_ddns_index($entries, $fingerprint) {
+	foreach ($entries as $i => $d) {
+		if (csfm_ddns_fingerprint($d) === $fingerprint) {
+			return $i;
+		}
+	}
+	return null;
+}
+
+function csfm_add_ddns($r) {
+	$entries = csfm_ddns_entries();
+	$new = csfm_ddns_apply_fields(array(), $r, false);
+	if (csfm_ddns_index($entries, csfm_ddns_fingerprint($new)) !== null) {
+		throw new CsfmPolicyError('An identical dynamic DNS entry already exists');
+	}
+	$entries[] = $new;
+	csfm_ddns_save($entries, 'ComSense: added dynamic DNS ' . $new['host'], count($entries) - 1);
+	return "Added dynamic DNS {$new['type']} {$new['host']}" . ($new['domainname'] !== '' ? ".{$new['domainname']}" : '')
+		. (empty($new['enable']) ? ' (disabled)' : '; updating now');
+}
+
+function csfm_edit_ddns($fingerprint, $r) {
+	$entries = csfm_ddns_entries();
+	$i = csfm_ddns_index($entries, $fingerprint);
+	if ($i === null) {
+		throw new CsfmPolicyError('That dynamic DNS entry is no longer on the firewall (it may have been changed there)');
+	}
+	$entries[$i] = csfm_ddns_apply_fields($entries[$i], $r, true);
+	foreach ($entries as $j => $other) {
+		if ($j !== $i && csfm_ddns_fingerprint($other) === csfm_ddns_fingerprint($entries[$i])) {
+			throw new CsfmPolicyError('An identical dynamic DNS entry already exists');
+		}
+	}
+	csfm_ddns_save($entries, 'ComSense: changed dynamic DNS ' . $entries[$i]['host'], $i);
+	return "Changed dynamic DNS {$entries[$i]['type']} {$entries[$i]['host']}"
+		. (empty($entries[$i]['enable']) ? ' (disabled)' : '; updating now');
+}
+
+function csfm_remove_ddns($fingerprint) {
+	$entries = csfm_ddns_entries();
+	$i = csfm_ddns_index($entries, $fingerprint);
+	if ($i === null) {
+		throw new CsfmPolicyError('That dynamic DNS entry is no longer on the firewall');
+	}
+	$gone = $entries[$i];
+	foreach (csfm_ddns_cache_files($gone, $i) as $file) {
+		@unlink($file);
+	}
+	array_splice($entries, $i, 1);
+	csfm_ddns_save($entries, 'ComSense: removed dynamic DNS ' . ($gone['host'] ?? ''));
+	return 'Removed dynamic DNS ' . ($gone['type'] ?? '') . ' ' . ($gone['host'] ?? '');
+}
+
 /* ------------------------------------------------- pfSense email notifications */
 
 /* Whether pfSense sends its own email notifications (System > Advanced > Notifications). */

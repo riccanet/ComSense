@@ -90,6 +90,10 @@ no tasks.
 | `nat_edit` | `{"fingerprint","rule"}` | policy |
 | `alias_add`, `alias_edit` | `{"alias"}` (one alias, as in an `aliases` policy) | policy |
 | `alias_remove` | `{"name"}` | policy |
+| `ddns_add` | `{"entry"}` (one Services > Dynamic DNS client) | policy |
+| `ddns_edit` | `{"fingerprint","entry"}` (no `password`: keep the current one) | policy |
+| `ddns_remove` | `{"fingerprint","descr"}` | policy |
+| `update_branch` | `{"branch"}` (a name from the reported `update_branch.branches`) | upgrade |
 | `notifications` | `{"smtp": true\|false}` | policy |
 
 Tasks not picked up within 24 h (1 h for restores) expire. Tasks with no final result after their
@@ -99,7 +103,15 @@ timeout (15 min by default, 30 min for agent updates, 2 h for system upgrades) a
 guard like policies. `nat_edit` and `nat_remove` name the port forward by a fingerprint: the first 16 hex digits of the SHA-256
 of its interface, protocol, target, local-port, destination port and description joined with `\x1f`
 (the server computes it from config.xml, the agent from its config). Port forwards owned by a
-configuration are refused. A linked filter rule is removed with its port forward, and an edit updates it
+configuration are refused. `ddns_*` change one dynamic DNS client, named by a fingerprint of its
+interface, provider, host name, domain name and description; a change clears the client's cached address
+and runs `/etc/rc.dyndns.update` so the provider is updated at once. `update_branch` sets
+`system/pkg_repo_conf_path` and calls `pkg_switch_repo()` as System > Update > Update Settings does,
+then checks for updates on the new branch.
+
+Check-ins also carry `update_branch` (`{"current", "branches": [{"name","descr","default"}]}`, from
+`pkg_list_repos()`) and `ddns` (`{"clients": [{"fingerprint","cached_ip","updated"}], "providers":
+[{"value","name"}]}`, the cached address per client and the providers that pfSense version supports). A linked filter rule is removed with its port forward, and an edit updates it
 to match (settings the console does not show, such as NAT reflection, are kept). `alias_add`,
 `alias_edit` and `alias_remove` change one alias by name: an edit keeps the name (rules refer to it),
 removal is refused while a rule, port forward or other alias uses it, and aliases owned by a

@@ -525,13 +525,21 @@ def device_detail(
 
 
 CONFIG_PAGE_TASKS = (TaskType.nat_add, TaskType.nat_remove, TaskType.nat_edit, TaskType.alias_add,
-                     TaskType.alias_edit, TaskType.alias_remove, TaskType.notifications)
+                     TaskType.alias_edit, TaskType.alias_remove, TaskType.notifications, TaskType.ddns_add,
+                     TaskType.ddns_edit, TaskType.ddns_remove, TaskType.update_branch)
+# Offered when the firewall has not reported its own list yet (agent 0.2.7 and earlier).
+DDNS_PROVIDERS = [
+    ("cloudflare", "Cloudflare"), ("cloudflare-v6", "Cloudflare (v6)"), ("custom", "Custom"),
+    ("custom-v6", "Custom (v6)"), ("dnsimple", "DNSimple"), ("duckdns", "DuckDNS"), ("dyndns", "DynDNS (dynamic)"),
+    ("freedns", "freeDNS (afraid.org)"), ("godaddy", "GoDaddy"), ("he-net", "HE.net"), ("namecheap", "Namecheap"),
+    ("noip", "No-IP"), ("noip-free", "No-IP (free)"), ("route53", "Route 53"),
+]
 
 
 @router.get("/devices/{device_id}/configuration", response_class=HTMLResponse)
 def device_configuration(
-    device_id: str, request: Request, edit_nat: str = "", edit_alias: str = "", rules: str = "",
-    user: User = Depends(viewer), db: Session = Depends(get_db),
+    device_id: str, request: Request, edit_nat: str = "", edit_alias: str = "", edit_ddns: str = "",
+    rules: str = "", user: User = Depends(viewer), db: Session = Depends(get_db),
 ):
     """The firewall's aliases, rules (read only), port forwards, services, packages, email notifications and
     notes; changed one at a time (Configurations deploys them to many firewalls)."""
@@ -552,6 +560,9 @@ def device_configuration(
     managed_aliases = {a.get("name") for p in desired_policies(db, device) if p.type == PolicyType.aliases
                        for a in (p.content or {}).get("aliases", [])}
     aliases = [a | {"managed": a["name"] in managed_aliases} for a in summary["aliases"]]
+    ddns_inv = (device.inventory or {}).get("ddns")
+    ddns_inv = ddns_inv if isinstance(ddns_inv, dict) else {}
+    ddns_status = {c.get("fingerprint"): c for c in ddns_inv.get("clients", []) if isinstance(c, dict)}
     tabs = summary["rule_tabs"]
     # Open on the tab asked for, else LAN (where most rules are), else the first with rules.
     tab = next((t["id"] for t in tabs if t["id"] == rules), None) \
@@ -584,7 +595,15 @@ def device_configuration(
         alias_types=ALIAS_FORM_TYPES,
         smtp=summary["smtp"],
         smtp_pending=next((t.payload.get("smtp") for t in queued if t.type == TaskType.notifications), None),
-        orgs=db.scalars(select(Organization).order_by(Organization.name)).all(),
+        ddns=[d | {"status": ddns_status.get(d["fingerprint"], {})} for d in summary.get("ddns", [])],
+        ddns_adding=[t.payload.get("entry", {}) for t in queued if t.type == TaskType.ddns_add],
+        ddns_queued={t.payload.get("fingerprint"): "change" if t.type == TaskType.ddns_edit else "removal"
+                     for t in queued if t.type in (TaskType.ddns_edit, TaskType.ddns_remove)},
+        edit_ddns=edit_ddns,
+        ddns_providers=[(p.get("value", ""), p.get("name", "")) for p in ddns_inv.get("providers", [])
+                        if isinstance(p, dict)] or DDNS_PROVIDERS,
+        update_branch=(device.inventory or {}).get("update_branch") or {},
+        branch_pending=next((t.payload.get("branch") for t in queued if t.type == TaskType.update_branch), None),
     )
 
 
@@ -772,6 +791,109 @@ def device_notifications(device_id: str, request: Request, smtp: str = Form(...)
     enabled = smtp == "on"
     return _queue_change(request, db, settings, device, user, TaskType.notifications, {"smtp": enabled},
                          f"turn {'on' if enabled else 'off'} pfSense email notifications", "#notifications")
+
+
+DDNS_TEXT_RE = re.compile(r"^[^\x00-\x1f]{0,255}$")
+
+
+def _ddns_from_form(form) -> dict[str, Any]:
+    """One dynamic DNS client from the add or edit form on the Configuration page (raises PolicyError)."""
+    def text(name: str, limit: int = 255) -> str:
+        return str(form.get(name, "")).strip()[:limit]
+
+    entry: dict[str, Any] = {
+        "enable": form.get("enable") == "true",
+        "type": text("type", 32), "interface": text("interface", 64), "host": text("host"),
+        "domainname": text("domainname"), "username": text("username"), "password": str(form.get("password", "")),
+        "zoneid": text("zoneid"), "ttl": text("ttl", 10), "mx": text("mx"), "updateurl": text("updateurl", 1024),
+        "resultmatch": text("resultmatch", 1024), "descr": text("descr", 200),
+        "wildcard": form.get("wildcard") == "true", "proxied": form.get("proxied") == "true",
+        "verboselog": form.get("verboselog") == "true",
+    }
+    if not re.fullmatch(r"[a-z0-9._-]{1,32}", entry["type"], re.I):
+        raise PolicyError("Choose a provider")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", entry["interface"]):
+        raise PolicyError("Choose the interface whose address is published")
+    custom = entry["type"].startswith("custom")
+    if not custom and not re.fullmatch(r"[A-Za-z0-9*@_.-]{1,253}", entry["host"]):
+        raise PolicyError("Enter the host name to update (for example home, or @ for the domain itself)")
+    if entry["domainname"] and not re.fullmatch(r"[A-Za-z0-9_.-]{1,253}", entry["domainname"]):
+        raise PolicyError("The domain name is not valid")
+    if entry["ttl"] and not entry["ttl"].isdigit():
+        raise PolicyError("TTL is a number of seconds")
+    if custom and not entry["updateurl"].startswith(("https://", "http://")):
+        raise PolicyError("A custom provider needs its update URL (http:// or https://)")
+    for key in ("username", "password", "zoneid", "mx", "resultmatch", "descr"):
+        if not DDNS_TEXT_RE.match(str(entry[key])):
+            raise PolicyError(f"{key} contains characters that are not allowed")
+    return entry
+
+
+def _ddns_label(entry: dict[str, Any]) -> str:
+    host = entry.get("host", "")
+    return f"{host}.{entry['domainname']}" if entry.get("domainname") and host not in ("", "@") else \
+        (entry.get("domainname") or host)
+
+
+@router.post("/devices/{device_id}/ddns")
+async def device_ddns_add(device_id: str, request: Request, settings: Settings = Depends(get_settings),
+                          user: User = Depends(operator), db: Session = Depends(get_db)):
+    device = _get_device(db, device_id)
+    try:
+        entry = _ddns_from_form(await request.form())
+    except PolicyError as exc:
+        flash(request, str(exc), "error")
+        return redirect(f"/devices/{device_id}/configuration#ddns")
+    return _queue_change(request, db, settings, device, user, TaskType.ddns_add, {"entry": entry},
+                         f"add dynamic DNS {entry['type']} {_ddns_label(entry)}", "#ddns")
+
+
+@router.post("/devices/{device_id}/ddns/edit")
+async def device_ddns_edit(device_id: str, request: Request, settings: Settings = Depends(get_settings),
+                           user: User = Depends(operator), db: Session = Depends(get_db)):
+    """Change one dynamic DNS client, named by its fingerprint. An empty password keeps the current one."""
+    device = _get_device(db, device_id)
+    form = await request.form()
+    fingerprint = str(form.get("fingerprint", ""))
+    if not re.fullmatch(r"[0-9a-f]{16}", fingerprint):
+        raise HTTPException(400, "Invalid dynamic DNS reference")
+    try:
+        entry = _ddns_from_form(form)
+    except PolicyError as exc:
+        flash(request, str(exc), "error")
+        return redirect(f"/devices/{device_id}/configuration?edit_ddns={fingerprint}#ddns-edit")
+    if not entry["password"]:
+        del entry["password"]
+    return _queue_change(request, db, settings, device, user, TaskType.ddns_edit,
+                         {"fingerprint": fingerprint, "entry": entry},
+                         f"change dynamic DNS {entry['type']} {_ddns_label(entry)}", "#ddns")
+
+
+@router.post("/devices/{device_id}/ddns/remove")
+def device_ddns_remove(device_id: str, request: Request, fingerprint: str = Form(...), descr: str = Form(""),
+                       settings: Settings = Depends(get_settings), user: User = Depends(operator),
+                       db: Session = Depends(get_db)):
+    device = _get_device(db, device_id)
+    if not re.fullmatch(r"[0-9a-f]{16}", fingerprint):
+        raise HTTPException(400, "Invalid dynamic DNS reference")
+    return _queue_change(request, db, settings, device, user, TaskType.ddns_remove,
+                         {"fingerprint": fingerprint, "descr": descr[:200]},
+                         f"remove dynamic DNS {descr or fingerprint}", "#ddns")
+
+
+@router.post("/devices/{device_id}/update-branch")
+def device_update_branch(device_id: str, request: Request, branch: str = Form(...),
+                         settings: Settings = Depends(get_settings), user: User = Depends(operator),
+                         db: Session = Depends(get_db)):
+    """System > Update > Branch: one of the branches the firewall itself offers."""
+    device = _get_device(db, device_id)
+    offered = ((device.inventory or {}).get("update_branch") or {}).get("branches") or []
+    match = next((b for b in offered if isinstance(b, dict) and b.get("name") == branch), None)
+    if match is None:
+        flash(request, "The firewall does not offer that update branch.", "error")
+        return redirect(f"/devices/{device_id}/configuration#update-branch")
+    return _queue_change(request, db, settings, device, user, TaskType.update_branch, {"branch": branch},
+                         f"switch the update branch to {match.get('descr') or branch}", "#update-branch")
 
 
 def _alias_from_form(form) -> dict[str, Any]:

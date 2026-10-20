@@ -569,6 +569,57 @@ def test_full_lifecycle(env):
     agent(env, "run")
     assert alias("CSFM_SHARED") is None
 
+    # Dynamic DNS one entry at a time, and the status pfSense caches per client.
+    from app.services.configview import ddns_from_xml
+
+    entry = {"enable": True, "type": "cloudflare", "interface": "wan", "host": "vpn", "domainname": "example.com",
+             "username": "", "password": "tok-1", "zoneid": "", "ttl": "", "mx": "", "updateurl": "",
+             "resultmatch": "", "descr": "VPN", "wildcard": False, "proxied": True, "verboselog": False}
+    tid = queue(TaskType.ddns_add, {"entry": entry})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.success, task(tid).output
+    (vpn,) = [d for d in ddns_from_xml(pfsense_xml()) if d["host"] == "vpn"]
+    assert vpn["enabled"] and vpn["proxied"] and vpn["has_password"] and vpn["fqdn"] == "vpn.example.com"
+    raw = fw_config(env)["dyndnses"]["dyndns"][0]
+    assert raw["password"] == "tok-1" and raw["id"] == "0"
+    # pfSense caches "ip|time" per client; the agent reports it.
+    (env["fw"] / "conf" / "dyndns_wancloudflare'vpn.example.com'0.cache").write_text("203.0.113.7|1760000000")
+    agent(env, "run")
+    with env["db"]() as db:
+        inv = db.get(Device, creds["device_id"]).inventory
+    assert inv["ddns"]["clients"] == [{"fingerprint": vpn["fingerprint"], "cached_ip": "203.0.113.7",
+                                       "updated": "2025-10-09T08:53:20+00:00"}]
+    assert {"value": "namecheap", "name": "Namecheap"} in inv["ddns"]["providers"]
+    # An edit without a password keeps it; the cache goes so the next update sends the address again.
+    changed = {k: v for k, v in entry.items() if k != "password"} | {"enable": False, "ttl": "300"}
+    tid = queue(TaskType.ddns_edit, {"fingerprint": vpn["fingerprint"], "entry": changed})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.success, task(tid).output
+    raw = fw_config(env)["dyndnses"]["dyndns"][0]
+    assert raw["password"] == "tok-1" and raw["ttl"] == "300" and "enable" not in raw and raw["proxied"] == "yes"
+    assert not list((env["fw"] / "conf").glob("dyndns_*.cache"))
+    tid = queue(TaskType.ddns_remove, {"fingerprint": vpn["fingerprint"], "descr": "vpn"})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.success and not fw_config(env)["dyndnses"]["dyndns"]
+    tid = queue(TaskType.ddns_remove, {"fingerprint": vpn["fingerprint"], "descr": "vpn"})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.failed and "no longer on the firewall" in task(tid).output
+
+    # System > Update branch: the firewall reports its branches; switching runs pfSense's pkg_switch_repo.
+    assert inv["update_branch"]["current"] == "Stable"
+    assert [b["name"] for b in inv["update_branch"]["branches"]] == ["Stable", "Devel"]
+    tid = queue(TaskType.update_branch, {"branch": "Devel"})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.success, task(tid).output
+    assert fw_config(env)["system"]["pkg_repo_conf_path"].endswith("pfSense-repo-devel.conf")
+    assert "pkg_switch_repo /usr/local/share/pfSense/pkg/repos/pfSense-repo-devel.conf" in (env["fw"] / "actions.log").read_text()
+    agent(env, "run")  # reported at the next check-in
+    with env["db"]() as db:
+        assert db.get(Device, creds["device_id"]).inventory["update_branch"]["current"] == "Devel"
+    tid = queue(TaskType.update_branch, {"branch": "Nightly"})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.failed and "does not offer" in task(tid).output
+
     tid = queue(TaskType.notifications, {"smtp": False})
     agent(env, "run")
     assert task(tid).status == TaskStatus.success

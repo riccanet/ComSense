@@ -9,7 +9,7 @@ from sqlalchemy import select
 from test_config_view import CONFIG
 
 from app.models import Device, Organization, Policy, PolicyAssignment, PolicyType, Task, TaskType
-from app.services.configview import aliases_from_xml, port_forwards_from_xml
+from app.services.configview import aliases_from_xml, ddns_from_xml, port_forwards_from_xml
 
 
 def _device(agent, db, caps=ALL_CAPS):
@@ -216,6 +216,81 @@ def test_notes_keep_the_name_and_customer(client, db, agent):
     assert (device.notes, device.name, device.organization_id) == ("Rack 3", name, org.id)
 
 
+def test_ddns_is_read_from_config_xml_without_its_password():
+    (home,) = ddns_from_xml(CONFIG)
+    assert (home["type"], home["fqdn"], home["enabled"], home["proxied"], home["has_password"]) == \
+        ("cloudflare", "home.example.com", True, True, True)
+    assert "secret-token" not in str(home)
+
+
+DDNS_FORM = {"type": "cloudflare", "interface": "wan", "host": "vpn", "domainname": "example.com",
+             "password": "tok-123", "descr": "VPN", "enable": "true", "proxied": "", "ttl": "120"}
+
+
+@pytest.mark.changes
+def test_add_edit_and_remove_ddns_from_the_configuration_page(client, db, agent):
+    csrf = login(client)
+    creds = enroll(agent, make_key(db), capabilities=ALL_CAPS)
+    agent.post("/api/agent/v1/backups", content=gzip.compress(CONFIG), headers=auth(creds["token"]))
+    (home,) = ddns_from_xml(CONFIG)
+    agent.post("/api/agent/v1/checkin", json={"ddns": {
+        "clients": [{"fingerprint": home["fingerprint"], "cached_ip": "203.0.113.5", "updated": "2026-10-19T12:00:00+00:00"}],
+        "providers": [{"value": "cloudflare", "name": "Cloudflare"}, {"value": "namecheap", "name": "Namecheap"}]}},
+        headers=auth(creds["token"]))
+    did = creds["device_id"]
+    page = client.get(f"/devices/{did}/configuration").text
+    assert "<h2>Dynamic DNS</h2>" in page and "home.example.com" in page and "203.0.113.5" in page
+    assert "secret-token" not in page and ">Namecheap<" in page and "Home office" in page
+
+    form = client.get(f"/devices/{did}/configuration?edit_ddns={home['fingerprint']}").text
+    assert "/ddns/edit" in form and 'value="z1"' in form and "unchanged if left empty" in form
+
+    r = client.post(f"/devices/{did}/ddns", data={**DDNS_FORM, "csrf_token": csrf})
+    assert r.url.path == f"/devices/{did}/configuration" and "being added" in r.text
+    add = db.scalar(select(Task).where(Task.type == TaskType.ddns_add))
+    assert add.payload["entry"] | {} == {
+        "enable": True, "type": "cloudflare", "interface": "wan", "host": "vpn", "domainname": "example.com",
+        "username": "", "password": "tok-123", "zoneid": "", "ttl": "120", "mx": "", "updateurl": "",
+        "resultmatch": "", "descr": "VPN", "wildcard": False, "proxied": False, "verboselog": False}
+
+    client.post(f"/devices/{did}/ddns/edit", data={**DDNS_FORM, "fingerprint": home["fingerprint"], "host": "home",
+                                                   "password": "", "csrf_token": csrf})
+    edit = db.scalar(select(Task).where(Task.type == TaskType.ddns_edit))
+    assert edit.payload["fingerprint"] == home["fingerprint"] and "password" not in edit.payload["entry"]
+    assert "change queued" in client.get(f"/devices/{did}/configuration").text
+
+    client.post(f"/devices/{did}/ddns/remove", data={"fingerprint": home["fingerprint"], "descr": "cloudflare home",
+                                                     "csrf_token": csrf})
+    assert db.scalar(select(Task).where(Task.type == TaskType.ddns_remove)).payload["fingerprint"] == home["fingerprint"]
+
+    for bad, message in (({"type": ""}, "Choose a provider"), ({"interface": "w a n"}, "Choose the interface"),
+                         ({"host": "bad host!"}, "Enter the host name"), ({"ttl": "soon"}, "TTL is a number"),
+                         ({"type": "custom", "updateurl": ""}, "needs its update URL")):
+        r = client.post(f"/devices/{did}/ddns", data={**DDNS_FORM, **bad, "csrf_token": csrf})
+        assert message in r.text, bad
+    assert client.post(f"/devices/{did}/ddns/remove", data={"fingerprint": "zz", "csrf_token": csrf}).status_code == 400
+
+
+@pytest.mark.changes
+def test_update_branch(client, db, agent):
+    csrf = login(client)
+    creds = enroll(agent, make_key(db), capabilities=ALL_CAPS)
+    did = creds["device_id"]
+    assert "Shown once the firewall runs agent 0.2.8" in client.get(f"/devices/{did}/configuration").text
+    agent.post("/api/agent/v1/checkin", json={"update_branch": {"current": "Stable", "branches": [
+        {"name": "Stable", "descr": "Latest stable version (2.7.2)", "default": True},
+        {"name": "Devel", "descr": "Latest development snapshots (2.8.0)", "default": False}]}},
+        headers=auth(creds["token"]))
+    page = client.get(f"/devices/{did}/configuration").text
+    assert "takes system updates from" in page and "<strong>Latest stable version (2.7.2)</strong>" in page
+    assert '<option value="Devel">Latest development snapshots (2.8.0)</option>' in page
+    r = client.post(f"/devices/{did}/update-branch", data={"branch": "Devel", "csrf_token": csrf})
+    assert db.scalar(select(Task).where(Task.type == TaskType.update_branch)).payload == {"branch": "Devel"}
+    assert "Switching to Devel" in r.text
+    r = client.post(f"/devices/{did}/update-branch", data={"branch": "Nightly", "csrf_token": csrf})
+    assert "does not offer that update branch" in r.text
+
+
 @pytest.mark.changes
 def test_email_notifications_switch(client, db, agent):
     csrf = login(client)
@@ -242,7 +317,7 @@ def test_changes_need_the_switch_and_the_firewall_permission(client, db, agent):
     did = _device(agent, db, caps=["backup"])
     page = client.get(f"/devices/{did}/configuration").text
     assert "Add a port forward to this firewall" not in page
-    assert page.count("Firewall changes are turned off on this server.") == 3
+    assert page.count("Firewall changes are turned off on this server.") == 4
     r = client.post(f"/devices/{did}/notifications", data={"smtp": "off", "csrf_token": csrf})
     assert db.scalar(select(Task).where(Task.type == TaskType.notifications)) is None
     assert r.status_code == 200

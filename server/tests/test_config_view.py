@@ -33,6 +33,9 @@ CONFIG = b"""<?xml version="1.0"?>
   <rule><type>block</type><interface>wan,lan</interface><floating>yes</floating><direction>in</direction><quick>yes</quick>
     <source><address>BadHosts</address></source><destination><any></any></destination><descr>Block bad hosts</descr></rule>
 </filter>
+<dyndnses><dyndns><type>cloudflare</type><username></username><password>secret-token</password><host>home</host>
+  <domainname>example.com</domainname><zoneid>z1</zoneid><proxied>yes</proxied><interface>wan</interface>
+  <descr>Home office</descr><enable></enable><id>0</id></dyndns></dyndnses>
 <nat>
   <rule>
     <source><any></any></source>

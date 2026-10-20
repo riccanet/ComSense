@@ -338,6 +338,36 @@ function csfm_schedule_update_check($force = false) {
 	    . '/usr/local/bin/php -f /usr/local/pkg/comsense/agent.php check-updates');
 }
 
+/*
+ * The update branches pfSense offers (System > Update > Update Settings) and the one in use. The
+ * choice is stored as the path of its repository configuration (system/pkg_repo_conf_path).
+ */
+function csfm_update_branches() {
+	if (!function_exists('pkg_list_repos')) {
+		return array();
+	}
+	$repos = pkg_list_repos();
+	return is_array($repos) ? array_values(array_filter($repos, 'is_array')) : array();
+}
+
+function csfm_collect_update_branch() {
+	$repos = csfm_update_branches();
+	if (!$repos) {
+		return array();
+	}
+	$path = (string)csfm_cfg_get('system/pkg_repo_conf_path', '');
+	$current = '';
+	$out = array();
+	foreach ($repos as $r) {
+		$name = (string)($r['name'] ?? '');
+		$out[] = array('name' => $name, 'descr' => (string)($r['descr'] ?? $name), 'default' => !empty($r['default']));
+		if (($path !== '' && ($r['path'] ?? '') === $path) || ($current === '' && $path === '' && !empty($r['default']))) {
+			$current = $name;
+		}
+	}
+	return array('current' => $current, 'branches' => $out);
+}
+
 function csfm_config_file() {
 	$dir = function_exists('g_get') ? g_get('conf_path') : ($GLOBALS['g']['conf_path'] ?? '/cf/conf');
 	return ($dir ?: '/cf/conf') . '/config.xml';
@@ -410,6 +440,8 @@ function csfm_collect_report() {
 		'carp' => csfm_section('carp', 'csfm_collect_carp'),
 		'packages' => csfm_section('packages', 'csfm_collect_packages'),
 		'processes' => csfm_section('processes', 'csfm_collect_processes'),
+		'update_branch' => csfm_section('update_branch', 'csfm_collect_update_branch'),
+		'ddns' => function_exists('csfm_collect_ddns') ? csfm_section('ddns', 'csfm_collect_ddns') : array(),
 		'config' => array(
 			'sha256' => (string)@hash_file('sha256', csfm_config_file()),
 			'revision' => (string)csfm_cfg_get('revision/description', ''),

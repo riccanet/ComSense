@@ -201,6 +201,83 @@
   {% else %}{{ change_hint("port forwards") }}{% endif %}
 </section>
 
+{% macro ddns_fields(d) %}
+      <label>Provider <select name="type" required>{% for v, n in ddns_providers %}<option value="{{ v }}"{% if d.type == v %} selected{% endif %}>{{ n }}</option>{% endfor %}
+        {% if d.type and d.type not in ddns_providers|map("first") %}<option value="{{ d.type }}" selected>{{ d.type }}</option>{% endif %}</select></label>
+      <label>Interface <input name="interface" value="{{ d.interface or "wan" }}" list="nat-ifaces" required></label>
+      <label>Host name <input name="host" value="{{ d.host or "" }}" placeholder="home, or @ for the domain itself"></label>
+      <label>Domain name <input name="domainname" value="{{ d.domainname or "" }}" placeholder="example.com"></label>
+      <label>Username <input name="username" value="{{ d.username or "" }}" autocomplete="off" placeholder="Cloudflare: account email or blank for a token"></label>
+      <label>Password / API token <input name="password" type="password" autocomplete="new-password" placeholder="{{ "unchanged if left empty" if d.has_password else "" }}"></label>
+      <label>Description <input name="descr" value="{{ d.descr or "" }}" maxlength="200"></label>
+      <label class="check"><input type="checkbox" name="enable" value="true"{% if d.enabled is not defined or d.enabled %} checked{% endif %}> Enabled</label>
+      <details class="wide">
+        <summary class="small">More options (zone ID, TTL, proxy, custom provider)</summary>
+        <div class="grid-form">
+          <label>Zone ID <input name="zoneid" value="{{ d.zoneid or "" }}" placeholder="Route 53 / Cloudflare zone"></label>
+          <label>TTL <input name="ttl" value="{{ d.ttl or "" }}" inputmode="numeric" placeholder="provider default"></label>
+          <label>MX <input name="mx" value="{{ d.mx or "" }}"></label>
+          <label class="check"><input type="checkbox" name="proxied" value="true"{% if d.proxied %} checked{% endif %}> Cloudflare proxy</label>
+          <label class="check"><input type="checkbox" name="wildcard" value="true"{% if d.wildcard %} checked{% endif %}> Wildcard</label>
+          <label class="check"><input type="checkbox" name="verboselog" value="true"{% if d.verboselog %} checked{% endif %}> Verbose logging</label>
+          <label class="wide">Update URL (custom provider) <input name="updateurl" value="{{ d.updateurl or "" }}" placeholder="https://..."></label>
+          <label class="wide">Result match (custom provider) <input name="resultmatch" value="{{ d.resultmatch or "" }}"></label>
+        </div>
+      </details>
+{% endmacro %}
+
+<section class="card" id="ddns">
+  <h2>Dynamic DNS</h2>
+  <p class="small muted">Services &gt; Dynamic DNS on the firewall. Saving a change updates the provider straight away.</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Status</th><th>Interface</th><th>Provider</th><th>Host name</th><th>Cached IP</th><th>Description</th><th></th></tr></thead>
+    <tbody>
+    {% for d in ddns %}
+      {% set queued = ddns_queued.get(d.fingerprint) %}
+      <tr{% if queued or not d.enabled %} class="muted"{% endif %}>
+        <td>{% if d.enabled %}<span class="badge s-online">enabled</span>{% else %}<span class="badge s-disabled">disabled</span>{% endif %}</td>
+        <td>{{ interface_names.get(d.interface, d.interface) }}</td>
+        <td>{% for v, n in ddns_providers if v == d.type %}{{ n }}{% else %}{{ d.type }}{% endfor %}</td>
+        <td class="mono">{{ d.fqdn }}</td>
+        <td class="mono">{% if d.status.cached_ip %}{{ d.status.cached_ip }}{% if d.status.updated %} <span class="muted small">{{ d.status.updated|isodate }}</span>{% endif %}{% else %}<span class="muted">&ndash;</span>{% endif %}</td>
+        <td>{{ d.descr }}</td>
+        <td class="nowrap">{% if queued %}<span class="small muted">{{ queued }} queued</span>
+          {% elif can_change %}<a class="button small" href="/devices/{{ device.id }}/configuration?edit_ddns={{ d.fingerprint }}#ddns-edit">Edit</a>
+            {{ post_button_fields("/devices/" ~ device.id ~ "/ddns/remove", "Remove", "small danger",
+              "Remove the dynamic DNS entry " ~ d.fqdn ~ " from " ~ device.name ~ "?",
+              {"fingerprint": d.fingerprint, "descr": d.type ~ " " ~ d.fqdn}) }}{% endif %}</td>
+      </tr>
+      {% if can_change and edit_ddns == d.fingerprint and not queued %}
+      <tr id="ddns-edit"><td colspan="7">
+        <form method="post" action="/devices/{{ device.id }}/ddns/edit" class="grid-form">
+          {{ csrf() }}
+          <input type="hidden" name="fingerprint" value="{{ d.fingerprint }}">
+          {{ ddns_fields(d) }}
+          <div class="wide"><button class="primary">Save and update</button>
+            <a class="button" href="/devices/{{ device.id }}/configuration#ddns">Cancel</a></div>
+        </form>
+      </td></tr>
+      {% endif %}
+    {% else %}<tr><td colspan="7" class="muted">{% if config_backup %}No dynamic DNS entries.{% else %}No configuration backup yet; entries appear after the firewall's first backup.{% endif %}</td></tr>{% endfor %}
+    {% for a in ddns_adding %}
+      <tr class="muted"><td></td><td>{{ a.interface }}</td><td>{{ a.type }}</td><td class="mono">{{ a.host }}{% if a.domainname %}.{{ a.domainname }}{% endif %}</td><td></td><td>{{ a.descr }}</td><td class="small">being added</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if can_change %}
+  <details class="add-nat">
+    <summary>Add a dynamic DNS entry to this firewall</summary>
+    <form method="post" action="/devices/{{ device.id }}/ddns" class="grid-form">
+      {{ csrf() }}
+      {{ ddns_fields({"type": "cloudflare", "interface": "wan"}) }}
+      <div class="wide"><button class="primary">Add and update</button></div>
+    </form>
+  </details>
+  {% else %}{{ change_hint("dynamic DNS entries") }}{% endif %}
+</section>
+
 <div class="grid2">
 <section class="card" id="services">
   <h2>Services{% if not changes_enabled %} <span class="h-badge muted small">restart {{ coming_soon() }}</span>{% endif %}</h2>
@@ -259,6 +336,29 @@
 </div>
 
 <div class="grid2">
+<section class="card" id="update-branch">
+  <h2>Update branch</h2>
+  {% set branches = update_branch.get("branches") or [] %}
+  {% if branches %}
+  <p>The firewall takes system updates from
+    <strong>{% for b in branches if b.name == update_branch.current %}{{ b.descr or b.name }}{% else %}{{ update_branch.current or "its default branch" }}{% endfor %}</strong>
+    <span class="muted small">(System &gt; Update &gt; Update Settings)</span>.
+    {% if branch_pending %}<span class="small muted">Switching to {{ branch_pending }}&hellip;</span>{% endif %}</p>
+  {% if can_operate and changes_enabled and "upgrade" in (device.capabilities or []) and not branch_pending %}
+  <form method="post" action="/devices/{{ device.id }}/update-branch" class="toolbar"
+        data-confirm="Switch the update branch on {{ device.name }}? The firewall then offers the updates of that branch.">
+    {{ csrf() }}
+    <select name="branch" aria-label="Update branch">
+      {% for b in branches %}<option value="{{ b.name }}"{% if b.name == update_branch.current %} selected{% endif %}>{{ b.descr or b.name }}{% if b.default %} (default){% endif %}</option>{% endfor %}
+    </select>
+    <button>Apply</button>
+  </form>
+  <p class="small muted">Switching only changes where updates come from; nothing is installed until you upgrade.</p>
+  {% elif can_operate and not changes_enabled %}<p class="small muted">Firewall changes are turned off on this server.</p>
+  {% elif can_operate and "upgrade" not in (device.capabilities or []) %}<p class="small muted">Allow "Upgrades" in Services &gt; ComSense Agent on the firewall to change the branch from here.</p>{% endif %}
+  {% else %}<p class="muted">Shown once the firewall runs agent 0.2.8 or later.</p>{% endif %}
+</section>
+
 <section class="card" id="notifications">
   <h2>Email notifications</h2>
   {% if smtp %}
@@ -271,6 +371,7 @@
   <p class="small muted">To switch them for many firewalls at once, use Configurations &gt; Notifications.</p>
   {% else %}<p class="muted">Shown after the firewall's first configuration backup.</p>{% endif %}
 </section>
+</div>
 
 {% if can_operate %}
 <section class="card" id="notes">
@@ -292,5 +393,4 @@
   {% endif %}
 </section>
 {% endif %}
-</div>
 {% endblock %}

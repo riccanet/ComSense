@@ -31,6 +31,10 @@ TASK_CAPABILITY: dict[TaskType, str | None] = {
     TaskType.alias_add: "policy",
     TaskType.alias_edit: "policy",
     TaskType.alias_remove: "policy",
+    TaskType.ddns_add: "policy",
+    TaskType.ddns_edit: "policy",
+    TaskType.ddns_remove: "policy",
+    TaskType.update_branch: "upgrade",
     TaskType.notifications: "policy",
 }
 

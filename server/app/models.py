@@ -77,6 +77,10 @@ class TaskType(str, enum.Enum):
     alias_add = "alias_add"
     alias_edit = "alias_edit"
     alias_remove = "alias_remove"
+    ddns_add = "ddns_add"
+    ddns_edit = "ddns_edit"
+    ddns_remove = "ddns_remove"
+    update_branch = "update_branch"
     notifications = "notifications"
 
 

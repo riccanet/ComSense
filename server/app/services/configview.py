@@ -136,6 +136,38 @@ def aliases_from_xml(xml: bytes) -> list[dict[str, Any]]:
     return sorted(out, key=lambda a: a["name"].lower())
 
 
+def ddns_fingerprint(interface: str, provider: str, host: str, domain: str, descr: str) -> str:
+    """Identifies one dynamic DNS client; the agent computes the same (csfm_ddns_fingerprint)."""
+    return hashlib.sha256("\x1f".join((interface, provider, host, domain, descr)).encode()).hexdigest()[:16]
+
+
+def ddns_from_xml(xml: bytes) -> list[dict[str, Any]]:
+    """Services > Dynamic DNS clients (passwords are never read out)."""
+    out = []
+    for d in _parse(xml).findall("./dyndnses/dyndns"):
+        def raw(tag: str) -> str:
+            return d.findtext(tag) or ""
+
+        def flag(tag: str) -> bool:
+            el = d.find(tag)
+            return el is not None and (el.text or "").strip().lower() not in ("false", "0", "no")
+
+        host, domain = raw("host").strip(), raw("domainname").strip()
+        out.append({
+            "fqdn": f"{host}.{domain}" if domain and host not in ("", "@") else (domain or host),
+            "fingerprint": ddns_fingerprint(raw("interface"), raw("type"), raw("host"), raw("domainname"), raw("descr")),
+            "enabled": flag("enable"),
+            "type": raw("type").strip(), "interface": raw("interface").strip(), "host": raw("host").strip(),
+            "domainname": raw("domainname").strip(), "username": raw("username").strip(),
+            "has_password": bool((d.findtext("password") or "").strip()),
+            "zoneid": raw("zoneid").strip(), "ttl": raw("ttl").strip(), "mx": raw("mx").strip(),
+            "updateurl": raw("updateurl").strip(), "resultmatch": raw("resultmatch").strip(),
+            "wildcard": flag("wildcard"), "proxied": flag("proxied"), "verboselog": flag("verboselog"),
+            "descr": raw("descr").strip(),
+        })
+    return out
+
+
 # Aliases that packages create and maintain themselves (pfBlockerNG's pfB_* lists).
 SYSTEM_ALIAS_PREFIXES = ("pfb_",)
 
@@ -209,7 +241,8 @@ def config_summary(settings: Settings, backup: Backup) -> dict[str, Any]:
     filter_rules = firewall_rules_from_xml(xml)
     rules = {"nat": port_forwards_from_xml(xml), "aliases": aliases_from_xml(xml),
              "smtp": smtp_notifications_from_xml(xml), "rules": filter_rules,
-             "rule_tabs": rule_tabs(interfaces, filter_rules), "interfaces": interfaces}
+             "rule_tabs": rule_tabs(interfaces, filter_rules), "interfaces": interfaces,
+             "ddns": ddns_from_xml(xml)}
     _nat_cache[key] = rules
     while len(_nat_cache) > _NAT_CACHE_SIZE:
         _nat_cache.popitem(last=False)
