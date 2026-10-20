@@ -52,7 +52,7 @@ from ..security import (
     verify_password,
 )
 from ..enrollment import make_code
-from ..services.agentpkg import agent_outdated, latest_package
+from ..services.agentpkg import agent_outdated, latest_package, package_for
 from ..services.appsettings import agent_tls_names, effective_agent_url, format_dt, get_email_settings, setup_pending
 from ..services.backups import BackupError, delete_backup_file, load_backup
 from ..services.configview import config_summary, current_backup, is_system_alias, redact
@@ -435,7 +435,8 @@ async def devices_bulk(
             if action == "check_now":
                 _check_now(db, device, user.username)
             elif package is not None:
-                _update_agent(db, device, user.username, package)
+                _update_agent(db, device, user.username, package,
+                              request.app.state.settings.data_dir / "downloads")
             else:
                 queue_task(db, device, ttype, actor=user.username)
             queued += 1
@@ -695,9 +696,11 @@ def _check_now(db: Session, device: Device, actor: str) -> Task:
     return existing or queue_task(db, device, TaskType.refresh_inventory, actor=actor)
 
 
-def _update_agent(db: Session, device: Device, actor: str, package: dict[str, str]) -> Task:
+def _update_agent(db: Session, device: Device, actor: str, package: dict[str, str], downloads: Path) -> Task:
     if not agent_outdated(device.agent_version, package["version"]):
         raise TaskError(f"Agent {device.agent_version or '?'} is already current")
+    # Agents up to 0.2.9 cannot replace themselves; they get the bootstrap package (services/agentpkg.py).
+    package = package_for(downloads, package, device.agent_version)
     payload = {"version": package["version"], "file": package["name"], "sha256": package["sha256"]}
     return queue_task(db, device, TaskType.update_agent, payload, actor=actor)
 
@@ -1003,7 +1006,7 @@ def device_update_agent(
         flash(request, "No agent package is available on this server.", "error")
         return redirect(f"/devices/{device_id}")
     try:
-        task = _update_agent(db, device, user.username, package)
+        task = _update_agent(db, device, user.username, package, settings.data_dir / "downloads")
     except TaskError as exc:
         flash(request, str(exc), "error")
         return redirect(f"/devices/{device_id}")

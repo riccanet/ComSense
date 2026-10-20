@@ -161,6 +161,88 @@ def ensure_package(downloads: Path) -> Path | None:
     return target
 
 
+# ------------------------------------------------------------------ bootstrap for agents up to 0.2.9
+
+# Agents before this version install an update with a plain `pkg add`, which pkg (up to 2.1, every
+# pfSense release so far) refuses over an installed package. They are sent a bootstrap package instead:
+# another package (so `pkg add` takes it) holding the real one, whose install script installs that with
+# `pkg add -f` in the background, removes itself and restarts the agent.
+BOOTSTRAP_BELOW = "0.2.10"
+BOOTSTRAP_NAME = "comsense-agent-bootstrap"
+BOOTSTRAP_DIR = "/usr/local/share/comsense-agent-bootstrap"
+# The old agent counts an update as still installing while a process mentions agent-update.pkg
+# (pgrep -f), so the background job carries that name in its command line from start to end.
+_BOOTSTRAP_JOB = (
+    "sleep 3; i=0; "
+    "while [ $i -lt 300 ] && { /bin/pgrep -q -x pkg-static || /bin/pgrep -q -x pkg; }; do sleep 2; i=$((i+1)); done; "
+    "LOG=/var/db/comsense/agent-update.log; "
+    "echo \"Bootstrap: installing the agent with pkg add -f\" >> $LOG; "
+    "/usr/local/sbin/pkg-static add -f " + BOOTSTRAP_DIR + "/agent-update.pkg >> $LOG 2>&1; "
+    "/usr/local/sbin/pkg-static delete -y " + BOOTSTRAP_NAME + " >> $LOG 2>&1; "
+    "touch /var/db/comsense/checkin-now; "
+    "/usr/local/etc/rc.d/comsense.sh restart >> $LOG 2>&1"
+)
+BOOTSTRAP_SCRIPT = "/usr/sbin/daemon -f /bin/sh -c '" + _BOOTSTRAP_JOB + "'\n"
+
+
+def needs_bootstrap(agent_version: str | None) -> bool:
+    return bool(agent_version) and agent_outdated(agent_version, BOOTSTRAP_BELOW)
+
+
+def build_bootstrap(real: bytes, version: str) -> bytes:
+    """The bootstrap package carrying `real` (a built agent package of `version`)."""
+    path = f"{BOOTSTRAP_DIR}/agent-update.pkg"
+    manifest = {
+        "name": BOOTSTRAP_NAME,
+        "origin": f"sysutils/{BOOTSTRAP_NAME}",
+        "version": version,
+        "comment": "Installs the ComSense agent over an older one, then removes itself",
+        "maintainer": "https://github.com/riccanet/ComSense/issues",
+        "www": "https://github.com/riccanet/ComSense",
+        "abi": ABI,
+        "arch": ABI,
+        "prefix": "/",
+        "flatsize": len(real),
+        "licenselogic": "single",
+        "licenses": ["APACHE20"],
+        "desc": "Updates the ComSense agent on firewalls whose agent cannot replace itself (0.2.9 and older).",
+        "categories": ["sysutils"],
+    }
+    compact = json.dumps(manifest, separators=(",", ":")).encode()
+    full = json.dumps(dict(manifest, files={path: "1$" + hashlib.sha256(real).hexdigest()},
+                           scripts={"post-install": BOOTSTRAP_SCRIPT}), separators=(",", ":")).encode()
+    raw = io.BytesIO()
+    with tarfile.open(fileobj=raw, mode="w", format=tarfile.PAX_FORMAT) as tar:
+        for name, data, mode in (("+COMPACT_MANIFEST", compact, 0o644), ("+MANIFEST", full, 0o644), (path, real, 0o600)):
+            info = tarfile.TarInfo(name)
+            info.size, info.mode, info.mtime = len(data), mode, _mtime(data)
+            info.uname, info.gname, info.uid, info.gid = "root", "wheel", 0, 0
+            tar.addfile(info, io.BytesIO(data))
+    return lzma.compress(raw.getvalue(), preset=6)
+
+
+def bootstrap_package(downloads: Path, package: dict[str, str]) -> Path:
+    """downloads/bootstrap/<package name>, built from that package if missing or out of date."""
+    real = (downloads / package["name"]).read_bytes()
+    data = build_bootstrap(real, package["version"])
+    target = downloads / "bootstrap" / package["name"]
+    if not target.is_file() or target.read_bytes() != data:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_suffix(".tmp")
+        tmp.write_bytes(data)
+        tmp.replace(target)
+        log.info("Built bootstrap package for %s (sha256 %s)", package["name"], hashlib.sha256(data).hexdigest())
+    return target
+
+
+def package_for(downloads: Path, package: dict[str, str], agent_version: str | None) -> dict[str, str]:
+    """What an update_agent task sends a firewall: the package itself, or the bootstrap for old agents."""
+    if not needs_bootstrap(agent_version):
+        return package
+    path = bootstrap_package(downloads, package)
+    return dict(package, sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+
+
 def _version_key(version: str) -> tuple:
     return tuple(int(p) if p.isdigit() else p for p in re.split(r"[._-]", version))
 

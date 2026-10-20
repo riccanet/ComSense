@@ -326,9 +326,14 @@ def agent_package(
     db.commit()
     if not agentpkg.PACKAGE_RE.fullmatch(name):
         raise HTTPException(404, "No such package")
-    path = settings.data_dir / "downloads" / name
+    downloads = settings.data_dir / "downloads"
+    path = downloads / name
     if not path.is_file():
         raise HTTPException(404, "No such package")
+    if agentpkg.needs_bootstrap(device.agent_version):
+        # The same file name, as the old agent insists on it; the content installs the real package.
+        m = agentpkg.PACKAGE_RE.fullmatch(name)
+        path = agentpkg.bootstrap_package(downloads, {"name": name, "version": m.group(1)})
     return FileResponse(path, media_type="application/octet-stream")
 
 

@@ -395,12 +395,15 @@ def test_full_lifecycle(env):
     from app.services.agentpkg import latest_package
 
     package = latest_package(env["dir"] / "data" / "downloads")
-    old = {"CSFM_TEST_AGENT_VERSION": "0.0.1"}
+    # An agent that replaces itself (0.2.10 and later; older ones get the bootstrap, server tests):
+    # a pre-release of the served version is older to the agent and needs no bootstrap.
+    old_version = package["version"] + "-rc1"
+    old = {"CSFM_TEST_AGENT_VERSION": old_version}
     set_fw_settings(env, allow_upgrade="on")  # self-updates need the firewall's "upgrade" permission
     agent(env, "run", extra_env=old)
     with env["db"]() as db:
         device = db.get(Device, creds["device_id"])
-        assert "upgrade" in device.capabilities and device.agent_version == "0.0.1"
+        assert "upgrade" in device.capabilities and device.agent_version == old_version
         bad = queue_task(db, device, TaskType.update_agent,
                          {"version": package["version"], "file": package["name"], "sha256": "0" * 64}, actor="e2e")
         db.commit()

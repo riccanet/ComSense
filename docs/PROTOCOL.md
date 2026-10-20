@@ -125,6 +125,14 @@ agent. The next cycle, run by the new agent, reports `success` (or `failed` with
 Agent updates change no firewall configuration, so they are not held back by
 `CSFM_ENABLE_FIREWALL_CHANGES`.
 
+Agents up to 0.2.9 installed updates with a plain `pkg add`, which pkg up to 2.1 refuses over an
+installed package. For those (by the version they report) the server serves a bootstrap package under
+the same file name and checksum in the task: `comsense-agent-bootstrap`, which `pkg add` accepts as a
+new package. It carries the real package, and its install script starts a detached job that waits for
+pkg to finish, installs the real package with `pkg add -f`, removes the bootstrap and restarts the
+agent. The job's command line names `agent-update.pkg`, so the old agent keeps waiting for it, and the
+new agent reports the task's success.
+
 ## POST /tasks/{id}/result
 
 `{"status": "running"|"success"|"failed", "output": "…", "result": {...}}`. `running` may be sent

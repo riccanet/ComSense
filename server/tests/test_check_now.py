@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.api import agent as agent_api
 from app.models import Task, TaskStatus, TaskType
+from app.services import agentpkg
 from app.services.agentpkg import agent_outdated, latest_package
 
 
@@ -56,11 +57,13 @@ def test_update_agent_button_queues_the_current_package(client, db, agent, setti
 
     client.post(f"/devices/{creds['device_id']}/update-agent", data={"csrf_token": csrf})
     (task,) = _tasks(db, creds["device_id"], TaskType.update_agent)
-    assert task.payload == {"version": package["version"], "file": package["name"], "sha256": package["sha256"]}
+    # This firewall reports 0.1.0, which cannot replace itself: it is sent the bootstrap package.
+    expected = agentpkg.package_for(settings.data_dir / "downloads", package, "0.1.0")
+    assert task.payload == {"version": package["version"], "file": package["name"], "sha256": expected["sha256"]}
 
     # The agent downloads it over its own authenticated API.
     data = agent.get(f"/api/agent/v1/agent-package/{package['name']}", headers=auth(creds["token"]))
-    assert data.status_code == 200 and hashlib.sha256(data.content).hexdigest() == package["sha256"]
+    assert data.status_code == 200 and hashlib.sha256(data.content).hexdigest() == expected["sha256"]
     assert agent.get(f"/api/agent/v1/agent-package/{package['name']}").status_code == 401
     for bad in ("..%2Fsecret.key", "other.pkg", "pfSense-pkg-ComSense-9.9.9.pkg"):
         assert agent.get(f"/api/agent/v1/agent-package/{bad}", headers=auth(creds["token"])).status_code == 404
