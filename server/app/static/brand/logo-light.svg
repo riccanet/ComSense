@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 410 60" width="410" height="60">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 466 60" width="466" height="60">
 <title>ComSense Firewall Manager</title>
 <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF4A3D"/><stop offset="1" stop-color="#C41A22"/></linearGradient></defs><rect x="2" y="2" width="56" height="56" rx="14" fill="url(#g)"/><g transform="translate(15 10) scale(0.9375 1.0556)"><path fill="#FFFFFF" d="M16 1C17 8 25 12 25 22C25 29 21 35 16 35C11 35 7 29 7 22C7 17 10 14 12 11C12 15 14 17 15.2 17C14 11 15 5 16 1Z"/><path fill="#FFC7C2" d="M16 18C17 22 21 24 21 28C21 31.5 18.8 34 16 34C13.2 34 11 31.5 11 28.5C11 26 12.5 24.5 13.5 23C13.6 25 14.6 26 15.4 26C15 23 15.4 20.5 16 18Z"/></g>
-<text x="72" y="40" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="28" fill="#1D2430"><tspan font-weight="800" letter-spacing="-0.5">ComSense</tspan><tspan dx="9" font-weight="400" fill="#667085">Firewall Manager</tspan></text>
+<text x="72" y="40" textLength="382" lengthAdjust="spacingAndGlyphs" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="28" fill="#1D2430"><tspan font-weight="800" letter-spacing="-0.5">ComSense</tspan><tspan dx="9" font-weight="400" fill="#667085">Firewall Manager</tspan></text>
 </svg>

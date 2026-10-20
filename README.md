@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="server/app/static/brand/logo-dark.svg">
-    <img alt="ComSense Firewall Manager" src="server/app/static/brand/logo-light.svg" width="320">
+    <img alt="ComSense Firewall Manager" src="server/app/static/brand/logo-light.svg" width="360">
   </picture>
 </p>
 
