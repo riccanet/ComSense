@@ -16,6 +16,33 @@
   });
   term.open(el);
 
+  // Copy and paste like Windows Terminal: Ctrl+C copies when text is selected (otherwise it is the usual
+  // interrupt), Ctrl+Shift+C always copies; Ctrl+V and Ctrl+Shift+V paste. On a Mac, Cmd+C / Cmd+V
+  // already work. Selecting with the mouse and the right-click menu work everywhere.
+  function copySelection() {
+    const text = term.getSelection();
+    if (!text) return false;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => document.execCommand("copy"));
+    } else {
+      document.execCommand("copy");
+    }
+    term.clearSelection();
+    return true;
+  }
+  term.attachCustomKeyEventHandler((ev) => {
+    if (ev.type !== "keydown" || !ev.ctrlKey || ev.altKey || ev.metaKey) return true;
+    const key = ev.key.toLowerCase();
+    if (key === "c" && (ev.shiftKey || term.hasSelection())) {
+      copySelection();
+      ev.preventDefault();
+      return false;
+    }
+    // Leave Ctrl+V / Ctrl+Shift+V to the browser, whose paste event xterm turns into input.
+    if (key === "v") return false;
+    return true;
+  });
+
   function setStatus(text, cls) {
     if (!status) return;
     status.textContent = text;
