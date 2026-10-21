@@ -362,3 +362,26 @@ nav.tabs a.active { border-color: var(--line); background: var(--panel); color: 
 span.inline { display: flex; align-items: center; gap: .4rem; }
 fieldset.thresholds { border: 1px solid var(--line); border-radius: 8px; padding: .75rem 1rem; margin: 0; min-width: 0; }
 fieldset.thresholds legend { padding: 0 .35rem; font-weight: 600; }
+
+/* Firewall pages: tasks queued or running on the firewall, green, under the navigation bar. */
+.pending-banner.task-banner { flex-direction: column; gap: .35rem; background: var(--ok-bg); color: var(--ok);
+  border-bottom-color: var(--ok); }
+.task-banner .task-line { display: flex; align-items: center; justify-content: center; gap: .5rem .9rem; flex-wrap: wrap; }
+.task-banner a { color: inherit; text-decoration: underline; }
+progress.task-progress { -webkit-appearance: none; appearance: none; width: min(320px, 60vw); height: .6rem; border: 0;
+  border-radius: 999px; overflow: hidden; vertical-align: middle; background: color-mix(in srgb, var(--ok) 20%, transparent);
+  color: var(--ok); }
+progress.task-progress::-webkit-progress-bar { background: color-mix(in srgb, var(--ok) 20%, transparent); border-radius: 999px; }
+progress.task-progress::-webkit-progress-value { background: var(--ok); border-radius: 999px; }
+progress.task-progress::-moz-progress-bar { background: var(--ok); border-radius: 999px; }
+
+/* Firewall logs */
+.log-query { display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end; }
+.log-query label { display: flex; flex-direction: column; gap: .25rem; }
+.log-query label.grow { flex: 1 1 18rem; }
+.log-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: .5rem 1rem; }
+.log-head h2 { margin: 0; }
+.log-filter { display: flex; align-items: center; gap: .5rem; }
+.log-filter input { width: min(22rem, 70vw); }
+.log-table td { font-size: .85rem; vertical-align: top; }
+.log-table .log-msg { white-space: pre-wrap; word-break: break-word; }

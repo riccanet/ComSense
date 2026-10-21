@@ -45,6 +45,7 @@
 </header>
 {% for category, message in flashes if category == "approved" %}<div class="pending-banner approved" role="status"><span>{{ message }}</span></div>{% endfor %}
 {% if user.role == Role.admin %}<div id="pending-banner" data-pending-banner="/pending-banner">{% include "_pending_banner.html" %}</div>{% endif %}
+{% block banner %}{% endblock %}
 {% endif %}
 <main>
   {% for category, message in flashes if category != "approved" %}

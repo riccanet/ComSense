@@ -56,6 +56,7 @@ from ..services.agentpkg import agent_outdated, latest_package, package_for
 from ..services.alerts import CATEGORIES, category_filter, category_of
 from ..services.appsettings import agent_tls_names, effective_agent_url, format_dt, get_email_settings, setup_pending
 from ..services.backups import BackupError, delete_backup_file, load_backup
+from ..services.logview import LINE_CHOICES, LOGS, parse_filter_line, parse_line
 from ..services.configview import config_summary, current_backup, is_system_alias, redact
 from ..services.policies import (
     ALIAS_FORM_TYPES,
@@ -66,7 +67,16 @@ from ..services.policies import (
     validate_alias,
     validate_port_forward_rule,
 )
-from ..services.tasks import COMING_SOON, OPEN_STATES, SAFE_TASKS, TASK_CAPABILITY, TaskError, queue_task
+from ..services.tasks import (
+    COMING_SOON,
+    OPEN_STATES,
+    SAFE_TASKS,
+    TASK_CAPABILITY,
+    TaskError,
+    queue_task,
+    task_progress,
+    task_title,
+)
 from ..api.agent import wan_addresses
 from ..tls import ensure_agent_tls
 from .auth import csrf_token, current_user, flash, pop_flashes, require, verify_csrf
@@ -513,6 +523,7 @@ def device_detail(
         policy_names={str(p.id): p.name for p in db.scalars(select(Policy))} if device.rolled_back_policies else {},
         latest_agent=_latest_agent_version(request),
         page_token=_device_page_token(db, device),
+        task_banner=_task_banner(db, device),
         device_groups=db.scalars(
             select(DeviceGroup).where(DeviceGroup.devices.any(Device.id == device.id)).order_by(DeviceGroup.name)
         ).all(),
@@ -586,6 +597,7 @@ def device_configuration(
         "device_configuration.html",
         device=device,
         page_token=_device_page_token(db, device),
+        task_banner=_task_banner(db, device),
         config_backup=backup,
         config_error=error,
         nat_rules=summary["nat"],
@@ -698,6 +710,27 @@ def _update_agent(db: Session, device: Device, actor: str, package: dict[str, st
     return queue_task(db, device, TaskType.update_agent, payload, actor=actor)
 
 
+def _active_tasks(db: Session, device: Device) -> list[Task]:
+    """Tasks queued for or running on the firewall (the banner at the top of its pages), oldest first."""
+    return list(db.scalars(select(Task).where(
+        Task.device_id == device.id, Task.status.in_(OPEN_STATES),
+        Task.type.not_in((TaskType.open_terminal, TaskType.read_logs)),  # the logs page shows its own
+    ).order_by(Task.id)))
+
+
+def _task_banner(db: Session, device: Device) -> list[dict[str, Any]]:
+    out = []
+    for t in _active_tasks(db, device):
+        progress = task_progress(t)
+        if t.type == TaskType.upgrade_system and t.status == TaskStatus.running and device.status == DeviceStatus.offline:
+            # Out of touch mid-upgrade: it is rebooting (or installing at boot).
+            progress = {"percent": max(92, progress["percent"] if progress else 0),
+                        "step": "Rebooting; waiting for the firewall to come back"}
+        out.append({"id": t.id, "title": task_title(t), "status": t.status.value, "progress": progress,
+                    "since": t.sent_at or t.created_at})
+    return out
+
+
 def _device_page_token(db: Session, device: Device) -> str:
     """Changes when something the firewall's page shows changes because of the firewall: a task
     moves on, the agent version, status, capabilities or a check-in's inventory. Not on every
@@ -706,11 +739,58 @@ def _device_page_token(db: Session, device: Device) -> str:
         select(Task.id, Task.status).where(Task.device_id == device.id).order_by(Task.id.desc()).limit(30)
     ).all()
     newest_backup = db.scalar(select(func.max(Backup.id)).where(Backup.device_id == device.id))
+    # A running upgrade's progress too, so the banner at the top follows it.
+    progress = [f"{t.id}:{p['percent']}" for t in _active_tasks(db, device) if (p := task_progress(t))]
     # The configuration too: after a change the page shows the firewall's new config.xml once it arrives.
     parts = [str(device.agent_version), device.status.value, ",".join(device.capabilities or []),
              str(device.product_version), ";".join(f"{t.id}:{t.status.value}" for t in tasks),
-             str(device.config_sha256), str(newest_backup)]
+             str(device.config_sha256), str(newest_backup), ",".join(progress)]
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
+
+
+@router.get("/devices/{device_id}/logs", response_class=HTMLResponse)
+def device_logs(device_id: str, request: Request, task: int = 0, user: User = Depends(operator),
+                db: Session = Depends(get_db)):
+    """A log from the firewall, fetched on demand (read_logs) and searched on the firewall."""
+    device = _get_device(db, device_id)
+    fetched = db.get(Task, task) if task else None
+    if fetched is not None and (fetched.device_id != device.id or fetched.type != TaskType.read_logs):
+        fetched = None
+    if fetched is None:  # the last fetch, so the page keeps showing it
+        fetched = db.scalar(select(Task).where(Task.device_id == device.id, Task.type == TaskType.read_logs)
+                            .order_by(Task.id.desc()).limit(1))
+    params = (fetched.payload if fetched else None) or {"log": "system", "lines": 250, "search": ""}
+    result = fetched.result if fetched is not None and fetched.status == TaskStatus.success else {}
+    iface_names = {i.get("if"): (i.get("descr") or i.get("name")) for i in (device.inventory or {}).get("interfaces", [])
+                   if isinstance(i, dict) and i.get("if")}
+    rows: list[dict[str, Any]] = []
+    for line in reversed(result.get("lines") or []):  # newest first, as pfSense shows logs
+        if not isinstance(line, str):
+            continue
+        if params.get("log") == "firewall":
+            row = parse_filter_line(line)
+            row["interface"] = iface_names.get(row["interface"], row["interface"])
+        else:
+            row = parse_line(line)
+        rows.append(row)
+    return render(request, "device_logs.html", device=device, page_token=_device_page_token(db, device),
+                  logs=LOGS, line_choices=LINE_CHOICES, params=params, fetched=fetched, result=result, rows=rows)
+
+
+@router.post("/devices/{device_id}/logs")
+def device_logs_fetch(device_id: str, request: Request, log: str = Form("system"), lines: int = Form(250),
+                      search: str = Form(""), user: User = Depends(operator), db: Session = Depends(get_db)):
+    device = _get_device(db, device_id)
+    if log not in LOGS or lines not in LINE_CHOICES:
+        raise HTTPException(400, "Unknown log or line count")
+    try:
+        task = queue_task(db, device, TaskType.read_logs, {"log": log, "lines": lines, "search": search.strip()[:200]},
+                          actor=user.username)
+    except TaskError as exc:
+        flash(request, str(exc), "error")
+        return redirect(f"/devices/{device_id}/logs")
+    db.commit()
+    return redirect(f"/devices/{device_id}/logs?task={task.id}")
 
 
 @router.get("/devices/{device_id}/poll")

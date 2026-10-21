@@ -20,6 +20,7 @@ if (getenv('CSFM_TEST_AGENT_VERSION')) {
 define('CSFM_CFG_JSON', $dir . '/config.json');
 define('CSFM_ACTIONS_LOG', $dir . '/actions.log');
 define('CSFM_GUARD_DIR', $dir . '/guard');
+define('CSFM_LOG_DIR', $dir . '/logs');
 /* pfSense-upgrade -c: records the PATH it was run with and reports a new version (exit 2). */
 define('CSFM_UPGRADE_BIN', $dir . '/pfSense-upgrade');
 if (!file_exists(CSFM_UPGRADE_BIN)) {

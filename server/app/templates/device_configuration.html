@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "macros.html" import status_badge, csrf, post_button, post_button_fields, coming_soon with context %}
 {% block title %}{{ device.name }}: configuration{% endblock %}
+{% block banner %}{% include "_task_banner.html" %}{% endblock %}
 {% block content %}
 {% set inv = device.inventory or {} %}
 {% set can_operate = user.role.value in ("operator", "admin") %}

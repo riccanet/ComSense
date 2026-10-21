@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge, csrf with context %}
+{% block title %}{{ device.name }}: logs{% endblock %}
+{% block banner %}{% include "_task_banner.html" %}{% endblock %}
+{% block content %}
+<p class="small"><a href="/devices">Firewalls</a> / <a href="/devices/{{ device.id }}">{{ device.name }}</a> /</p>
+<div class="heading" data-poll="/devices/{{ device.id }}/poll" data-poll-token="{{ page_token }}">
+  <h1>Logs {{ status_badge(device.status.value) }}</h1>
+</div>
+
+<section class="card">
+  <form method="post" action="/devices/{{ device.id }}/logs" class="log-query">
+    {{ csrf() }}
+    <label>Log <select name="log">{% for key, label in logs.items() %}<option value="{{ key }}"{% if params.log == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <label>Lines <select name="lines">{% for n in line_choices %}<option{% if params.lines == n %} selected{% endif %}>{{ n }}</option>{% endfor %}</select></label>
+    <label class="grow">Search on the firewall <input name="search" value="{{ params.search or "" }}" maxlength="200" placeholder="text to find, e.g. an IP address, user or service"></label>
+    <div><button class="primary">Fetch</button></div>
+  </form>
+  <p class="small muted">The search covers the whole current log file on the firewall; the newest matching lines are shown.</p>
+</section>
+
+{% if fetched %}
+<section class="card">
+  {% if fetched.status.value in ("pending", "sent", "running") %}
+  <p>Fetching the {{ logs.get(params.log, params.log) }} log from the firewall… this page updates by itself.</p>
+  {% elif fetched.status.value != "success" %}
+  <p class="flash error">Could not read the log: {{ fetched.output or fetched.status.value }}</p>
+  {% if "does not support task type" in (fetched.output or "") %}<p class="small">Update the ComSense agent on this firewall to read its logs.</p>{% endif %}
+  {% else %}
+  <div class="log-head">
+    <h2>{{ logs.get(params.log, params.log) }} <span class="muted small">· {{ fetched.finished_at|dt }} · {{ fetched.output }}</span></h2>
+    <label class="log-filter">Filter these lines <input type="search" data-filter-rows="#log-rows" placeholder="type to narrow down"></label>
+  </div>
+  <div class="table-scroll">
+  <table class="log-table">
+    {% if params.log == "firewall" %}
+    <thead><tr><th>Time</th><th>Action</th><th>Interface</th><th>Protocol</th><th>Source</th><th>Destination</th></tr></thead>
+    <tbody id="log-rows">
+    {% for r in rows %}
+      <tr>{% if r.message is defined %}<td class="nowrap mono">{{ r.time }}</td><td colspan="5" class="mono">{{ r.message }}</td>{% else %}
+        <td class="nowrap mono">{{ r.time }}</td>
+        <td><span class="badge rule-{{ r.action }}">{{ r.action }}</span> <span class="muted small">{{ r.direction }}</span></td>
+        <td>{{ r.interface }}</td><td>{{ r.protocol }}</td><td class="mono">{{ r.source }}</td><td class="mono">{{ r.destination }}</td>{% endif %}</tr>
+    {% else %}<tr><td colspan="6" class="muted">No lines{% if params.search %} containing "{{ params.search }}"{% endif %}.</td></tr>{% endfor %}
+    </tbody>
+    {% else %}
+    <thead><tr><th>Time</th><th>Program</th><th>Message</th></tr></thead>
+    <tbody id="log-rows">
+    {% for r in rows %}
+      <tr><td class="nowrap mono">{{ r.time }}</td><td class="nowrap">{{ r.program }}</td><td class="mono log-msg">{{ r.message }}</td></tr>
+    {% else %}<tr><td colspan="3" class="muted">No lines{% if params.search %} containing "{{ params.search }}"{% endif %}.</td></tr>{% endfor %}
+    </tbody>
+    {% endif %}
+  </table>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

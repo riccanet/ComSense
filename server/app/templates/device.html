@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "macros.html" import status_badge, csrf, post_button, post_button_fields, coming_soon with context %}
 {% block title %}{{ device.name }}{% endblock %}
+{% block banner %}{% include "_task_banner.html" %}{% endblock %}
 {% block content %}
 {% set inv = device.inventory or {} %}
 {% set sysinfo = inv.get("system", {}) %}
@@ -13,6 +14,7 @@
   <div class="actions">
     {% set agent_old = latest_agent and device.agent_version and device.agent_version|agent_outdated(latest_agent) %}
     <a class="button" href="/devices/{{ device.id }}/configuration" title="Port forwards, aliases, services, email notifications and notes">Configuration</a>
+    {% if can_operate %}<a class="button" href="/devices/{{ device.id }}/logs" title="System, firewall, DHCP, VPN and other logs, searched on the firewall">Logs</a>{% endif %}
     {% if can_operate and device.status.value not in ("pending", "disabled") %}
     {{ post_button("/devices/" ~ device.id ~ "/check-now", "Check now", "", "") }}
     {% if agent_old %}{{ post_button("/devices/" ~ device.id ~ "/update-agent", "Update agent to " ~ latest_agent, "primary", "Install agent " ~ latest_agent ~ " on this firewall? It updates itself in the background and checks in again.") }}{% endif %}

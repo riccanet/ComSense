@@ -1,0 +1,16 @@
+{# Tasks queued for or running on this firewall, under the navigation bar of its pages. #}
+{% if task_banner %}
+<div class="pending-banner task-banner" role="status" aria-live="polite">
+  {% for t in task_banner %}
+  <div class="task-line">
+    <span><strong>{{ t.title }}</strong>{% if t.progress %}: {{ t.progress.step }}{% elif t.status == "pending" %}: queued, runs at the firewall's next check-in{% elif t.status == "sent" %}: starting{% else %}: running{% endif %}
+      <span class="muted">· since {{ t.since|dt }}</span></span>
+    {% if t.progress %}
+    <progress class="task-progress" max="100" value="{{ t.progress.percent }}" aria-label="{{ t.title }}">{{ t.progress.percent }}%</progress>
+    <strong>{{ t.progress.percent }}%</strong>
+    {% endif %}
+    <a href="/tasks/{{ t.id }}">Details</a>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}

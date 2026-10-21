@@ -78,6 +78,7 @@ no tasks.
 | `apply_policy` | `{"policy": {"id","name","type","revision","hash","content"}}` | policy |
 | `remove_policy` | `{"policy_id"}` | policy |
 | `check_updates`, `refresh_inventory` | | always |
+| `read_logs` | `{"log", "lines", "search"}`: `log` one of system, firewall, dhcp, resolver, gateways, openvpn, ipsec, auth, ntp, routing | always (read only) |
 | `upgrade_system`, `upgrade_packages` | | upgrade |
 | `install_package`, `remove_package` | `{"package"}` | packages |
 | `restart_service` | `{"service"}` | services |
@@ -119,6 +120,14 @@ SSL_CERT_DIR=/etc/ssl/certs/`): with the daemon's own environment underneath, pf
 failed to verify Netgate's certificate. A check whose output
 shows pfSense-repoc failing reports that as an error, since any version it names is stale. The task
 output ends with pfSense-upgrade's verdict.
+
+`read_logs` returns the newest `lines` (at most 2000, about 1 MB) of that log in `/var/log`, only those
+containing `search` (case-insensitive) when given, searched over the last 200,000 lines of the
+current file: `result` is `{"log", "lines": [...], "matched", "scanned", "search"}`.
+
+While `upgrade_system` runs the agent reports `running` results with
+`result.progress = {"percent", "step"}` (the step and its `[n/m]` counters read from pfSense-upgrade's
+log) whenever it changes; the firewall's page shows it in a banner.
 
 `upgrade_system` and `upgrade_packages` are preceded by a backup: the server queues a `backup` task
 with `{"reason": "pre_upgrade"}` ahead of them (when the firewall allows backups), and the agent

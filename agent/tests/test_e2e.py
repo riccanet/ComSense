@@ -687,6 +687,7 @@ def test_full_lifecycle(env):
         assert [t.type for t in tasks[:2]] == [TaskType.backup, TaskType.upgrade_system]
         assert tasks[0].payload == {"reason": "pre_upgrade"} and tasks[0].status == TaskStatus.success
         assert "backed up before the upgrade" in tasks[1].output and tasks[1].status == TaskStatus.running
+        assert tasks[1].result["progress"] == {"percent": 3, "step": "Starting the upgrade"}
         pre = db.scalars(select(Backup).where(Backup.device_id == creds["device_id"], Backup.reason == "pre_upgrade")).all()
         assert pre and all(b.pinned for b in pre)
     actions = (env["fw"] / "actions.log").read_text()
@@ -695,6 +696,25 @@ def test_full_lifecycle(env):
     # certificates to reach Netgate), not by inheritance through mwexec and daemon(8).
     upgrade_line = next(line for line in actions.splitlines() if "pfSense-upgrade -y" in line)
     assert upgrade_line.startswith("mwexec: /usr/bin/env -i ") and "'PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin" in upgrade_line
+
+    # 11d. Logs, read on demand and searched on the firewall: the newest matching lines come back.
+    logs = env["fw"] / "logs"
+    logs.mkdir(exist_ok=True)
+    (logs / "system.log").write_text("".join(
+        f"Oct 21 03:05:{i % 60:02d} fw sshd[{i}]: {'Accepted' if i % 3 == 0 else 'Failed'} password for root\n"
+        for i in range(30)))
+    tid = queue(TaskType.read_logs, {"log": "system", "lines": 4, "search": "accepted"})
+    agent(env, "run")
+    done = task(tid)
+    assert done.status == TaskStatus.success, done.output
+    assert done.result["matched"] == 10 and done.result["scanned"] == 30
+    assert [line.split("sshd[")[1].split("]")[0] for line in done.result["lines"]] == ["18", "21", "24", "27"]
+    tid = queue(TaskType.read_logs, {"log": "dhcp", "lines": 100})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.success and "does not exist" in task(tid).output
+    tid = queue(TaskType.read_logs, {"log": "../../etc/passwd", "lines": 10})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.failed and "Unknown log" in task(tid).output
 
     # 12. A disabled device is locked out.
     with env["db"]() as db:

@@ -16,6 +16,7 @@ require_once(__DIR__ . '/guard.inc');
 require_once(__DIR__ . '/terminal.inc');
 
 define('CSFM_UPGRADE_LOG', '/var/log/comsense-upgrade.log');
+define('CSFM_PFSENSE_UPGRADE_LOG', '/cf/conf/upgrade_log.txt');
 
 $csfm_task_capability = array(
 	'backup' => 'backup',
@@ -23,6 +24,7 @@ $csfm_task_capability = array(
 	'remove_policy' => 'policy',
 	'check_updates' => null,
 	'refresh_inventory' => null,
+	'read_logs' => null,
 	'upgrade_system' => 'upgrade',
 	'upgrade_packages' => 'upgrade',
 	'install_package' => 'packages',
@@ -333,12 +335,70 @@ function csfm_task_upgrade_system($client, $id, $payload) {
 		'from_version' => csfm_product_version(),
 		'started' => time(),
 	));
-	csfm_report_result($client, $id, 'running', $backed_up . "\nUpgrade started; the firewall reboots when it finishes.");
+	$progress = array('percent' => 3, 'step' => 'Starting the upgrade');
+	csfm_report_result($client, $id, 'running', $backed_up . "\nUpgrade started; the firewall reboots when it finishes.",
+	    array('progress' => $progress));
+	csfm_state_set('inflight_upgrade', array_merge(csfm_state()['inflight_upgrade'], array('progress' => $progress)));
 	@unlink(CSFM_UPGRADE_LOG);
 	/* daemon(8) detaches fully, so the upgrade survives the agent cycle ending. */
 	mwexec(csfm_env_prefix() . '/usr/sbin/daemon -f /bin/sh -c ' . escapeshellarg('/usr/local/sbin/pfSense-upgrade -y > ' . CSFM_UPGRADE_LOG . ' 2>&1'));
 	csfm_log("System upgrade started (task {$id})", LOG_WARNING);
 	throw new CsfmTaskDeferred();
+}
+
+/*
+ * The upgrade's log: ours (pfSense-upgrade's output), or pfSense's own upgrade log when that is newer
+ * (a major upgrade carries on after its first reboot, logging there).
+ */
+function csfm_upgrade_log($up) {
+	$best = CSFM_UPGRADE_LOG;
+	$own = @filemtime(CSFM_UPGRADE_LOG) ?: 0;
+	$pf = @filemtime(CSFM_PFSENSE_UPGRADE_LOG) ?: 0;
+	if ($pf > $own && $pf >= (int)($up['started'] ?? 0)) {
+		$best = CSFM_PFSENSE_UPGRADE_LOG;
+	}
+	return (string)@file_get_contents($best);
+}
+
+/*
+ * How far a pfSense upgrade got, from pfSense-upgrade's log: {percent, step}. The steps are its
+ * ">>>" lines; while it downloads or installs, its "[n/m]" counters move the percentage on.
+ */
+function csfm_upgrade_progress($log) {
+	$steps = array(
+		// marker in the log (lower case) => (percent, step, percent the step's [n/m] counter runs up to)
+		'updating repositories metadata' => array(8, 'Updating repository information', 0),
+		'downloading upgrade packages' => array(15, 'Downloading packages', 35),
+		'upgrading pfsense-boot' => array(38, 'Upgrading the boot loader', 0),
+		'upgrading pfsense kernel' => array(42, 'Upgrading the kernel', 0),
+		'upgrading pfsense-kernel' => array(42, 'Upgrading the kernel', 0),
+		'upgrading necessary packages' => array(50, 'Installing packages', 88),
+		'upgrading pfsense-base' => array(50, 'Installing the base system', 0),
+		'rebooting' => array(92, 'Rebooting', 0),
+		'reboot' => array(92, 'Rebooting', 0),
+	);
+	$lower = strtolower($log);
+	$best = null;
+	$at = -1;
+	foreach ($steps as $marker => $step) {
+		$pos = strrpos($lower, $marker);
+		if ($pos !== false && $pos > $at) {
+			$at = $pos;
+			$best = $step;
+		}
+	}
+	if ($best === null) {
+		return array('percent' => 5, 'step' => 'Starting the upgrade');
+	}
+	list($percent, $name, $upto) = $best;
+	if ($upto > $percent && preg_match_all('/\[(\d+)\/(\d+)\]/', substr($log, $at), $m, PREG_SET_ORDER)) {
+		$last = end($m);
+		$done = (int)$last[1];
+		$total = max(1, (int)$last[2]);
+		$percent = $percent + (int)floor(($upto - $percent) * min($done, $total) / $total);
+		$name .= " ({$done} of {$total})";
+	}
+	return array('percent' => $percent, 'step' => $name);
 }
 
 /* Called at the start of each cycle to report on an upgrade that may have rebooted the box. */
@@ -349,10 +409,19 @@ function csfm_finish_inflight_upgrade($client) {
 		return;
 	}
 	exec('/bin/pgrep -f pfSense-upgrade', $pids, $rc);
+	$log = csfm_upgrade_log($up);
 	if ($rc === 0 && (time() - (int)$up['started']) < 4 * 3600) {
-		return; /* still running */
+		/* Still running: report how far it got when that changes (the firewall's page shows it). */
+		$progress = csfm_upgrade_progress($log);
+		if ($progress !== ($up['progress'] ?? null)) {
+			$tail = implode("\n", array_slice(explode("\n", trim($log)), -15));
+			csfm_report_result($client, $up['task_id'], 'running', "{$progress['step']} ({$progress['percent']}%)\n\n{$tail}",
+			    array('progress' => $progress));
+			$up['progress'] = $progress;
+			csfm_state_set('inflight_upgrade', $up);
+		}
+		return;
 	}
-	$log = (string)@file_get_contents(CSFM_UPGRADE_LOG);
 	$now = csfm_product_version();
 	if ($now !== $up['from_version']) {
 		csfm_report_result($client, $up['task_id'], 'success', "Upgraded {$up['from_version']} -> {$now}\n" . csfm_truncate($log, 8000));
@@ -366,6 +435,73 @@ function csfm_finish_inflight_upgrade($client) {
 	csfm_save_state($state);
 	csfm_forget_updates();
 	csfm_schedule_update_check(true);
+}
+
+/* ------------------------------------------------------------------ logs */
+
+if (!defined('CSFM_LOG_DIR')) {
+	define('CSFM_LOG_DIR', '/var/log');
+}
+/* The logs the console can show (Status > System Logs), by name. */
+$csfm_logs = array(
+	'system' => 'system.log',
+	'firewall' => 'filter.log',
+	'dhcp' => 'dhcpd.log',
+	'resolver' => 'resolver.log',
+	'gateways' => 'gateways.log',
+	'openvpn' => 'openvpn.log',
+	'ipsec' => 'ipsec.log',
+	'auth' => 'auth.log',
+	'ntp' => 'ntpd.log',
+	'routing' => 'routing.log',
+);
+define('CSFM_LOG_MAX_LINES', 2000);
+define('CSFM_LOG_SCAN_LINES', 200000);
+define('CSFM_LOG_MAX_BYTES', 1000000);
+
+/*
+ * The last lines of one log, optionally only those containing a text (case-insensitive). The search
+ * covers the whole current log file (up to its last CSFM_LOG_SCAN_LINES lines), not just what is
+ * returned. Read-only; nothing leaves the firewall but the lines asked for.
+ */
+function csfm_task_read_logs($client, $id, $payload) {
+	global $csfm_logs;
+	$name = (string)($payload['log'] ?? 'system');
+	if (!isset($csfm_logs[$name])) {
+		throw new Exception("Unknown log '{$name}'");
+	}
+	$lines = max(1, min(CSFM_LOG_MAX_LINES, (int)($payload['lines'] ?? 200)));
+	$search = substr((string)($payload['search'] ?? ''), 0, 200);
+	$file = CSFM_LOG_DIR . '/' . $csfm_logs[$name];
+	if (!is_readable($file)) {
+		return array('output' => "{$csfm_logs[$name]} does not exist on this firewall",
+		    'result' => array('log' => $name, 'lines' => array(), 'matched' => 0, 'scanned' => 0));
+	}
+	/* tail(1) reads the end of a large file without loading all of it. */
+	list($rc, $out) = csfm_exec('/usr/bin/tail -n ' . ($search === '' ? $lines : CSFM_LOG_SCAN_LINES) . ' '
+	    . escapeshellarg($file), 60);
+	$all = $out === '' ? array() : explode("\n", rtrim($out, "\n"));
+	$scanned = count($all);
+	if ($search !== '') {
+		$all = array_values(array_filter($all, function ($l) use ($search) { return stripos($l, $search) !== false; }));
+	}
+	$matched = count($all);
+	$keep = array_map(function ($l) { return substr($l, 0, 2000); }, array_slice($all, -$lines));
+	/* The newest lines that fit in about 1 MB (the server takes results up to 2 MB of JSON). */
+	$size = 0;
+	for ($i = count($keep) - 1; $i >= 0; $i--) {
+		$size += strlen($keep[$i]) + 8;
+		if ($size > CSFM_LOG_MAX_BYTES) {
+			$keep = array_slice($keep, $i + 1);
+			break;
+		}
+	}
+	return array(
+		'output' => sprintf('%s: %d line(s)%s', $csfm_logs[$name], count($keep),
+		    $search !== '' ? sprintf(' of %d containing "%s" in the last %d', $matched, $search, $scanned) : ''),
+		'result' => array('log' => $name, 'lines' => $keep, 'matched' => $matched, 'scanned' => $scanned,
+		    'search' => $search),
+	);
 }
 
 /* ------------------------------------------------------------ agent update */

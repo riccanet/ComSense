@@ -17,6 +17,7 @@ TASK_CAPABILITY: dict[TaskType, str | None] = {
     TaskType.remove_policy: "policy",
     TaskType.check_updates: None,
     TaskType.refresh_inventory: None,
+    TaskType.read_logs: None,  # read only
     TaskType.upgrade_system: "upgrade",
     TaskType.upgrade_packages: "upgrade",
     TaskType.install_package: "packages",
@@ -59,7 +60,7 @@ OPEN_STATES = (TaskStatus.pending, TaskStatus.sent, TaskStatus.running)
 
 # Tasks that only read from or copy off the firewall. Everything else changes it
 # and is available only with CSFM_ENABLE_FIREWALL_CHANGES.
-SAFE_TASKS = frozenset({TaskType.backup, TaskType.check_updates, TaskType.refresh_inventory})
+SAFE_TASKS = frozenset({TaskType.backup, TaskType.check_updates, TaskType.refresh_inventory, TaskType.read_logs})
 # Updating ComSense's own agent does not change the firewall's configuration, so it is not
 # "coming soon"; it still needs the firewall's local upgrade permission.
 AGENT_TASKS = frozenset({TaskType.update_agent})
@@ -71,6 +72,53 @@ COMING_SOON = "Coming soon: changing firewall settings from ComSense is not avai
 
 class TaskError(ValueError):
     pass
+
+
+# What the firewall's page calls each task while it runs.
+TASK_TITLES = {
+    TaskType.backup: "Backing up the configuration",
+    TaskType.apply_policy: "Applying a configuration",
+    TaskType.remove_policy: "Removing a configuration",
+    TaskType.check_updates: "Checking for updates",
+    TaskType.upgrade_system: "Upgrading pfSense",
+    TaskType.install_package: "Installing a package",
+    TaskType.remove_package: "Removing a package",
+    TaskType.upgrade_packages: "Upgrading packages",
+    TaskType.restart_service: "Restarting a service",
+    TaskType.restore_backup: "Restoring a configuration backup",
+    TaskType.reboot: "Rebooting",
+    TaskType.refresh_inventory: "Checking in",
+    TaskType.read_logs: "Reading logs",
+    TaskType.update_agent: "Updating the ComSense agent",
+    TaskType.open_terminal: "Opening a terminal",
+    TaskType.nat_add: "Adding a port forward",
+    TaskType.nat_remove: "Removing a port forward",
+    TaskType.nat_edit: "Changing a port forward",
+    TaskType.alias_add: "Adding an alias",
+    TaskType.alias_edit: "Changing an alias",
+    TaskType.alias_remove: "Removing an alias",
+    TaskType.ddns_add: "Adding a dynamic DNS entry",
+    TaskType.ddns_edit: "Changing a dynamic DNS entry",
+    TaskType.ddns_remove: "Removing a dynamic DNS entry",
+    TaskType.update_branch: "Switching the update branch",
+    TaskType.notifications: "Changing email notifications",
+}
+
+
+def task_title(task: Task) -> str:
+    title = TASK_TITLES.get(task.type, task.type.value.replace("_", " ").capitalize())
+    detail = task.payload.get("package") or task.payload.get("service") or task.payload.get("version") or ""
+    if task.type == TaskType.apply_policy:
+        detail = (task.payload.get("policy") or {}).get("name", "")
+    return f"{title} ({detail})" if detail and isinstance(detail, str) else title
+
+
+def task_progress(task: Task) -> dict[str, Any] | None:
+    """{percent, step} the agent reports while a long task (a pfSense upgrade) runs, else None."""
+    progress = (task.result or {}).get("progress") if task.status == TaskStatus.running else None
+    if not isinstance(progress, dict) or not isinstance(progress.get("percent"), (int, float)):
+        return None
+    return {"percent": max(0, min(100, int(progress["percent"]))), "step": str(progress.get("step", ""))[:120]}
 
 
 # Upgrades are preceded by a backup of the configuration (pinned when stored, see backups.py).

@@ -158,6 +158,17 @@
         .catch(function () {});
     }, 4000);
   }
+  // Logs: narrow the rows already shown to those containing the typed text (no new fetch).
+  document.querySelectorAll("[data-filter-rows]").forEach(function (input) {
+    var body = document.querySelector(input.getAttribute("data-filter-rows"));
+    if (!body) return;
+    input.addEventListener("input", function () {
+      var q = input.value.trim().toLowerCase();
+      body.querySelectorAll("tr").forEach(function (row) {
+        row.hidden = q !== "" && row.textContent.toLowerCase().indexOf(q) === -1;
+      });
+    });
+  });
   // Firewalls waiting for approval: the banner under the navigation bar refreshes itself, so a new
   // firewall shows up on whatever page is open.
   var banner = document.querySelector("[data-pending-banner]");
