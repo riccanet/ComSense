@@ -196,8 +196,7 @@ def test_full_lifecycle(env):
         # pfSense-upgrade calls pfSense-repoc and pkg by name: the agent gives it root's PATH.
         assert "/usr/local/sbin" in (env["fw"] / "upgrade-path").read_text().split(":")
         # ...and root's SSL_CERT_DIR, without which pfSense-repoc never learns of a new version.
-        assert (env["fw"] / "upgrade-certdir").read_text().strip() == (
-            os.environ.get("SSL_CERT_DIR") or ("/etc/ssl/certs/" if Path("/etc/ssl/certs").is_dir() else ""))
+        assert (env["fw"] / "upgrade-certdir").read_text().strip() == ("/etc/ssl/certs/" if Path("/etc/ssl/certs").is_dir() else "")
         assert db.scalar(select(Backup).where(Backup.device_id == device.id)) is not None
 
     # 4. Policies and tasks.
@@ -695,7 +694,7 @@ def test_full_lifecycle(env):
     # The detached upgrade gets root's environment on its command line (pfSense-repoc needs the CA
     # certificates to reach Netgate), not by inheritance through mwexec and daemon(8).
     upgrade_line = next(line for line in actions.splitlines() if "pfSense-upgrade -y" in line)
-    assert upgrade_line.startswith("mwexec: /usr/bin/env ") and "'PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin" in upgrade_line
+    assert upgrade_line.startswith("mwexec: /usr/bin/env -i ") and "'PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin" in upgrade_line
 
     # 12. A disabled device is locked out.
     with env["db"]() as db:

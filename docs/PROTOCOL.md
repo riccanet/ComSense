@@ -112,9 +112,11 @@ has finished. Update checks run `pfSense-upgrade -c` as System > Update does (on
 fetches the Netgate repository credentials before updating the catalogue; exit status 2 means a new
 version, named in its output), with root's login environment: the agent daemon's own lacks
 `/usr/local` in PATH (pfSense-upgrade calls its helpers by name) and `SSL_CERT_DIR`, without which
-pfSense-repoc cannot ask Netgate which versions the firewall may upgrade to (`SSL_CERT_FILE` is set
-too). The agent passes this environment explicitly (`/usr/bin/env NAME=value ...`) on every command
-it runs, including the detached upgrade, rather than relying on inheritance. A check whose output
+pfSense-repoc cannot ask Netgate which versions the firewall may upgrade to. Every command the agent
+runs, including the detached upgrade, gets exactly a root shell's environment and nothing inherited
+from the daemon (`/usr/bin/env -i PATH=... HOME=/root USER=root LOGNAME=root LANG=C.UTF-8
+SSL_CERT_DIR=/etc/ssl/certs/`): with the daemon's own environment underneath, pfSense-repoc still
+failed to verify Netgate's certificate. A check whose output
 shows pfSense-repoc failing reports that as an error, since any version it names is stale. The task
 output ends with pfSense-upgrade's verdict.
 

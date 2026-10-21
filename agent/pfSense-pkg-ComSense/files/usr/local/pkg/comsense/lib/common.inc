@@ -7,7 +7,7 @@
  */
 
 if (!defined('CSFM_AGENT_VERSION')) {
-	define('CSFM_AGENT_VERSION', '0.2.14');
+	define('CSFM_AGENT_VERSION', '0.2.15');
 }
 if (!defined('CSFM_DB_DIR')) {
 	/* Overridable so the agent can be exercised outside a firewall. */
@@ -27,45 +27,37 @@ if (!defined('CSFM_UPGRADE_BIN')) {
 }
 
 /*
- * The agent runs as a daemon started at boot, without root's login environment. pfSense's tools
- * need it: pfSense-upgrade calls its helpers by name (PATH), and pfSense-repoc, which asks Netgate
- * which versions this firewall may upgrade to, finds the CA certificates through SSL_CERT_DIR;
- * without it no new pfSense version is ever reported. Give every command the agent runs root's
- * login environment (as in a shell on the firewall).
+ * The environment pfSense's tools are run with: exactly what a root shell on the firewall has
+ * (the remote terminal starts its shell with these, and pfSense's shell startup adds SSL_CERT_DIR),
+ * and nothing inherited from the agent daemon. pfSense-upgrade calls its helpers by name (PATH),
+ * and pfSense-repoc, which asks Netgate which versions the firewall may upgrade to, verifies
+ * Netgate's certificate against SSL_CERT_DIR. Run from the daemon's own environment, plus these
+ * variables, it still failed ("certificate verify failed"); from this clean one it works.
  */
-function csfm_fix_environment() {
-	$want = array('/sbin', '/bin', '/usr/sbin', '/usr/bin', '/usr/local/sbin', '/usr/local/bin');
-	$have = array_filter(explode(':', (string)getenv('PATH')));
-	putenv('PATH=' . implode(':', array_unique(array_merge($want, $have))));
-	$defaults = array('HOME' => '/root', 'USER' => 'root', 'LOGNAME' => 'root', 'LANG' => 'C.UTF-8');
+function csfm_clean_environment() {
+	$env = array(
+		'PATH' => '/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin',
+		'HOME' => '/root',
+		'USER' => 'root',
+		'LOGNAME' => 'root',
+		'LANG' => 'C.UTF-8',
+	);
 	if (is_dir('/etc/ssl/certs')) {
-		$defaults['SSL_CERT_DIR'] = '/etc/ssl/certs/';
+		$env['SSL_CERT_DIR'] = '/etc/ssl/certs/';
 	}
-	if (is_file('/etc/ssl/cert.pem')) {
-		$defaults['SSL_CERT_FILE'] = '/etc/ssl/cert.pem';
-	}
-	foreach ($defaults as $name => $value) {
-		if ((string)getenv($name) === '') {
-			putenv("{$name}={$value}");
-		}
-	}
+	return $env;
 }
-csfm_fix_environment();
 
 /*
- * "/usr/bin/env NAME=value ..." for that environment, put in front of the commands the agent runs, so
- * they get it even through wrappers that do not pass the agent's own environment on (pfSense's
- * mwexec, daemon(8), lockf(1)).
+ * "/usr/bin/env -i NAME=value ...", put in front of every command the agent runs, so it gets that
+ * environment and nothing else, even through wrappers (pfSense's mwexec, daemon(8), lockf(1)).
  */
 function csfm_env_prefix() {
 	$parts = array();
-	foreach (array('PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'SSL_CERT_DIR', 'SSL_CERT_FILE') as $name) {
-		$value = (string)getenv($name);
-		if ($value !== '') {
-			$parts[] = escapeshellarg("{$name}={$value}");
-		}
+	foreach (csfm_clean_environment() as $name => $value) {
+		$parts[] = escapeshellarg("{$name}={$value}");
 	}
-	return '/usr/bin/env ' . implode(' ', $parts) . ' ';
+	return '/usr/bin/env -i ' . implode(' ', $parts) . ' ';
 }
 
 /* Actions the firewall owner can allow in the package settings. */
