@@ -25,6 +25,7 @@ from ..models import AppSetting, aware, utcnow
 
 EMAIL_KEY = "email"
 ALERT_EMAIL_KEY = "alert_email"
+ALERT_CATEGORIES_KEY = "alert_categories"
 AGENT_NETWORK_KEY = "agent_network"
 SITE_KEY = "site"
 SECURITY_KEY = "security"
@@ -62,6 +63,22 @@ class AlertEmailSettings:
     extra_recipients: list[str] = field(default_factory=list)
     # Alerts opened before alert email was switched on are never sent.
     enabled_since: str = ""
+
+
+@dataclass
+class AlertCategorySettings:
+    # Per category (services/alerts.py CATEGORIES): {"enabled", "email", "repeat"}; missing means on.
+    categories: dict[str, dict[str, bool]] = field(default_factory=dict)
+    # Open alerts nobody acknowledged are emailed again this often (categories with "repeat" on).
+    repeat_hours: int = 24
+    # High resources: alert at or above these percentages (CPU must stay there for CPU_SAMPLES check-ins).
+    disk_pct: int = 90
+    memory_pct: int = 90
+    cpu_pct: int = 90
+    states_pct: int = 90
+
+    def flag(self, category: str, name: str) -> bool:
+        return bool((self.categories.get(category) or {}).get(name, True))
 
 
 @dataclass
@@ -143,6 +160,14 @@ def get_alert_email_settings(db: Session) -> AlertEmailSettings:
 
 def save_alert_email_settings(db: Session, value: AlertEmailSettings, actor: str) -> None:
     _save(db, ALERT_EMAIL_KEY, value, actor)
+
+
+def get_alert_category_settings(db: Session) -> AlertCategorySettings:
+    return _load(db, ALERT_CATEGORIES_KEY, AlertCategorySettings)
+
+
+def save_alert_category_settings(db: Session, value: AlertCategorySettings, actor: str) -> None:
+    _save(db, ALERT_CATEGORIES_KEY, value, actor)
 
 
 def get_agent_network_settings(db: Session) -> AgentNetworkSettings:

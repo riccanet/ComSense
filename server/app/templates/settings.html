@@ -57,7 +57,8 @@
 <section class="card">
   <h2>Alert emails</h2>
   <p class="small muted">New alerts are collected and sent once a minute as one summary email per recipient.
-  Each alert is emailed once when it opens and, if you choose, once when it clears.</p>
+  Each alert is emailed when it opens, again every day while nobody acknowledges it, and, if you choose, when it clears.
+  Which kinds of alert are raised and emailed is set under <a href="/settings/alert-categories">Alert categories</a>.</p>
   <form method="post" action="/settings/alerts" class="stack">
     {{ csrf() }}
     <label class="check"><input type="checkbox" name="enabled" value="true"{% if alerts.enabled %} checked{% endif %}> Email alerts</label>
@@ -75,6 +76,45 @@
     (each user's <a href="/account">Account</a> page, or <a href="/users">Users</a> for admins).</p>
     {% if alerts.enabled and not email.configured %}<div class="flash warn">Alert emails are on, but outgoing email is not set up yet.</div>{% endif %}
     <div><button class="primary">Save alert settings</button></div>
+  </form>
+</section>
+{% elif section == "/settings/alert-categories" %}
+<section class="card">
+  <h2>Alert categories</h2>
+  <p class="small muted">Choose which kinds of alert are raised and which are emailed. An open alert nobody acknowledged
+  is emailed again every {{ cats.repeat_hours }} hours until someone acknowledges it or it clears.
+  Turning a category off clears its open alerts at the firewalls' next check-in.</p>
+  {% if not alerts.enabled %}<div class="flash warn">Alert emails are off, so nothing is emailed. Turn them on under <a href="/settings/alerts">Alert emails</a>.</div>{% endif %}
+  <form method="post" action="/settings/alert-categories" class="stack">
+    {{ csrf() }}
+    <table class="list">
+      <thead><tr><th>Category</th><th>Raised when</th><th>Raise alerts</th><th>Email</th><th>Repeat until acknowledged</th></tr></thead>
+      <tbody>
+      {% for key, (name, description) in categories.items() %}
+        <tr>
+          <td><strong>{{ name }}</strong></td>
+          <td class="small">{{ description }}</td>
+          {% for flag in ("enabled", "email", "repeat") %}
+          <td><input type="checkbox" name="{{ key }}_{{ flag }}" value="true" aria-label="{{ name }}: {{ flag }}"{% if cats.flag(key, flag) %} checked{% endif %}></td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <label>Repeat unacknowledged alerts every
+      <span class="inline"><input type="number" name="repeat_hours" min="1" max="720" value="{{ cats.repeat_hours }}" style="width:6em"> hours</span>
+    </label>
+    <fieldset class="thresholds">
+      <legend>High resources thresholds (%)</legend>
+      <div class="grid-4">
+        <label>Disk <input type="number" name="disk_pct" min="1" max="100" value="{{ cats.disk_pct }}"></label>
+        <label>Memory <input type="number" name="memory_pct" min="1" max="100" value="{{ cats.memory_pct }}"></label>
+        <label>CPU <input type="number" name="cpu_pct" min="1" max="100" value="{{ cats.cpu_pct }}"></label>
+        <label>State table <input type="number" name="states_pct" min="1" max="100" value="{{ cats.states_pct }}"></label>
+      </div>
+      <p class="small muted">CPU alerts when it stays at or above the threshold for {{ cpu_samples }} check-ins in a row (about {{ cpu_samples }} minutes).</p>
+    </fieldset>
+    <div><button class="primary">Save alert categories</button></div>
   </form>
 </section>
 {% elif section == "/settings/addresses" %}

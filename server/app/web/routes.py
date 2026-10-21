@@ -53,6 +53,7 @@ from ..security import (
 )
 from ..enrollment import make_code
 from ..services.agentpkg import agent_outdated, latest_package, package_for
+from ..services.alerts import CATEGORIES, category_filter, category_of
 from ..services.appsettings import agent_tls_names, effective_agent_url, format_dt, get_email_settings, setup_pending
 from ..services.backups import BackupError, delete_backup_file, load_backup
 from ..services.configview import config_summary, current_backup, is_system_alias, redact
@@ -1191,12 +1192,19 @@ def task_cancel(task_id: int, request: Request, user: User = Depends(operator), 
 
 @router.get("/alerts", response_class=HTMLResponse)
 def alerts_page(
-    request: Request, show: str = "open", user: User = Depends(viewer), db: Session = Depends(get_db)
+    request: Request, show: str = "open", category: str = "", user: User = Depends(viewer),
+    db: Session = Depends(get_db),
 ):
     stmt = select(Alert).order_by(Alert.opened_at.desc()).limit(500)
     if show == "open":
         stmt = stmt.where(Alert.resolved_at.is_(None))
-    return render(request, "alerts.html", alerts=db.scalars(stmt).all(), show=show)
+    if category not in CATEGORIES:
+        category = ""
+    if category:
+        stmt = stmt.where(category_filter(category))
+    return render(request, "alerts.html", alerts=db.scalars(stmt).all(), show=show if show == "open" else "all",
+                  category=category, category_names={k: v[0] for k, v in CATEGORIES.items()},
+                  category_of=category_of)
 
 
 @router.post("/alerts/{alert_id}/ack")

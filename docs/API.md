@@ -39,7 +39,7 @@ while.
 | GET | `/tasks/{id}` | One task with its status and output |
 | GET | `/tasks-available` | The task names `POST /firewalls/{id}/tasks` accepts |
 | GET | `/customers`, `/customers/{id}` | Customers; one customer with its firewalls |
-| GET | `/alerts?open_only=&firewall_id=&limit=` | Alerts, newest first |
+| GET | `/alerts?open_only=&firewall_id=&limit=` | Alerts, newest first, with their category (system, wan, down, services, resources) |
 | POST | `/alerts/{id}/acknowledge` | Acknowledge (operator) |
 | GET | `/configurations` | Configurations (policies) |
 

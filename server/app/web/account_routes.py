@@ -22,12 +22,14 @@ from ..services.appsettings import (
     effective_console_url,
     encrypt_secret,
     get_agent_network_settings,
+    get_alert_category_settings,
     get_alert_email_settings,
     get_email_settings,
     get_site_settings,
     normalize_agent_url,
     normalize_console_url,
     save_agent_network_settings,
+    save_alert_category_settings,
     save_alert_email_settings,
     save_email_settings,
     save_site_settings,
@@ -35,6 +37,7 @@ from ..services.appsettings import (
     valid_timezone,
     format_dt,
 )
+from ..services.alerts import CATEGORIES, CPU_SAMPLES
 from ..services.mailer import MailError, send_mail
 from ..services.notifications import create_reset_token, find_reset_token, send_reset_email
 from .auth import flash, require, verify_csrf
@@ -52,6 +55,7 @@ SETTINGS_SECTIONS = [
     ("/keys", "Enrollment keys"),
     ("/settings/email", "Email (SMTP)"),
     ("/settings/alerts", "Alert emails"),
+    ("/settings/alert-categories", "Alert categories"),
     ("/settings/addresses", "Addresses"),
     ("/settings/security", "Security"),
     ("/settings/sso", "Single sign-on"),
@@ -132,6 +136,18 @@ def settings_alerts_page(request: Request, user: User = Depends(admin), db: Sess
         email=get_email_settings(db),
         severities=SEVERITIES,
         opted_in_users=recipients,
+    )
+
+
+@router.get("/settings/alert-categories", response_class=HTMLResponse)
+def settings_alert_categories_page(request: Request, user: User = Depends(admin), db: Session = Depends(get_db)):
+    return _settings_page(
+        request,
+        "/settings/alert-categories",
+        cats=get_alert_category_settings(db),
+        categories=CATEGORIES,
+        cpu_samples=CPU_SAMPLES,
+        alerts=get_alert_email_settings(db),
     )
 
 
@@ -270,6 +286,42 @@ def settings_alerts(
     db.commit()
     flash(request, "Alert email settings saved.", "success")
     return redirect("/settings/alerts")
+
+
+@router.post("/settings/alert-categories")
+async def settings_alert_categories(request: Request, user: User = Depends(admin), db: Session = Depends(get_db)):
+    form = await request.form()
+    cfg = get_alert_category_settings(db)
+
+    def percent(name: str) -> int:
+        try:
+            value = int(str(form.get(name, "")).strip())
+        except ValueError:
+            raise HTTPException(400, f"{name} must be a whole number") from None
+        if not 1 <= value <= 100:
+            raise HTTPException(400, f"{name} must be from 1 to 100")
+        return value
+
+    try:
+        repeat_hours = int(str(form.get("repeat_hours", "24")).strip())
+    except ValueError:
+        raise HTTPException(400, "repeat_hours must be a whole number") from None
+    if not 1 <= repeat_hours <= 720:
+        raise HTTPException(400, "Repeat every 1 to 720 hours")
+    cfg.categories = {
+        cat: {flag: form.get(f"{cat}_{flag}") == "true" for flag in ("enabled", "email", "repeat")}
+        for cat in CATEGORIES
+    }
+    cfg.repeat_hours = repeat_hours
+    cfg.disk_pct, cfg.memory_pct = percent("disk_pct"), percent("memory_pct")
+    cfg.cpu_pct, cfg.states_pct = percent("cpu_pct"), percent("states_pct")
+    save_alert_category_settings(db, cfg, user.username)
+    off = [CATEGORIES[c][0] for c in CATEGORIES if not cfg.flag(c, "enabled")]
+    audit(db, user.username, "settings.alert_categories_updated",
+          detail=f"off={', '.join(off) or 'none'} repeat={repeat_hours}h", ip=_ip(request))
+    db.commit()
+    flash(request, "Alert categories saved.", "success")
+    return redirect("/settings/alert-categories")
 
 
 @router.post("/settings/agent-network")

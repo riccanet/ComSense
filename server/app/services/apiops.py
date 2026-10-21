@@ -33,6 +33,7 @@ from ..models import (
 )
 from ..security import hash_secret
 from .agentpkg import agent_outdated, latest_package
+from .alerts import category_of
 from .tasks import TaskError, queue_task
 
 KEY_PREFIX = "csfm_api_"
@@ -220,7 +221,8 @@ def get_customer(db: Session, settings: Settings, customer_id: int) -> dict[str,
 def _alert(a: Alert) -> dict[str, Any]:
     return {"id": a.id, "firewall_id": a.device_id, "firewall": a.device.name if a.device else "",
             "severity": a.severity, "message": a.message, "opened": _iso(a.opened_at),
-            "resolved": _iso(a.resolved_at), "acknowledged_by": a.acknowledged_by or None}
+            "resolved": _iso(a.resolved_at), "acknowledged_by": a.acknowledged_by or None,
+            "category": category_of(a.key)}
 
 
 def list_alerts(db: Session, open_only: bool = True, firewall_id: str | None = None,

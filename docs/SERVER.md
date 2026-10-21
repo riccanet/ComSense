@@ -166,9 +166,16 @@ so the container only needs its start-up variables (below).
 * **Alert emails**: on/off, warnings and critical or critical only, whether to email when an alert
   clears, and extra recipients such as a NOC mailbox. Users opt in with *Email me firewall alerts* on
   their Account page (admins can set it on Settings > Users). New alerts are sent once a minute as one
-  summary email per recipient; each alert is emailed once when it opens and once when it clears.
-  Alerts that existed before alert email was turned on are not sent. If the mail server is
-  unreachable, pending alerts are retried on the next pass.
+  summary email per recipient; each alert is emailed when it opens, again every 24 hours while it
+  stays open and nobody acknowledges it, and once when it clears. Alerts that existed before alert
+  email was turned on are not sent when they open. If the mail server is unreachable, pending alerts
+  are retried on the next pass.
+* **Alert categories**: for each category (System alerts: configuration rollbacks; WAN connectivity:
+  gateways down or degraded; Firewall down: stopped checking in; Services not running; High
+  resources: disk, memory, CPU or state table) whether alerts are raised, whether they are emailed,
+  and whether they repeat until acknowledged. Also the repeat interval (24 hours by default) and the
+  resource thresholds (90% each; CPU must stay above it for five check-ins in a row). Turning a
+  category off clears its open alerts at the firewalls' next check-in.
 * **Password reset by email**: with email set up, the sign-in page offers *Forgot password?*.
   Users enter their username or email; if the account has an email address it receives a link that
   works once and expires after an hour. The page answers the same way whether or not the account

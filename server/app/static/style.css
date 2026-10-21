@@ -356,3 +356,9 @@ nav.tabs a.active { border-color: var(--line); background: var(--panel); color: 
 .pending-banner .muted { color: inherit; opacity: .75; }
 .pending-banner.approved { background: var(--ok-bg); color: var(--ok); border-bottom-color: var(--ok); }
 .pending-banner .actions { display: flex; gap: .4rem; }
+
+/* Settings > Alert categories */
+.grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: .75rem; }
+span.inline { display: flex; align-items: center; gap: .4rem; }
+fieldset.thresholds { border: 1px solid var(--line); border-radius: 8px; padding: .75rem 1rem; margin: 0; min-width: 0; }
+fieldset.thresholds legend { padding: 0 .35rem; font-weight: 600; }

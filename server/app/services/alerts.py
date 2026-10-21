@@ -2,18 +2,56 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..audit import audit
-from ..models import Alert, Device, Task, TaskStatus, TaskType, utcnow
+from ..models import Alert, Device, Metric, Task, TaskStatus, TaskType, utcnow
+from .appsettings import AlertCategorySettings, get_alert_category_settings
 
-DISK_THRESHOLD = 90.0
-MEMORY_THRESHOLD = 90.0
 OFFLINE_KEY = "offline"
+ROLLBACK_PREFIX = "rollback:"
+# CPU must be high on this many check-ins in a row (about five minutes), so short spikes do not alert.
+CPU_SAMPLES = 5
+
+# Alert categories (Settings > Alert categories): key -> (name, what raises it).
+CATEGORIES = {
+    "system": ("System alerts", "Configuration changes rolled back on the firewall"),
+    "wan": ("WAN connectivity", "A gateway is down or has packet loss or high latency"),
+    "down": ("Firewall down", "The firewall stopped checking in"),
+    "services": ("Services not running", "An enabled service on the firewall is stopped"),
+    "resources": ("High resources", "Disk, memory, CPU or state table usage above its threshold"),
+}
+RESOURCE_KEYS = ("disk", "memory", "cpu", "states")
 
 
-def _conditions(report: dict[str, Any]) -> dict[str, tuple[str, str]]:
+def category_of(key: str) -> str:
+    if key == OFFLINE_KEY:
+        return "down"
+    if key.startswith("gateway:"):
+        return "wan"
+    if key.startswith("service:"):
+        return "services"
+    if key in RESOURCE_KEYS:
+        return "resources"
+    return "system"
+
+
+def category_filter(category: str):
+    """SQL condition matching the alert keys of one category (the inverse of category_of)."""
+    by_category = {
+        "down": Alert.key == OFFLINE_KEY,
+        "wan": Alert.key.like("gateway:%"),
+        "services": Alert.key.like("service:%"),
+        "resources": Alert.key.in_(RESOURCE_KEYS),
+    }
+    if category in by_category:
+        return by_category[category]
+    return ~or_(*by_category.values())
+
+
+def _conditions(report: dict[str, Any], cfg: AlertCategorySettings,
+                cpu_history: list[float | None]) -> dict[str, tuple[str, str]]:
     """Derive {key: (severity, message)} from a check-in report."""
     found: dict[str, tuple[str, str]] = {}
     for gw in report.get("gateways") or []:
@@ -32,15 +70,27 @@ def _conditions(report: dict[str, Any]) -> dict[str, tuple[str, str]]:
             found[f"service:{name}"] = ("warning", f"Service {name} is not running")
     metrics = report.get("metrics") or {}
     disk = metrics.get("disk_pct")
-    if isinstance(disk, (int, float)) and disk >= DISK_THRESHOLD:
+    if _number(disk) and disk >= cfg.disk_pct:
         found["disk"] = ("warning", f"Disk usage is {disk:.0f}%")
     mem = metrics.get("mem_pct")
-    if isinstance(mem, (int, float)) and mem >= MEMORY_THRESHOLD:
+    if _number(mem) and mem >= cfg.memory_pct:
         found["memory"] = ("warning", f"Memory usage is {mem:.0f}%")
-    return found
+    if len(cpu_history) >= CPU_SAMPLES and all(_number(c) and c >= cfg.cpu_pct for c in cpu_history):
+        found["cpu"] = ("warning", f"CPU usage has been {min(cpu_history):.0f}% or more for {CPU_SAMPLES} check-ins")
+    states, states_max = metrics.get("states"), metrics.get("states_max")
+    if _number(states) and _number(states_max) and states_max > 0 and 100 * states / states_max >= cfg.states_pct:
+        found["states"] = ("warning", f"State table is {100 * states / states_max:.0f}% full ({states} of {states_max})")
+    return {k: v for k, v in found.items() if cfg.flag(category_of(k), "enabled")}
 
 
-ROLLBACK_PREFIX = "rollback:"
+def _number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _cpu_history(db: Session, device: Device) -> list[float | None]:
+    """CPU usage of the last CPU_SAMPLES check-ins, newest first (including the one being handled)."""
+    stmt = select(Metric.cpu_pct).where(Metric.device_id == device.id).order_by(Metric.ts.desc(), Metric.id.desc())
+    return list(db.scalars(stmt.limit(CPU_SAMPLES)))
 
 
 def open_alerts(db: Session, device: Device) -> dict[str, Alert]:
@@ -49,7 +99,7 @@ def open_alerts(db: Session, device: Device) -> dict[str, Alert]:
 
 
 def evaluate_report(db: Session, device: Device, report: dict[str, Any]) -> None:
-    current = _conditions(report)
+    current = _conditions(report, get_alert_category_settings(db), _cpu_history(db, device))
     existing = open_alerts(db, device)
     now = utcnow()
     for key, (severity, message) in current.items():
@@ -69,7 +119,7 @@ def evaluate_report(db: Session, device: Device, report: dict[str, Any]) -> None
 
 
 def raise_offline(db: Session, device: Device) -> None:
-    if OFFLINE_KEY in open_alerts(db, device):
+    if not get_alert_category_settings(db).flag("down", "enabled") or OFFLINE_KEY in open_alerts(db, device):
         return
     db.add(
         Alert(
@@ -92,6 +142,8 @@ def record_rollbacks(db: Session, device: Device, events: Any) -> int:
         return 0
     new = 0
     rolled = dict(device.rolled_back_policies or {})
+    # With system alerts off the alert is still recorded (it makes events idempotent), already resolved.
+    alerting = get_alert_category_settings(db).flag("system", "enabled")
     for event in events:
         if not isinstance(event, dict) or not str(event.get("id", "")).strip():
             continue
@@ -108,6 +160,7 @@ def record_rollbacks(db: Session, device: Device, events: Any) -> int:
                 key=key,
                 severity="critical",
                 message=f"Change rolled back on the firewall: {changes}. Reason: {reason}.",
+                resolved_at=None if alerting else utcnow(),
             )
         )
         task_ids = [int(t) for t in event.get("tasks") or [] if str(t).isdigit()]

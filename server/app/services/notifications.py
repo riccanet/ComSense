@@ -12,7 +12,14 @@ from sqlalchemy.orm import Session
 from ..config import Settings
 from ..models import Alert, PasswordResetToken, User, aware, utcnow
 from ..security import hash_secret
-from .appsettings import effective_console_url, format_dt, get_alert_email_settings, get_email_settings
+from .alerts import category_of
+from .appsettings import (
+    effective_console_url,
+    format_dt,
+    get_alert_category_settings,
+    get_alert_email_settings,
+    get_email_settings,
+)
 from .mailer import MailError, send_mail
 
 log = logging.getLogger("comsense.notifications")
@@ -51,22 +58,28 @@ def alert_recipients(db: Session, extra: list[str]) -> list[str]:
 
 
 def send_alert_notifications(db: Session, settings: Settings) -> int:
-    """Email newly opened (and, optionally, resolved) alerts as one summary per recipient.
+    """Email newly opened, still open and (optionally) resolved alerts as one summary per recipient.
 
-    Every alert is emailed at most once when it opens and once when it resolves.
-    Returns the number of emails sent. The caller commits.
+    An alert is emailed when it opens and, if its category repeats, again every repeat_hours while it
+    stays open and nobody acknowledged it; once more when it resolves. Categories with email off are
+    never emailed. Returns the number of emails sent. The caller commits.
     """
     alert_cfg = get_alert_email_settings(db)
     mail_cfg = get_email_settings(db)
     if not alert_cfg.enabled or not mail_cfg.configured:
         return 0
+    categories = get_alert_category_settings(db)
     now = utcnow()
     since = datetime.fromisoformat(alert_cfg.enabled_since) if alert_cfg.enabled_since else now
     min_rank = SEVERITY_RANK.get(alert_cfg.min_severity, 1)
 
+    def emailed(alert: Alert) -> bool:
+        return categories.flag(category_of(alert.key), "email")
+
     opened: list[Alert] = []
     for alert in db.scalars(select(Alert).where(Alert.notified_at.is_(None)).order_by(Alert.opened_at)):
-        if aware(alert.opened_at) < aware(since) or SEVERITY_RANK.get(alert.severity, 1) < min_rank:
+        if (aware(alert.opened_at) < aware(since) or SEVERITY_RANK.get(alert.severity, 1) < min_rank
+                or not emailed(alert)):
             # Never emailed, so its resolution is not emailed either.
             alert.notified_at = now
             alert.resolved_notified_at = now
@@ -84,15 +97,22 @@ def send_alert_notifications(db: Session, settings: Settings) -> int:
         if a not in opened
     ]
     if not alert_cfg.notify_resolved:
-        for alert in resolved:
-            alert.resolved_notified_at = now
+        resolved_off = resolved
         resolved = []
-    if not opened and not resolved:
+    else:
+        resolved_off = [a for a in resolved if not emailed(a)]
+        resolved = [a for a in resolved if emailed(a)]
+    for alert in resolved_off:
+        alert.resolved_notified_at = now
+    reminders = _reminders(db, categories, min_rank, now) if categories.repeat_hours > 0 else []
+    if not opened and not resolved and not reminders:
         return 0
 
     recipients = alert_recipients(db, alert_cfg.extra_recipients)
     if recipients:
-        subject, text, html = _alert_digest(effective_console_url(db, settings), opened, resolved)
+        subject, text, html = _alert_digest(
+            effective_console_url(db, settings), opened, resolved, reminders, categories.repeat_hours
+        )
         sent = 0
         for to in recipients:
             try:
@@ -108,16 +128,36 @@ def send_alert_notifications(db: Session, settings: Settings) -> int:
             alert.resolved_notified_at = now
     for alert in resolved:
         alert.resolved_notified_at = now
+    for alert in reminders:
+        alert.notified_at = now  # the next reminder is due repeat_hours from now
     return len(recipients)
 
 
-def _alert_digest(console_url: str, opened: list[Alert], resolved: list[Alert]) -> tuple[str, str, str]:
+def _reminders(db: Session, categories, min_rank: int, now: datetime) -> list[Alert]:
+    """Open, unacknowledged alerts last emailed at least repeat_hours ago, in categories that repeat."""
+    due = now - timedelta(hours=categories.repeat_hours)
+    stmt = select(Alert).where(
+        Alert.resolved_at.is_(None), Alert.acknowledged_by == "", Alert.notified_at.is_not(None),
+        Alert.notified_at <= due,
+    ).order_by(Alert.opened_at)
+    return [
+        a for a in db.scalars(stmt)
+        if SEVERITY_RANK.get(a.severity, 1) >= min_rank
+        and categories.flag(category_of(a.key), "email") and categories.flag(category_of(a.key), "repeat")
+    ]
+
+
+def _alert_digest(console_url: str, opened: list[Alert], resolved: list[Alert],
+                  reminders: list[Alert] | None = None, repeat_hours: int = 24) -> tuple[str, str, str]:
+    reminders = reminders or []
     parts = []
     if opened:
         parts.append(f"{len(opened)} new alert{'s' if len(opened) != 1 else ''}")
+    if reminders:
+        parts.append(f"{len(reminders)} still open")
     if resolved:
         parts.append(f"{len(resolved)} resolved")
-    critical = any(a.severity == "critical" for a in opened)
+    critical = any(a.severity == "critical" for a in opened + reminders)
     subject = f"[ComSense]{' CRITICAL:' if critical else ''} {', '.join(parts)}"
     link = f"{console_url}/alerts"
 
@@ -133,6 +173,22 @@ def _alert_digest(console_url: str, opened: list[Alert], resolved: list[Alert]) 
                 f'<td style="padding:6px 8px">{escape(_where(a))}</td>'
                 f'<td style="padding:6px 8px">{escape(a.message)}{escape(state)}</td>'
                 f'<td style="padding:6px 8px;color:#667085">{_fmt(a.opened_at)}</td></tr>'
+            )
+    if reminders:
+        lines.append(f"Still open and not acknowledged (repeated every {repeat_hours} hours until acknowledged):")
+        rows.append(
+            '<tr><td colspan="4" style="padding:12px 8px 4px;font-weight:600">Still open, not acknowledged'
+            f'<span style="font-weight:400;color:#667085"> (repeated every {repeat_hours} hours until acknowledged)'
+            "</span></td></tr>"
+        )
+        for a in reminders:
+            lines.append(f"  [{a.severity.upper()}] {_where(a)}: {a.message} - since {_fmt(a.opened_at)}")
+            color = "#b42318" if a.severity == "critical" else "#a86500"
+            rows.append(
+                f'<tr><td style="padding:6px 8px;color:{color};font-weight:600">{escape(a.severity)}</td>'
+                f'<td style="padding:6px 8px">{escape(_where(a))}</td>'
+                f'<td style="padding:6px 8px">{escape(a.message)}</td>'
+                f'<td style="padding:6px 8px;color:#667085">since {_fmt(a.opened_at)}</td></tr>'
             )
     if resolved:
         lines.append("Resolved:")
