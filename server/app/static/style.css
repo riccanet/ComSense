@@ -385,3 +385,9 @@ progress.task-progress::-moz-progress-bar { background: var(--ok); border-radius
 .log-filter input { width: min(22rem, 70vw); }
 .log-table td { font-size: .85rem; vertical-align: top; }
 .log-table .log-msg { white-space: pre-wrap; word-break: break-word; }
+
+/* Messages after an action, as full-width bars under the navigation bar (signed-in pages). */
+.pending-banner.flash-bar { background: var(--neutral-bg); border-bottom-color: var(--line); }
+.pending-banner.flash-bar.success { background: var(--ok-bg); color: var(--ok); border-bottom-color: var(--ok); }
+.pending-banner.flash-bar.error { background: var(--bad-bg); color: var(--bad); border-bottom-color: var(--bad); }
+.pending-banner.flash-bar.warn { background: var(--warn-bg); color: var(--warn); border-bottom-color: var(--warn); }
