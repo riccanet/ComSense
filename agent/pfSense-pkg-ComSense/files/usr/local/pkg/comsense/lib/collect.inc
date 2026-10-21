@@ -316,6 +316,9 @@ function csfm_check_updates($refresh = false) {
 		 * (pkg notices a branch switch itself) and exits 2 when a new version is available.
 		 */
 		list($rc, $out) = csfm_exec(CSFM_UPGRADE_BIN . ' -c', 600);
+		// Its verdict, e.g. "25.11.1 version of pfSense is available" or "Your system is on the latest version".
+		$lines = array_values(array_filter(array_map('trim', explode("\n", $out)), 'strlen'));
+		$info['upgrade_message'] = csfm_truncate($lines ? end($lines) : '', 300);
 		if ($rc === 2) {
 			$info['update_available'] = true;
 			$info['version'] = preg_match('/^(\S+) version of \S+ is available/m', $out, $m) ? $m[1] : '';

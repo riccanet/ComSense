@@ -110,8 +110,10 @@ and runs `/etc/rc.dyndns.update` so the provider is updated at once. `update_bra
 then checks for updates on the new branch in the background, once pfSense's own metadata refresh
 has finished. Update checks run `pfSense-upgrade -c` as System > Update does (on pfSense Plus it
 fetches the Netgate repository credentials before updating the catalogue; exit status 2 means a new
-version, named in its output), with root's PATH: the agent daemon's own PATH lacks `/usr/local`,
-and pfSense-upgrade calls its helpers by name. Port ranges in rules and port forwards are written as
+version, named in its output), with root's login environment: the agent daemon's own lacks
+`/usr/local` in PATH (pfSense-upgrade calls its helpers by name) and `SSL_CERT_DIR`, without which
+pfSense-repoc cannot ask Netgate which versions the firewall may upgrade to. The task output ends
+with pfSense-upgrade's verdict. Port ranges in rules and port forwards are written as
 pfSense stores them (`8000-8100`; `8000:8100` is accepted and converted).
 
 Check-ins also carry `update_branch` (`{"current", "branches": [{"name","descr","default"}]}`, from

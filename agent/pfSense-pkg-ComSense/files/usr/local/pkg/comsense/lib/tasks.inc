@@ -219,6 +219,8 @@ function csfm_task_check_updates($client, $id, $payload) {
 	$msg .= sprintf('; %d package update(s)', count($info['packages'] ?? array()));
 	if (!empty($info['error'])) {
 		$msg .= "\n" . $info['error'];
+	} elseif (!empty($info['upgrade_message'])) {
+		$msg .= "\npfSense-upgrade: " . $info['upgrade_message'];
 	}
 	return array('output' => $msg, 'result' => $info);
 }

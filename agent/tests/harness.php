@@ -24,6 +24,7 @@ define('CSFM_GUARD_DIR', $dir . '/guard');
 define('CSFM_UPGRADE_BIN', $dir . '/pfSense-upgrade');
 if (!file_exists(CSFM_UPGRADE_BIN)) {
 	file_put_contents(CSFM_UPGRADE_BIN, "#!/bin/sh\necho \"\$PATH\" > " . escapeshellarg($dir . '/upgrade-path') . "\n"
+	    . "echo \"\$SSL_CERT_DIR\" > " . escapeshellarg($dir . '/upgrade-certdir') . "\n"
 	    . "echo 'Messages:'\necho '>>> Updating repositories metadata...'\necho '2.7.2 version of pfSense is available'\nexit 2\n");
 	chmod(CSFM_UPGRADE_BIN, 0755);
 }

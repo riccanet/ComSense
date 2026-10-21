@@ -195,6 +195,9 @@ def test_full_lifecycle(env):
         assert device.updates["update_available"] is True and device.updates["version"] == "2.7.2"
         # pfSense-upgrade calls pfSense-repoc and pkg by name: the agent gives it root's PATH.
         assert "/usr/local/sbin" in (env["fw"] / "upgrade-path").read_text().split(":")
+        # ...and root's SSL_CERT_DIR, without which pfSense-repoc never learns of a new version.
+        assert (env["fw"] / "upgrade-certdir").read_text().strip() == (
+            os.environ.get("SSL_CERT_DIR") or ("/etc/ssl/certs/" if Path("/etc/ssl/certs").is_dir() else ""))
         assert db.scalar(select(Backup).where(Backup.device_id == device.id)) is not None
 
     # 4. Policies and tasks.

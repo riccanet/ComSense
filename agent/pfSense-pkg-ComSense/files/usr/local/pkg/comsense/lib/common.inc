@@ -7,7 +7,7 @@
  */
 
 if (!defined('CSFM_AGENT_VERSION')) {
-	define('CSFM_AGENT_VERSION', '0.2.12');
+	define('CSFM_AGENT_VERSION', '0.2.13');
 }
 if (!defined('CSFM_DB_DIR')) {
 	/* Overridable so the agent can be exercised outside a firewall. */
@@ -27,16 +27,24 @@ if (!defined('CSFM_UPGRADE_BIN')) {
 }
 
 /*
- * The agent runs as a daemon started at boot, whose PATH lacks /usr/local. pfSense's tools call
- * others by name (pfSense-upgrade fetches the Netgate repository credentials with pfSense-repoc),
- * so give every command the agent runs the same PATH and HOME as root's shell.
+ * The agent runs as a daemon started at boot, without root's login environment. pfSense's tools
+ * need it: pfSense-upgrade calls its helpers by name (PATH), and pfSense-repoc, which asks Netgate
+ * which versions this firewall may upgrade to, finds the CA certificates through SSL_CERT_DIR;
+ * without it no new pfSense version is ever reported. Give every command the agent runs root's
+ * login environment (as in a shell on the firewall).
  */
 function csfm_fix_environment() {
 	$want = array('/sbin', '/bin', '/usr/sbin', '/usr/bin', '/usr/local/sbin', '/usr/local/bin');
 	$have = array_filter(explode(':', (string)getenv('PATH')));
 	putenv('PATH=' . implode(':', array_unique(array_merge($want, $have))));
-	if ((string)getenv('HOME') === '') {
-		putenv('HOME=/root');
+	$defaults = array('HOME' => '/root', 'USER' => 'root', 'LOGNAME' => 'root', 'LANG' => 'C.UTF-8');
+	if (is_dir('/etc/ssl/certs')) {
+		$defaults['SSL_CERT_DIR'] = '/etc/ssl/certs/';
+	}
+	foreach ($defaults as $name => $value) {
+		if ((string)getenv($name) === '') {
+			putenv("{$name}={$value}");
+		}
 	}
 }
 csfm_fix_environment();
