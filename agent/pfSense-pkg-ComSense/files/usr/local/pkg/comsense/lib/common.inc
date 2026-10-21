@@ -7,7 +7,7 @@
  */
 
 if (!defined('CSFM_AGENT_VERSION')) {
-	define('CSFM_AGENT_VERSION', '0.2.11');
+	define('CSFM_AGENT_VERSION', '0.2.12');
 }
 if (!defined('CSFM_DB_DIR')) {
 	/* Overridable so the agent can be exercised outside a firewall. */
@@ -21,6 +21,25 @@ define('CSFM_CONFIG_PATH', 'installedpackages/comsense/config/0');
 define('CSFM_SYSTEM_CA_BUNDLE', '/etc/ssl/cert.pem');
 /* pkg(8) on pfSense; /usr/sbin/pkg is only FreeBSD's bootstrap stub. */
 define('CSFM_PKG', '/usr/local/sbin/pkg-static');
+if (!defined('CSFM_UPGRADE_BIN')) {
+	/* pfSense's own update tool (System > Update uses it too). */
+	define('CSFM_UPGRADE_BIN', '/usr/local/sbin/pfSense-upgrade');
+}
+
+/*
+ * The agent runs as a daemon started at boot, whose PATH lacks /usr/local. pfSense's tools call
+ * others by name (pfSense-upgrade fetches the Netgate repository credentials with pfSense-repoc),
+ * so give every command the agent runs the same PATH and HOME as root's shell.
+ */
+function csfm_fix_environment() {
+	$want = array('/sbin', '/bin', '/usr/sbin', '/usr/bin', '/usr/local/sbin', '/usr/local/bin');
+	$have = array_filter(explode(':', (string)getenv('PATH')));
+	putenv('PATH=' . implode(':', array_unique(array_merge($want, $have))));
+	if ((string)getenv('HOME') === '') {
+		putenv('HOME=/root');
+	}
+}
+csfm_fix_environment();
 
 /* Actions the firewall owner can allow in the package settings. */
 $csfm_capability_fields = array(

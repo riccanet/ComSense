@@ -20,6 +20,13 @@ if (getenv('CSFM_TEST_AGENT_VERSION')) {
 define('CSFM_CFG_JSON', $dir . '/config.json');
 define('CSFM_ACTIONS_LOG', $dir . '/actions.log');
 define('CSFM_GUARD_DIR', $dir . '/guard');
+/* pfSense-upgrade -c: records the PATH it was run with and reports a new version (exit 2). */
+define('CSFM_UPGRADE_BIN', $dir . '/pfSense-upgrade');
+if (!file_exists(CSFM_UPGRADE_BIN)) {
+	file_put_contents(CSFM_UPGRADE_BIN, "#!/bin/sh\necho \"\$PATH\" > " . escapeshellarg($dir . '/upgrade-path') . "\n"
+	    . "echo 'Messages:'\necho '>>> Updating repositories metadata...'\necho '2.7.2 version of pfSense is available'\nexit 2\n");
+	chmod(CSFM_UPGRADE_BIN, 0755);
+}
 /* Fast timings: no settle delays, and a probation window the test can control. */
 define('CSFM_VERIFY_DELAY', 0);
 define('CSFM_RETRY_DELAY', 0);

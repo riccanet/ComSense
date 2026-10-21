@@ -107,10 +107,11 @@ configuration are refused. `ddns_*` change one dynamic DNS client, named by a fi
 interface, provider, host name, domain name and description; a change clears the client's cached address
 and runs `/etc/rc.dyndns.update` so the provider is updated at once. `update_branch` sets
 `system/pkg_repo_conf_path` and calls `pkg_switch_repo()` as System > Update > Update Settings does,
-then checks for updates on the new branch in the background. That check, and every `check_updates`
-task, first downloads the repository catalogue again (`pkg update -f`, after pfSense's own metadata
-refresh finishes): every branch's repository has the same name, so a plain update can keep the old
-branch's catalogue and report no updates. Port ranges in rules and port forwards are written as
+then checks for updates on the new branch in the background, once pfSense's own metadata refresh
+has finished. Update checks run `pfSense-upgrade -c` as System > Update does (on pfSense Plus it
+fetches the Netgate repository credentials before updating the catalogue; exit status 2 means a new
+version, named in its output), with root's PATH: the agent daemon's own PATH lacks `/usr/local`,
+and pfSense-upgrade calls its helpers by name. Port ranges in rules and port forwards are written as
 pfSense stores them (`8000-8100`; `8000:8100` is accepted and converted).
 
 Check-ins also carry `update_branch` (`{"current", "branches": [{"name","descr","default"}]}`, from

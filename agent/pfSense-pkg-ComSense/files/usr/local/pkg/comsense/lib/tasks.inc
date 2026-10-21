@@ -210,15 +210,15 @@ function csfm_task_backup($client, $id, $payload) {
 }
 
 function csfm_task_check_updates($client, $id, $payload) {
-	/* Asked for by an operator, so it runs now (bounded by the cycle's own time limit), with a fresh
-	 * catalogue: the operator may just have switched branch, or want to see a release from today. */
+	/* Asked for by an operator, so it runs now (bounded by the cycle's own time limit), after any
+	 * metadata refresh pfSense is running: the operator may just have switched branch. */
 	$info = csfm_check_updates(true);
 	$msg = !empty($info['update_available'])
 	    ? "Update available: {$info['installed_version']} -> {$info['version']}"
 	    : "System is up to date ({$info['installed_version']})";
 	$msg .= sprintf('; %d package update(s)', count($info['packages'] ?? array()));
-	if (!empty($info['error']) || !empty($info['refresh_error'])) {
-		$msg .= "\n" . trim(($info['refresh_error'] ?? '') . "\n" . ($info['error'] ?? ''));
+	if (!empty($info['error'])) {
+		$msg .= "\n" . $info['error'];
 	}
 	return array('output' => $msg, 'result' => $info);
 }

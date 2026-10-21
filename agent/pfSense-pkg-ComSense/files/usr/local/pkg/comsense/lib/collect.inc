@@ -299,16 +299,32 @@ function csfm_updates_stale() {
  * $refresh downloads the repository catalogue first (after a branch switch, or when asked for).
  */
 function csfm_check_updates($refresh = false) {
-	$refresh_error = $refresh ? csfm_refresh_repo_catalog() : '';
+	if ($refresh) {
+		csfm_wait_for_pkg_jobs();
+	}
 	$info = array(
-		'installed_version' => csfm_product_version(),
+		'installed_version' => preg_replace('/-RELEASE$/', '', csfm_product_version()),
 		'version' => '',
 		'update_available' => false,
 		'packages' => array(),
 		'checked_at' => gmdate('c'),
 		'checked_ts' => time(),
 	);
-	if (function_exists('get_system_pkg_version')) {
+	if (is_executable(CSFM_UPGRADE_BIN)) {
+		/*
+		 * What System > Update runs: it fetches the repository credentials, updates the catalogue
+		 * (pkg notices a branch switch itself) and exits 2 when a new version is available.
+		 */
+		list($rc, $out) = csfm_exec(CSFM_UPGRADE_BIN . ' -c', 600);
+		if ($rc === 2) {
+			$info['update_available'] = true;
+			$info['version'] = preg_match('/^(\S+) version of \S+ is available/m', $out, $m) ? $m[1] : '';
+		} elseif ($rc === 0) {
+			$info['version'] = $info['installed_version'];
+		} else {
+			$info['error'] = 'pfSense-upgrade -c exited with ' . $rc . ': ' . csfm_truncate(trim($out), 500);
+		}
+	} elseif (function_exists('get_system_pkg_version')) {
 		$sys = get_system_pkg_version(false, false);
 		if (is_array($sys)) {
 			$info['installed_version'] = $sys['installed_version'] ?? $info['installed_version'];
@@ -318,9 +334,6 @@ function csfm_check_updates($refresh = false) {
 			$info['error'] = 'Unable to query the update repository';
 		}
 	}
-	if ($refresh_error !== '') {
-		$info['refresh_error'] = $refresh_error;
-	}
 	$info['packages'] = csfm_outdated_packages();
 	csfm_ensure_db_dir();
 	csfm_write_json(CSFM_UPDATES_FILE, $info);
@@ -328,22 +341,19 @@ function csfm_check_updates($refresh = false) {
 }
 
 /*
- * Download the update repository's catalogue again. pkg keeps it per repository name, and every
- * branch's repository is named the same, so after a branch switch a plain "pkg update" can decide the
- * catalogue it has (the old branch's) is current. pfSense's own switch refreshes it in the background
- * (rc.update_pkg_metadata); wait for that and any running upgrade first. Returns '' or the error.
+ * After a branch switch pfSense refreshes the package metadata in the background
+ * (rc.update_pkg_metadata); a check started meanwhile would wait on pkg's lock or read the old
+ * branch's catalogue. Wait (up to two minutes) for it and any running upgrade.
  */
-function csfm_refresh_repo_catalog() {
+function csfm_wait_for_pkg_jobs() {
 	for ($i = 0; $i < 60; $i++) {
 		// [.] and [u]: the pattern must not match the shell running pgrep itself.
 		exec("/bin/pgrep -q -f 'rc[.]update_pkg_metadata|pfSense-[u]pgrade|pkg-static [u]pdate|pkg [u]pdate'", $unused, $rc);
 		if ($rc !== 0) {
-			break;
+			return;
 		}
 		sleep(2);
 	}
-	list($rc, $out) = csfm_exec(CSFM_PKG . ' update -f', 300);
-	return $rc === 0 ? '' : 'Could not refresh the repository catalogue: ' . csfm_truncate(trim($out), 500);
 }
 
 function csfm_forget_updates() {

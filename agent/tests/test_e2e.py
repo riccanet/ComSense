@@ -192,7 +192,9 @@ def test_full_lifecycle(env):
         assert all(len(p["command"]) <= 160 for p in procs["top"])
         services = {s["name"]: s["running"] for s in device.inventory["services"]}
         assert services == {"unbound": True, "comsense": None}
-        assert device.updates["update_available"] is True
+        assert device.updates["update_available"] is True and device.updates["version"] == "2.7.2"
+        # pfSense-upgrade calls pfSense-repoc and pkg by name: the agent gives it root's PATH.
+        assert "/usr/local/sbin" in (env["fw"] / "upgrade-path").read_text().split(":")
         assert db.scalar(select(Backup).where(Backup.device_id == device.id)) is not None
 
     # 4. Policies and tasks.
