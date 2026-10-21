@@ -331,3 +331,58 @@ def test_notifications_configuration(client, db):
     policy = db.scalar(select(Policy).where(Policy.name == "Quiet sites"))
     assert policy.type == PolicyType.notifications and policy.content == {"smtp": False}
     assert "Quiet sites" in client.get("/configurations/notifications").text
+
+
+@pytest.mark.changes
+def test_port_forward_edits_take_ranges_and_keep_what_was_typed(client, db, agent):
+    csrf = login(client)
+    did = _device(agent, db)
+    web, _ = port_forwards_from_xml(CONFIG)
+    # pfSense stores ranges as 5060-5061; the internal port is where the range starts.
+    client.post(f"/devices/{did}/nat/edit", data={
+        "fingerprint": web["fingerprint"], "interface": "wan", "protocol": "udp", "src": "", "dst": "wan address",
+        "dstport": "5060-5061", "target": "192.168.1.20", "localport": "", "descr": "SIP", "csrf_token": csrf})
+    edit = db.scalar(select(Task).where(Task.type == TaskType.nat_edit))
+    assert edit is not None and edit.payload["rule"]["destination"]["port"] == "5060-5061"
+    assert edit.payload["rule"]["local_port"] == "5060"
+    db.delete(edit)
+    db.commit()
+
+    # A refused edit says why next to the form and keeps what was typed.
+    r = client.post(f"/devices/{did}/nat/edit", data={
+        "fingerprint": web["fingerprint"], "dstport": "443", "target": "bad ip!", "descr": "Typed descr",
+        "csrf_token": csrf})
+    assert "Not saved:" in r.text and "target must be an IP address or alias" in r.text
+    assert 'value="bad ip!"' in r.text and 'value="Typed descr"' in r.text
+    assert "Not saved:" not in client.get(f"/devices/{did}/configuration?edit_nat={web['fingerprint']}").text
+    r = client.post(f"/devices/{did}/nat", data={"dstport": "80", "target": "nope!", "csrf_token": csrf})
+    assert "Not added:" in r.text and 'value="nope!"' in r.text
+
+
+@pytest.mark.changes
+def test_applied_changes_show_until_the_new_configuration_arrives(client, db, agent):
+    from conftest import auth  # noqa: F401
+    from app.models import TaskStatus, utcnow
+    from app.web.routes import _device_page_token
+
+    csrf = login(client)
+    creds = enroll(agent, make_key(db), capabilities=ALL_CAPS)
+    agent.post("/api/agent/v1/backups", content=gzip.compress(CONFIG), headers=auth(creds["token"]))
+    did = creds["device_id"]
+    web, _ = port_forwards_from_xml(CONFIG)
+    client.post(f"/devices/{did}/nat/edit", data={
+        "fingerprint": web["fingerprint"], "interface": "wan", "protocol": "tcp", "dst": "wan address",
+        "dstport": "443", "target": "192.168.1.11", "descr": "Web server", "csrf_token": csrf})
+    task = db.scalar(select(Task).where(Task.type == TaskType.nat_edit))
+    task.status, task.finished_at, task.output = TaskStatus.success, utcnow(), "Changed port forward 443 -> 192.168.1.11:443"
+    db.commit()
+    page = client.get(f"/devices/{did}/configuration").text
+    assert "1 change applied on the firewall" in page and "applied, updating" in page
+    device = db.get(Device, did)
+    before = _device_page_token(db, device)
+    # The firewall sends its new config.xml: the page's token changes (it reloads) and the note goes.
+    agent.post("/api/agent/v1/backups", content=gzip.compress(CONFIG.replace(b"192.168.1.10", b"192.168.1.11")),
+               headers=auth(creds["token"]))
+    db.expire_all()
+    assert _device_page_token(db, db.get(Device, did)) != before
+    assert "change applied on the firewall" not in client.get(f"/devices/{did}/configuration").text

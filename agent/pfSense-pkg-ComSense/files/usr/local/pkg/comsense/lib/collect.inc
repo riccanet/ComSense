@@ -296,8 +296,10 @@ function csfm_updates_stale() {
  * Query the update repository. This can take minutes, or wait on pkg's lock, so
  * the agent cycle never calls it: the cycle starts it in the background after
  * checking in (csfm_schedule_update_check) and reports the result next time.
+ * $refresh downloads the repository catalogue first (after a branch switch, or when asked for).
  */
-function csfm_check_updates() {
+function csfm_check_updates($refresh = false) {
+	$refresh_error = $refresh ? csfm_refresh_repo_catalog() : '';
 	$info = array(
 		'installed_version' => csfm_product_version(),
 		'version' => '',
@@ -316,10 +318,32 @@ function csfm_check_updates() {
 			$info['error'] = 'Unable to query the update repository';
 		}
 	}
+	if ($refresh_error !== '') {
+		$info['refresh_error'] = $refresh_error;
+	}
 	$info['packages'] = csfm_outdated_packages();
 	csfm_ensure_db_dir();
 	csfm_write_json(CSFM_UPDATES_FILE, $info);
 	return $info;
+}
+
+/*
+ * Download the update repository's catalogue again. pkg keeps it per repository name, and every
+ * branch's repository is named the same, so after a branch switch a plain "pkg update" can decide the
+ * catalogue it has (the old branch's) is current. pfSense's own switch refreshes it in the background
+ * (rc.update_pkg_metadata); wait for that and any running upgrade first. Returns '' or the error.
+ */
+function csfm_refresh_repo_catalog() {
+	for ($i = 0; $i < 60; $i++) {
+		// [.] and [u]: the pattern must not match the shell running pgrep itself.
+		exec("/bin/pgrep -q -f 'rc[.]update_pkg_metadata|pfSense-[u]pgrade|pkg-static [u]pdate|pkg [u]pdate'", $unused, $rc);
+		if ($rc !== 0) {
+			break;
+		}
+		sleep(2);
+	}
+	list($rc, $out) = csfm_exec(CSFM_PKG . ' update -f', 300);
+	return $rc === 0 ? '' : 'Could not refresh the repository catalogue: ' . csfm_truncate(trim($out), 500);
 }
 
 function csfm_forget_updates() {
@@ -330,12 +354,13 @@ function csfm_forget_updates() {
 }
 
 /* Start a time-limited update check in the background unless the cached one is fresh. */
-function csfm_schedule_update_check($force = false) {
+function csfm_schedule_update_check($force = false, $refresh = false) {
 	if (!$force && !csfm_updates_stale()) {
 		return;
 	}
-	mwexec_bg('/usr/bin/lockf -s -t 0 /var/run/comsense_updates.lock /usr/bin/timeout 600 '
-	    . '/usr/local/bin/php -f /usr/local/pkg/comsense/agent.php check-updates');
+	// A refresh must not be skipped because a routine check holds the lock: wait for it (-t 600).
+	mwexec_bg('/usr/bin/lockf -s -t ' . ($refresh ? 600 : 0) . ' /var/run/comsense_updates.lock /usr/bin/timeout 900 '
+	    . '/usr/local/bin/php -f /usr/local/pkg/comsense/agent.php check-updates' . ($refresh ? ' refresh' : ''));
 }
 
 /*

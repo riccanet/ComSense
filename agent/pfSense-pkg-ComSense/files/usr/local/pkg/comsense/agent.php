@@ -8,7 +8,8 @@
  *   php /usr/local/pkg/comsense/agent.php unenroll forget this firewall's device token
  *   php /usr/local/pkg/comsense/agent.php wait N    wait up to N seconds for work from the server
  *   php /usr/local/pkg/comsense/agent.php terminal ID  run an approved remote terminal session (started by the daemon)
- *   php /usr/local/pkg/comsense/agent.php check-updates  query the update repository (run in the background)
+ *   php /usr/local/pkg/comsense/agent.php check-updates [refresh]  query the update repository (run in the
+ *                                                     background); refresh downloads its catalogue first
  *   php /usr/local/pkg/comsense/agent.php watchdog roll back an unconfirmed change whose time is up
  *   php /usr/local/pkg/comsense/agent.php confirm  keep the change on probation (no rollback)
  *   php /usr/local/pkg/comsense/agent.php rollback undo the change on probation now
@@ -71,7 +72,7 @@ switch ($cmd) {
 		echo $r . "\n";
 		exit($r === 'wake' ? 0 : ($r === 'idle' ? 1 : 2));
 	case 'check-updates':
-		echo json_encode(csfm_check_updates(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+		echo json_encode(csfm_check_updates(($argv[2] ?? '') === 'refresh'), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
 		break;
 	case 'watchdog':
 		echo csfm_guard_watchdog() . "\n";

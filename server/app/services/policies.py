@@ -30,7 +30,10 @@ ALIAS_NAME_RE = re.compile(r"^[A-Za-z0-9_]{1,31}$")
 IFACE_RE = re.compile(r"^(wan|lan|opt\d{1,3}|floating|ipsec|openvpn|wireguard|enc0)$")
 PKG_NAME_RE = re.compile(r"^pfSense-pkg-[A-Za-z0-9_.+-]{1,64}$")
 CONFIG_PATH_RE = re.compile(r"^[A-Za-z0-9_\-]+(/[A-Za-z0-9_\-]+)*$")
+# Port alias entries: a port or a range (1000:2000).
 PORT_RE = re.compile(r"^([0-9]{1,5}(:[0-9]{1,5})?|[A-Za-z0-9_]{1,31})$")
+# Ports in rules and port forwards: also 1000-2000, as pfSense stores ranges there, and port aliases.
+RULE_PORT_RE = re.compile(r"^([0-9]{1,5}([:-][0-9]{1,5})?|[A-Za-z0-9_]{1,31})$")
 
 ALIAS_FORM_TYPES = ("host", "network", "port", "url", "urltable")  # offered in the forms
 ALIAS_TYPES = {"host", "network", "port", "url", "urltable", "url_ports", "urltable_ports"}
@@ -157,7 +160,7 @@ def _validate_endpoint(ep: Any, where: str) -> None:
         )
     if "port" in ep:
         _require(
-            isinstance(ep["port"], str) and PORT_RE.match(ep["port"]),
+            isinstance(ep["port"], str) and RULE_PORT_RE.match(ep["port"]),
             f"{where}.port must be a port, range (1000:2000) or port alias",
         )
 
@@ -229,7 +232,7 @@ def _validate_port_forwards(content: dict[str, Any]) -> None:
             except ValueError as exc:
                 raise PolicyError(f"{where}.target must be an IP address or alias name") from exc
         local = rule.get("local_port", "")
-        _require(isinstance(local, str) and PORT_RE.match(local), f"{where}.local_port must be a port or port alias")
+        _require(isinstance(local, str) and RULE_PORT_RE.match(local), f"{where}.local_port must be a port or port alias")
         _require(isinstance(rule.get("descr", ""), str), f"{where}.descr must be a string")
         _require(isinstance(rule.get("disabled", False), bool), f"{where}.disabled must be a boolean")
 

@@ -14,6 +14,9 @@
   </div>
 </div>
 {% if config_backup %}<p class="small muted">Read from the firewall's configuration as of {{ config_backup.created_at|dt }}; changes show here after the firewall's next backup.</p>{% endif %}
+{% if applied_changes %}<div class="flash success" role="status">{{ applied_changes|length }} change{{ "s" if applied_changes|length != 1 }} applied on the firewall
+  ({% for t in applied_changes[:3] %}{{ t.output.split(";")[0]|truncate(80) }}{{ ", " if not loop.last }}{% endfor %}{% if applied_changes|length > 3 %}, …{% endif %}).
+  This page updates by itself when the firewall sends its new configuration, usually within a minute.</div>{% endif %}
 {% if config_error %}<p class="small">Could not read the configuration: {{ config_error }}</p>{% endif %}
 
 {% macro change_hint(what) %}{% if can_operate and not changes_enabled %}<p class="small muted">Firewall changes are turned off on this server.</p>
@@ -134,7 +137,7 @@
       <label>Source <input name="src" placeholder="any" value="{{ r.src if r.src and r.src != "any" else "" }}"></label>
       <label>Source port <input name="srcport" placeholder="any" value="{{ r.src_port or "" }}"></label>
       <label>Destination <input name="dst" value="{{ r.destination or "wan address" }}"></label>
-      <label>External port <input name="dstport" required placeholder="443 or 8000:8100" value="{{ r.port or "" }}"></label>
+      <label>External port <input name="dstport" required placeholder="443 or 8000-8100" value="{{ r.port or "" }}"></label>
       <label>Internal IP <input name="target" required placeholder="192.168.1.10" value="{{ r.target or "" }}"></label>
       <label>Internal port <input name="localport" placeholder="same as external" value="{{ r.local_port or "" }}"></label>
       <label>Description <input name="descr" maxlength="200" value="{{ r.descr or "" }}"></label>
@@ -142,6 +145,7 @@
 
 
 <section class="card" id="nat">
+  {% set nat_ns = namespace(shown=false) %}
   <datalist id="nat-ifaces">{% for i in inv.get("interfaces", []) %}<option value="{{ i.name }}">{% endfor %}</datalist>
   <h2>Inbound NAT policies</h2>
   <p class="small muted">Port forwards on the firewall. [CSFM] marks the ones deployed from Configurations; change those there.</p>
@@ -161,19 +165,23 @@
         <td>{{ r.descr }}{% if r.disabled %} <span class="badge s-disabled">disabled</span>{% endif %}</td>
         <td class="nowrap">{% if r.fingerprint in nat_removing %}<span class="small muted">removal queued</span>
           {% elif r.fingerprint in nat_editing %}<span class="small muted">change queued</span>
+          {% elif r.fingerprint in nat_applied %}<span class="small muted">applied, updating…</span>
           {% elif r.managed %}<span class="small muted">Configurations</span>
-          {% elif can_change %}<a class="button small" href="/devices/{{ device.id }}/configuration?edit_nat={{ r.fingerprint }}#nat-edit">Edit</a>
+          {% elif can_change %}{% if not r.nordr %}<a class="button small" href="/devices/{{ device.id }}/configuration?edit_nat={{ r.fingerprint }}#nat-edit">Edit</a>{% endif %}
             {{ post_button_fields("/devices/" ~ device.id ~ "/nat/remove", "Remove", "small danger",
               "Remove the port forward " ~ (r.descr or r.port) ~ " from " ~ device.name ~ "?" ~ (" Its linked firewall rule is removed too." if r.filter_rule == "linked" else ""),
               {"fingerprint": r.fingerprint, "descr": r.descr}) }}{% endif %}</td>
       </tr>
-      {% if can_change and edit_nat == r.fingerprint and not r.managed and r.fingerprint not in nat_removing and r.fingerprint not in nat_editing %}
+      {% if can_change and edit_nat == r.fingerprint and not r.managed and not r.nordr and r.fingerprint not in nat_removing and r.fingerprint not in nat_editing %}
+      {% set fe = form_error if form_error and form_error.form == "nat:" ~ r.fingerprint else none %}
+      {% set v = fe["values"] if fe else r %}
       <tr id="nat-edit" class="nat-edit"><td colspan="9">
+        {% if fe %}{% set nat_ns.shown = true %}<div class="flash error" role="alert">Not saved: {{ fe.message }}</div>{% endif %}
         <form method="post" action="/devices/{{ device.id }}/nat/edit" class="grid-form">
           {{ csrf() }}
           <input type="hidden" name="fingerprint" value="{{ r.fingerprint }}">
-          {{ nat_fields(r) }}
-          <label class="check"><input type="checkbox" name="disabled" value="true"{% if r.disabled %} checked{% endif %}> Disabled</label>
+          {{ nat_fields(v) }}
+          <label class="check"><input type="checkbox" name="disabled" value="true"{% if v.disabled %} checked{% endif %}> Disabled</label>
           <div class="wide"><button class="primary">Save changes</button>
             <a class="button" href="/devices/{{ device.id }}/configuration#nat">Cancel</a>
             <span class="small muted">{% if r.filter_rule == "linked" %}Its linked firewall rule is updated to match. {% endif %}Undone automatically if the firewall loses contact with ComSense.</span></div>
@@ -189,16 +197,20 @@
   </table>
   </div>
   {% if can_change %}
-  <details class="add-nat">
+  {% set fe = form_error if form_error and form_error.form == "nat:add" else none %}
+  <details class="add-nat" id="nat-add"{% if fe %} open{% endif %}>
     <summary>Add a port forward to this firewall</summary>
+    {% if fe %}{% set nat_ns.shown = true %}<div class="flash error" role="alert">Not added: {{ fe.message }}</div>{% endif %}
     <form method="post" action="/devices/{{ device.id }}/nat" class="grid-form">
       {{ csrf() }}
-      {{ nat_fields({}) }}
+      {{ nat_fields(fe["values"] if fe else {}) }}
       <div class="wide"><button class="primary">Add port forward</button>
         <span class="small muted">Lets its own traffic through ("pass"); undone automatically if the firewall loses contact with ComSense.</span></div>
     </form>
   </details>
   {% else %}{{ change_hint("port forwards") }}{% endif %}
+  {% if form_error and form_error.form.startswith("nat:") and not nat_ns.shown %}
+  <div class="flash error" role="alert" id="nat-edit">Not saved: {{ form_error.message }}</div>{% endif %}
 </section>
 
 {% macro ddns_fields(d) %}

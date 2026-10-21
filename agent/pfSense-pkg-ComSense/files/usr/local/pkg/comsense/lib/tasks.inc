@@ -210,12 +210,16 @@ function csfm_task_backup($client, $id, $payload) {
 }
 
 function csfm_task_check_updates($client, $id, $payload) {
-	/* Asked for by an operator, so it runs now (bounded by the cycle's own time limit). */
-	$info = csfm_check_updates();
+	/* Asked for by an operator, so it runs now (bounded by the cycle's own time limit), with a fresh
+	 * catalogue: the operator may just have switched branch, or want to see a release from today. */
+	$info = csfm_check_updates(true);
 	$msg = !empty($info['update_available'])
 	    ? "Update available: {$info['installed_version']} -> {$info['version']}"
 	    : "System is up to date ({$info['installed_version']})";
 	$msg .= sprintf('; %d package update(s)', count($info['packages'] ?? array()));
+	if (!empty($info['error']) || !empty($info['refresh_error'])) {
+		$msg .= "\n" . trim(($info['refresh_error'] ?? '') . "\n" . ($info['error'] ?? ''));
+	}
 	return array('output' => $msg, 'result' => $info);
 }
 
@@ -523,8 +527,9 @@ function csfm_task_update_branch($client, $id, $payload) {
 			pkg_switch_repo((string)$repo['path']);
 		}
 		csfm_forget_updates();
-		csfm_schedule_update_check(true);
-		return array('output' => 'Update branch set to ' . ($repo['descr'] ?? $name) . '; checking for updates on it');
+		csfm_schedule_update_check(true, true);
+		return array('output' => 'Update branch set to ' . ($repo['descr'] ?? $name) . '; checking for updates on it '
+		    . '(the result appears in a few minutes)');
 	}
 	throw new Exception("This firewall does not offer the update branch '{$name}'");
 }

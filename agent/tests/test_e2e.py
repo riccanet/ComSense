@@ -619,6 +619,10 @@ def test_full_lifecycle(env):
     assert task(tid).status == TaskStatus.success, task(tid).output
     assert fw_config(env)["system"]["pkg_repo_conf_path"].endswith("pfSense-repo-devel.conf")
     assert "pkg_switch_repo /usr/local/share/pfSense/pkg/repos/pfSense-repo-devel.conf" in (env["fw"] / "actions.log").read_text()
+    # The update check after a switch downloads the new branch's catalogue first (pkg update -f) and waits
+    # for a running routine check rather than being skipped by its lock.
+    assert "lockf -s -t 600 /var/run/comsense_updates.lock" in (env["fw"] / "actions.log").read_text()
+    assert "agent.php check-updates refresh" in (env["fw"] / "actions.log").read_text()
     agent(env, "run")  # reported at the next check-in
     with env["db"]() as db:
         assert db.get(Device, creds["device_id"]).inventory["update_branch"]["current"] == "Devel"

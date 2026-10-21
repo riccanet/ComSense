@@ -347,7 +347,8 @@ function csfm_rule_endpoint($ep) {
 		$out['any'] = '';
 	}
 	if (!empty($ep['port'])) {
-		$out['port'] = $ep['port'];
+		// Rules and port forwards store a range as 8000-8100 (aliases use 8000:8100).
+		$out['port'] = preg_replace('/^(\d+):(\d+)$/', '$1-$2', (string)$ep['port']);
 	}
 	if (!empty($ep['not'])) {
 		$out['not'] = '';

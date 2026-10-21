@@ -568,6 +568,14 @@ def device_configuration(
     ddns_inv = (device.inventory or {}).get("ddns")
     ddns_inv = ddns_inv if isinstance(ddns_inv, dict) else {}
     ddns_status = {c.get("fingerprint"): c for c in ddns_inv.get("clients", []) if isinstance(c, dict)}
+    form_error = request.session.pop("form_error", None)
+    # Changes the firewall made since the configuration shown was saved: the page shows them once the
+    # firewall sends its new config.xml (the next check-in, then the backup upload).
+    applied: list[Task] = []
+    if backup is not None:
+        applied = db.scalars(select(Task).where(
+            Task.device_id == device.id, Task.status == TaskStatus.success, Task.type.in_(CONFIG_PAGE_TASKS),
+            Task.finished_at > backup.created_at)).all()
     tabs = summary["rule_tabs"]
     # Open on the tab asked for, else LAN (where most rules are), else the first with rules.
     tab = next((t["id"] for t in tabs if t["id"] == rules), None) \
@@ -585,6 +593,9 @@ def device_configuration(
         nat_adding=[t.payload.get("rule", {}) for t in queued if t.type == TaskType.nat_add],
         nat_editing={t.payload.get("fingerprint") for t in queued if t.type == TaskType.nat_edit},
         edit_nat=edit_nat,
+        nat_applied={t.payload.get("fingerprint") for t in applied if t.type in (TaskType.nat_edit, TaskType.nat_remove)},
+        applied_changes=applied,
+        form_error=form_error,
         aliases=[a for a in aliases if not is_system_alias(a)],
         system_aliases=[a for a in aliases if is_system_alias(a)],
         rule_tabs=tabs,
@@ -694,8 +705,11 @@ def _device_page_token(db: Session, device: Device) -> str:
     tasks = db.execute(
         select(Task.id, Task.status).where(Task.device_id == device.id).order_by(Task.id.desc()).limit(30)
     ).all()
+    newest_backup = db.scalar(select(func.max(Backup.id)).where(Backup.device_id == device.id))
+    # The configuration too: after a change the page shows the firewall's new config.xml once it arrives.
     parts = [str(device.agent_version), device.status.value, ",".join(device.capabilities or []),
-             str(device.product_version), ";".join(f"{t.id}:{t.status.value}" for t in tasks)]
+             str(device.product_version), ";".join(f"{t.id}:{t.status.value}" for t in tasks),
+             str(device.config_sha256), str(newest_backup)]
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
 
 
@@ -726,13 +740,15 @@ def _port_forward_from_form(form) -> dict[str, Any]:
     from .config_routes import parse_endpoint
 
     dstport = str(form.get("dstport", "")).strip()
+    # For a range (8000-8100) the internal port is where it starts, as on pfSense's own page.
+    first_port = re.split(r"[:-]", dstport)[0] if re.fullmatch(r"[0-9]+[:-][0-9]+", dstport) else dstport
     rule = {
         "interface": str(form.get("interface", "wan")).strip().lower() or "wan",
         "protocol": str(form.get("protocol", "tcp")),
         "source": parse_endpoint(str(form.get("src", "")), str(form.get("srcport", ""))),
         "destination": parse_endpoint(str(form.get("dst", "")) or "wan address", dstport),
         "target": str(form.get("target", "")).strip(),
-        "local_port": str(form.get("localport", "")).strip() or dstport,
+        "local_port": str(form.get("localport", "")).strip() or first_port,
         "descr": str(form.get("descr", "")).strip()[:200],
     }
     if form.get("disabled") == "true":
@@ -744,16 +760,31 @@ def _port_forward_from_form(form) -> dict[str, Any]:
     return rule
 
 
+def _nat_form_values(form) -> dict[str, Any]:
+    """What was typed into a port forward form, under the names the form fills itself from (nat_fields)."""
+    return {"interface": str(form.get("interface", "")), "protocol": str(form.get("protocol", "")),
+            "src": str(form.get("src", "")), "src_port": str(form.get("srcport", "")),
+            "destination": str(form.get("dst", "")), "port": str(form.get("dstport", "")),
+            "target": str(form.get("target", "")), "local_port": str(form.get("localport", "")),
+            "descr": str(form.get("descr", "")), "disabled": form.get("disabled") == "true"}
+
+
+def _form_error(request: Request, form_id: str, message: str, values: dict[str, Any]) -> None:
+    """Shown next to the form on the next page view, with what was typed (instead of a flash at the top)."""
+    request.session["form_error"] = {"form": form_id, "message": message, "values": values}
+
+
 @router.post("/devices/{device_id}/nat")
 async def device_nat_add(device_id: str, request: Request, settings: Settings = Depends(get_settings),
                          user: User = Depends(operator), db: Session = Depends(get_db)):
     """Add one port forward to this firewall only (Configurations deploys them to many)."""
     device = _get_device(db, device_id)
+    form = await request.form()
     try:
-        rule = _port_forward_from_form(await request.form())
+        rule = _port_forward_from_form(form)
     except PolicyError as exc:
-        flash(request, str(exc), "error")
-        return redirect(f"/devices/{device_id}/configuration#nat")
+        _form_error(request, "nat:add", str(exc), _nat_form_values(form))
+        return redirect(f"/devices/{device_id}/configuration#nat-add")
     return _queue_change(request, db, settings, device, user, TaskType.nat_add, {"rule": rule},
                          f"add port forward {rule['destination']['port']} -> {rule['target']}:{rule['local_port']}", "#nat")
 
@@ -770,7 +801,7 @@ async def device_nat_edit(device_id: str, request: Request, settings: Settings =
     try:
         rule = _port_forward_from_form(form)
     except PolicyError as exc:
-        flash(request, str(exc), "error")
+        _form_error(request, f"nat:{fingerprint}", str(exc), _nat_form_values(form))
         return redirect(f"/devices/{device_id}/configuration?edit_nat={fingerprint}#nat-edit")
     return _queue_change(request, db, settings, device, user, TaskType.nat_edit,
                          {"fingerprint": fingerprint, "rule": rule},
