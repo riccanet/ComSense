@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -119,6 +120,35 @@ def task_progress(task: Task) -> dict[str, Any] | None:
     if not isinstance(progress, dict) or not isinstance(progress.get("percent"), (int, float)):
         return None
     return {"percent": max(0, min(100, int(progress["percent"]))), "step": str(progress.get("step", ""))[:120]}
+
+
+_UNSTABLE = re.compile(r"devel|snapshot|beta|\brc\b|nightly|testing", re.I)
+_VERSION = re.compile(r"(\d+)[._](\d+)(?:[._](\d+))?")
+
+
+def latest_stable_branch(update_branch: Any) -> str | None:
+    """The newest stable update branch a firewall offers (from its check-in's update_branch), by the
+    version in its description or name; development and snapshot branches never. Without versions to
+    compare, the branch pfSense marks as default. None if the firewall reported no branches."""
+    branches = (update_branch or {}).get("branches") if isinstance(update_branch, dict) else None
+    if not isinstance(branches, list):
+        return None
+    best: tuple[tuple[int, ...], str] | None = None
+    for b in branches:
+        if not isinstance(b, dict) or not b.get("name"):
+            continue
+        text = f"{b.get('descr', '')} {b['name']}"
+        if _UNSTABLE.search(text):
+            continue
+        m = _VERSION.search(str(b.get("descr", ""))) or _VERSION.search(str(b["name"]))
+        if m:
+            version = tuple(int(x) for x in m.groups(default="0"))
+            if best is None or version > best[0]:
+                best = (version, str(b["name"]))
+    if best is not None:
+        return best[1]
+    default = next((b for b in branches if isinstance(b, dict) and b.get("default") and b.get("name")), None)
+    return str(default["name"]) if default else None
 
 
 # Upgrades are preceded by a backup of the configuration (pinned when stored, see backups.py).

@@ -10,9 +10,11 @@
       return;
     }
     if (form.hasAttribute("data-confirm-select")) {
-      var sel = form.querySelector("select[name=task_type]");
-      var risky = { reboot: 1, upgrade_system: 1, upgrade_packages: 1 };
-      if (sel && risky[sel.value] && !window.confirm("Run \"" + sel.options[sel.selectedIndex].text + "\" on this firewall?")) {
+      // The select may sit outside the form (form="..."): form.elements finds it either way.
+      var sel = form.elements.namedItem("task_type") || form.querySelector("select[name=task_type]");
+      var risky = { reboot: 1, upgrade_system: 1, upgrade_packages: 1, latest_branch: 1 };
+      var where = form.id === "bulk" ? "the selected firewalls" : "this firewall";
+      if (sel && risky[sel.value] && !window.confirm("Run \"" + sel.options[sel.selectedIndex].text + "\" on " + where + "?")) {
         ev.preventDefault();
       }
     }

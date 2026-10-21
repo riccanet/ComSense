@@ -73,6 +73,7 @@ from ..services.tasks import (
     SAFE_TASKS,
     TASK_CAPABILITY,
     TaskError,
+    latest_stable_branch,
     queue_task,
     task_progress,
     task_title,
@@ -131,6 +132,7 @@ BULK_LABELS = {
     TaskType.backup.value: "Back up configuration now",
     TaskType.check_updates.value: "Check for updates",
     TaskType.update_agent.value: "Update agent",
+    "latest_branch": "Set update branch to latest stable",
 }
 
 
@@ -429,6 +431,8 @@ async def devices_bulk(
     ids = form.getlist("device_ids")
     action = str(form.get("task_type", ""))
     package = None
+    if action == "latest_branch":
+        return _bulk_latest_branch(request, db, user, ids)
     if action == "check_now":
         ttype = TaskType.refresh_inventory
     else:
@@ -463,6 +467,43 @@ async def devices_bulk(
     db.commit()
     label = BULK_LABELS.get(action, action)
     flash(request, f"{label}: queued on {queued} firewall(s); skipped {skipped}.", "success")
+    return redirect("/devices")
+
+
+def _bulk_latest_branch(request: Request, db: Session, user: User, ids: list) -> RedirectResponse:
+    """Switch each selected firewall to the newest stable update branch it offers (its own list)."""
+    settings = request.app.state.settings
+    queued, current, unknown, refused = [], 0, 0, 0
+    for device_id in ids:
+        device = db.get(Device, str(device_id))
+        if device is None:
+            continue
+        info = (device.inventory or {}).get("update_branch")
+        target = latest_stable_branch(info)
+        if target is None:
+            unknown += 1  # no branch list yet (agent before 0.2.10, or not checked in since)
+            continue
+        if isinstance(info, dict) and info.get("current") == target:
+            current += 1
+            continue
+        try:
+            queue_task(db, device, TaskType.update_branch, {"branch": target}, actor=user.username,
+                       changes_enabled=settings.enable_firewall_changes)
+            queued.append(f"{device.name}: {target}")
+        except TaskError:
+            refused += 1
+    audit(db, user.username, "task.bulk", detail=f"latest_branch x{len(queued)}: " + "; ".join(queued)[:900],
+          ip=_ip(request))
+    db.commit()
+    parts = [f"switching {len(queued)} firewall(s)"]
+    if current:
+        parts.append(f"{current} already on it")
+    if unknown:
+        parts.append(f"{unknown} have not reported their branches")
+    if refused:
+        parts.append(f"{refused} refused (the firewall does not allow upgrades, or firewall changes are off)")
+    flash(request, "Set update branch to latest stable: " + "; ".join(parts) + ". Each firewall checks for "
+          "updates on its new branch afterwards.", "success")
     return redirect("/devices")
 
 
