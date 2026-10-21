@@ -18,7 +18,11 @@
 {% set path = request.url.path %}
 <header class="topbar">
   <a class="brand" href="/" aria-label="ComSense Firewall Manager home">{{ brand_lockup(32, "hdr") }}</a>
-  <nav>
+  {# Phones: the menu and account links fold behind this button (static/app.js). #}
+  <button type="button" class="icon-btn menu-toggle" data-menu-toggle aria-expanded="false" aria-controls="topnav">
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>Menu</span>
+  </button>
+  <nav id="topnav">
     {% for href, label, admin_only in [
       ("/", "Dashboard", False), ("/customers", "Customers", False), ("/devices", "Firewalls", False),
       ("/configurations", "Configurations", False), ("/alerts", "Alerts", False),

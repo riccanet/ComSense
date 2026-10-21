@@ -135,7 +135,7 @@ def test_firewalls_list_shows_the_agent_version(client, db, agent, settings):
     agent.post("/api/agent/v1/checkin", json={"agent_version": package["version"]}, headers=auth(new["token"]))
     login(client)
     page = client.get("/devices").text
-    assert "<th>Agent</th>" in page
+    assert ">Agent</th>" in page
     old_row = page[page.index("old-fw"):page.index("</tr>", page.index("old-fw"))]
     new_row = page[page.index("new-fw"):page.index("</tr>", page.index("new-fw"))]
     assert "0.2.7" in old_row and ">update<" in old_row

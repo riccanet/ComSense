@@ -1,6 +1,27 @@
 // Small progressive enhancements. Kept in a static file so the CSP can forbid inline script.
 (function () {
   "use strict";
+  document.documentElement.classList.add("js");
+
+  // Phones: the Menu button opens and closes the navigation (style.css folds it).
+  document.addEventListener("click", function (ev) {
+    var btn = ev.target.closest && ev.target.closest("[data-menu-toggle]");
+    if (!btn) return;
+    var bar = btn.closest(".topbar");
+    var open = bar.classList.toggle("menu-open");
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+
+  // Wide tables scroll sideways inside their own box rather than widening the page (small screens).
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll("main table").forEach(function (table) {
+      if (table.closest(".table-scroll")) return;
+      var box = document.createElement("div");
+      box.className = "table-scroll";
+      table.parentNode.insertBefore(box, table);
+      box.appendChild(table);
+    });
+  });
 
   document.addEventListener("submit", function (ev) {
     var form = ev.target;

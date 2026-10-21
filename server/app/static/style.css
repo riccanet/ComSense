@@ -148,8 +148,11 @@ footer { display: flex; flex-direction: column; align-items: center; gap: .6rem;
 }
 .card.narrow { max-width: 420px; margin: 3rem auto; }
 .card.highlight { border-color: var(--accent); }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 1rem; }
-.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; }
+/* min(..., 100%): one column on screens narrower than a card. */
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(460px, 100%), 1fr)); gap: 1rem; }
+.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 1rem; }
+/* Let a card shrink below its widest table (which then scrolls inside it). */
+.grid2 > *, .grid3 > * { min-width: 0; }
 .heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
@@ -204,7 +207,7 @@ details.inline > summary { list-style: none; }
 details.inline[open] form { margin-top: .5rem; min-width: 260px; }
 .stack { display: flex; flex-direction: column; gap: .6rem; }
 .stack label, .grid-form label { display: flex; flex-direction: column; gap: .25rem; }
-.grid-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .75rem; align-items: end; }
+.grid-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: .75rem; align-items: end; }
 .grid-form .wide { grid-column: 1 / -1; }
 label.check { flex-direction: row !important; align-items: center; gap: .4rem; }
 .toolbar { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin: .75rem 0; }
@@ -391,3 +394,28 @@ progress.task-progress::-moz-progress-bar { background: var(--ok); border-radius
 .pending-banner.flash-bar.success { background: var(--ok-bg); color: var(--ok); border-bottom-color: var(--ok); }
 .pending-banner.flash-bar.error { background: var(--bad-bg); color: var(--bad); border-bottom-color: var(--bad); }
 .pending-banner.flash-bar.warn { background: var(--warn-bg); color: var(--warn); border-bottom-color: var(--warn); }
+
+
+/* ------------------------------------------------------------------ phones and small tablets */
+.menu-toggle { display: none; }
+.show-sm { display: none; }
+@media (max-width: 760px) {
+  main { padding: 1rem .75rem; }
+  h1 { font-size: 1.3rem; }
+  .topbar { padding: .45rem .75rem; gap: .5rem; }
+  .menu-toggle { display: inline-flex; width: auto; gap: .35rem; padding: 0 .65rem; margin-left: auto; color: var(--text); }
+  /* Folded until the Menu button opens it (only with JavaScript, which provides the button). */
+  html.js .topbar:not(.menu-open) nav, html.js .topbar:not(.menu-open) .who { display: none; }
+  .topbar nav { flex-basis: 100%; flex-direction: column; gap: .1rem; }
+  .topbar nav a { padding: .6rem .75rem; }
+  .topbar .who { flex-basis: 100%; flex-wrap: wrap; padding: .35rem .1rem .5rem; border-top: 1px solid var(--line); }
+  .heading { flex-wrap: wrap; align-items: flex-start; }
+  .heading .actions { width: 100%; }
+  .card { padding: .9rem; }
+  .pending-banner { padding: .55rem .75rem; }
+  .hide-sm { display: none; }
+  .show-sm { display: block; }
+  .settings-layout > * { min-width: 0; }
+  .inline-dl dd, .card dd { overflow-wrap: anywhere; }
+  .toolbar input, .toolbar select { max-width: 100%; }
+}

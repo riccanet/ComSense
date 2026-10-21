@@ -30,21 +30,22 @@
     <thead>
       <tr>
         <th><input type="checkbox" data-select-all="device_ids" aria-label="Select all"></th>
-        <th>Name</th><th>Customer</th><th>Status</th><th>Edition / version</th><th>Agent</th>
-        <th>WAN IP</th><th>Last seen</th><th>Alerts</th><th>Updates</th>
+        <th>Name</th><th class="hide-sm">Customer</th><th>Status</th><th class="hide-sm">Edition / version</th><th class="hide-sm">Agent</th>
+        <th>WAN IP</th><th class="hide-sm">Last seen</th><th>Alerts</th><th>Updates</th>
       </tr>
     </thead>
     <tbody>
     {% for d in devices %}
       <tr>
         <td><input type="checkbox" name="device_ids" value="{{ d.id }}"></td>
-        <td><a href="/devices/{{ d.id }}">{{ d.name }}</a><div class="muted small">{{ d.hostname }}</div></td>
-        <td>{% if d.organization %}<a href="/customers/{{ d.organization.id }}">{{ d.organization.name }}</a>{% else %}—{% endif %}</td>
+        <td><a href="/devices/{{ d.id }}">{{ d.name }}</a><div class="muted small">{{ d.hostname }}</div>
+          {% if d.organization %}<div class="small show-sm">{{ d.organization.name }}</div>{% endif %}</td>
+        <td class="hide-sm">{% if d.organization %}<a href="/customers/{{ d.organization.id }}">{{ d.organization.name }}</a>{% else %}—{% endif %}</td>
         <td>{{ status_badge(d.status.value) }}</td>
-        <td>{{ "Plus" if d.edition == "plus" else "CE" if d.edition == "ce" else d.edition }} {{ d.product_version }}{% if d.arch %} <span class="muted small">{{ d.arch|arch }}</span>{% endif %}</td>
-        <td class="nowrap">{{ d.agent_version or "—" }}{% if latest_agent and d.agent_version and d.agent_version|agent_outdated(latest_agent) %} <span class="badge s-pending" title="This server provides {{ latest_agent }}">update</span>{% endif %}</td>
+        <td class="hide-sm">{{ "Plus" if d.edition == "plus" else "CE" if d.edition == "ce" else d.edition }} {{ d.product_version }}{% if d.arch %} <span class="muted small">{{ d.arch|arch }}</span>{% endif %}</td>
+        <td class="nowrap hide-sm">{{ d.agent_version or "—" }}{% if latest_agent and d.agent_version and d.agent_version|agent_outdated(latest_agent) %} <span class="badge s-pending" title="This server provides {{ latest_agent }}">update</span>{% endif %}</td>
         <td class="nowrap">{% for ip in d|wan_ips %}{% if loop.first %}{{ ip }}{% else %}<div class="muted small">{{ ip }}</div>{% endif %}{% endfor %}</td>
-        <td>{{ d.last_seen_at|ago }}</td>
+        <td class="hide-sm">{{ d.last_seen_at|ago }}</td>
         <td>{% if open_alerts.get(d.id) %}<span class="badge sev-warning">{{ open_alerts[d.id] }}</span>{% endif %}</td>
         <td>{% if d.updates.update_available %}<span class="badge s-pending">{{ d.updates.version }}</span>{% endif %}</td>
       </tr>
