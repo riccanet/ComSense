@@ -7,7 +7,7 @@
  */
 
 if (!defined('CSFM_AGENT_VERSION')) {
-	define('CSFM_AGENT_VERSION', '0.2.13');
+	define('CSFM_AGENT_VERSION', '0.2.14');
 }
 if (!defined('CSFM_DB_DIR')) {
 	/* Overridable so the agent can be exercised outside a firewall. */
@@ -41,6 +41,9 @@ function csfm_fix_environment() {
 	if (is_dir('/etc/ssl/certs')) {
 		$defaults['SSL_CERT_DIR'] = '/etc/ssl/certs/';
 	}
+	if (is_file('/etc/ssl/cert.pem')) {
+		$defaults['SSL_CERT_FILE'] = '/etc/ssl/cert.pem';
+	}
 	foreach ($defaults as $name => $value) {
 		if ((string)getenv($name) === '') {
 			putenv("{$name}={$value}");
@@ -48,6 +51,22 @@ function csfm_fix_environment() {
 	}
 }
 csfm_fix_environment();
+
+/*
+ * "/usr/bin/env NAME=value ..." for that environment, put in front of the commands the agent runs, so
+ * they get it even through wrappers that do not pass the agent's own environment on (pfSense's
+ * mwexec, daemon(8), lockf(1)).
+ */
+function csfm_env_prefix() {
+	$parts = array();
+	foreach (array('PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'SSL_CERT_DIR', 'SSL_CERT_FILE') as $name) {
+		$value = (string)getenv($name);
+		if ($value !== '') {
+			$parts[] = escapeshellarg("{$name}={$value}");
+		}
+	}
+	return '/usr/bin/env ' . implode(' ', $parts) . ' ';
+}
 
 /* Actions the firewall owner can allow in the package settings. */
 $csfm_capability_fields = array(
@@ -259,7 +278,7 @@ function csfm_apply_enrollment_code(&$settings, $value) {
 
 /* Run a command with a hard timeout; returns array(exit code, combined output). */
 function csfm_exec($cmd, $timeout = 600) {
-	$full = '/usr/bin/timeout ' . (int)$timeout . ' ' . $cmd . ' 2>&1';
+	$full = csfm_env_prefix() . '/usr/bin/timeout ' . (int)$timeout . ' ' . $cmd . ' 2>&1';
 	$out = array();
 	$rc = 0;
 	exec($full, $out, $rc);

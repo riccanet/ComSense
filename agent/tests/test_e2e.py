@@ -430,7 +430,7 @@ def test_full_lifecycle(env):
     staged = env["fw"] / "db" / "agent-update.pkg"
     assert staged.read_bytes() == (env["dir"] / "data" / "downloads" / package["name"]).read_bytes()
     actions = (env["fw"] / "actions.log").read_text()
-    assert "mwexec: /usr/sbin/daemon -f /bin/sh -c " in actions and "pkg-static add -f " in actions
+    assert "/usr/sbin/daemon -f /bin/sh -c " in actions and "pkg-static add -f " in actions
     assert "checkin-now" in actions  # the restarted agent checks in at once
     agent(env, "run")  # pkg installed the new files: this is the new agent
     with env["db"]() as db:
@@ -676,6 +676,26 @@ def test_full_lifecycle(env):
     agent(env, "disable-recovery")
     assert "shellcmd" not in fw_config(env)["system"] or fw_config(env)["system"]["shellcmd"] == []
     assert (rec / "disabled").exists() and not list(rec.glob("*.pkg"))
+
+    # 11c. An upgrade is preceded by a backup of the configuration, kept (pinned) to roll back to: the
+    #      server queues one ahead of it, and the agent uploads one itself before starting.
+    set_fw_settings(env, allow_upgrade="on")
+    tid = queue(TaskType.upgrade_system, {})
+    agent(env, "run")
+    with env["db"]() as db:
+        tasks = db.scalars(select(Task).where(Task.device_id == creds["device_id"], Task.id >= tid - 1)
+                           .order_by(Task.id)).all()
+        assert [t.type for t in tasks[:2]] == [TaskType.backup, TaskType.upgrade_system]
+        assert tasks[0].payload == {"reason": "pre_upgrade"} and tasks[0].status == TaskStatus.success
+        assert "backed up before the upgrade" in tasks[1].output and tasks[1].status == TaskStatus.running
+        pre = db.scalars(select(Backup).where(Backup.device_id == creds["device_id"], Backup.reason == "pre_upgrade")).all()
+        assert pre and all(b.pinned for b in pre)
+    actions = (env["fw"] / "actions.log").read_text()
+    assert "pfSense-upgrade -y" in actions
+    # The detached upgrade gets root's environment on its command line (pfSense-repoc needs the CA
+    # certificates to reach Netgate), not by inheritance through mwexec and daemon(8).
+    upgrade_line = next(line for line in actions.splitlines() if "pfSense-upgrade -y" in line)
+    assert upgrade_line.startswith("mwexec: /usr/bin/env ") and "'PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin" in upgrade_line
 
     # 12. A disabled device is locked out.
     with env["db"]() as db:

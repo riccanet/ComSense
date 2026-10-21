@@ -112,8 +112,16 @@ has finished. Update checks run `pfSense-upgrade -c` as System > Update does (on
 fetches the Netgate repository credentials before updating the catalogue; exit status 2 means a new
 version, named in its output), with root's login environment: the agent daemon's own lacks
 `/usr/local` in PATH (pfSense-upgrade calls its helpers by name) and `SSL_CERT_DIR`, without which
-pfSense-repoc cannot ask Netgate which versions the firewall may upgrade to. The task output ends
-with pfSense-upgrade's verdict. Port ranges in rules and port forwards are written as
+pfSense-repoc cannot ask Netgate which versions the firewall may upgrade to (`SSL_CERT_FILE` is set
+too). The agent passes this environment explicitly (`/usr/bin/env NAME=value ...`) on every command
+it runs, including the detached upgrade, rather than relying on inheritance. A check whose output
+shows pfSense-repoc failing reports that as an error, since any version it names is stale. The task
+output ends with pfSense-upgrade's verdict.
+
+`upgrade_system` and `upgrade_packages` are preceded by a backup: the server queues a `backup` task
+with `{"reason": "pre_upgrade"}` ahead of them (when the firewall allows backups), and the agent
+uploads config.xml itself before starting (reason `pre_upgrade`) and does not upgrade if that fails.
+Backups with that reason are pinned, so retention never removes them. Port ranges in rules and port forwards are written as
 pfSense stores them (`8000-8100`; `8000:8100` is accepted and converted).
 
 Check-ins also carry `update_branch` (`{"current", "branches": [{"name","descr","default"}]}`, from

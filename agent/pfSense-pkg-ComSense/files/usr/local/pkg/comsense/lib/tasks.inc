@@ -271,18 +271,33 @@ function csfm_task_remove_package($client, $id, $payload) {
 	return array('output' => csfm_truncate($out));
 }
 
+/*
+ * Upload config.xml before an upgrade starts; the server keeps it (pinned) to roll back to. The
+ * server also queues a backup ahead of every upgrade; this covers one queued without it. No backup,
+ * no upgrade.
+ */
+function csfm_backup_before_upgrade($client, $id) {
+	try {
+		$resp = csfm_upload_backup($client, 'pre_upgrade', $id);
+	} catch (Exception $e) {
+		throw new Exception('Upgrade not started: the configuration could not be backed up first (' . $e->getMessage() . ')');
+	}
+	return 'Configuration backed up before the upgrade (#' . ($resp['backup_id'] ?? '?') . ')';
+}
+
 function csfm_task_upgrade_packages($client, $id, $payload) {
 	$outdated = csfm_outdated_packages();
 	if (!$outdated) {
 		return array('output' => 'All packages are up to date');
 	}
+	$backed_up = csfm_backup_before_upgrade($client, $id);
 	$names = array_map(function ($p) { return escapeshellarg($p['name']); }, $outdated);
 	list($rc, $out) = csfm_exec(CSFM_PKG . ' upgrade -y ' . implode(' ', $names), 3000);
 	csfm_schedule_update_check(true);
 	if ($rc !== 0) {
 		throw new Exception("pkg upgrade exited with {$rc}\n" . csfm_truncate($out));
 	}
-	return array('output' => csfm_truncate($out));
+	return array('output' => $backed_up . "\n" . csfm_truncate($out));
 }
 
 function csfm_task_restart_service($client, $id, $payload) {
@@ -312,15 +327,16 @@ function csfm_task_reboot($client, $id, $payload) {
 }
 
 function csfm_task_upgrade_system($client, $id, $payload) {
+	$backed_up = csfm_backup_before_upgrade($client, $id);
 	csfm_state_set('inflight_upgrade', array(
 		'task_id' => $id,
 		'from_version' => csfm_product_version(),
 		'started' => time(),
 	));
-	csfm_report_result($client, $id, 'running', 'Upgrade started; the firewall reboots when it finishes.');
+	csfm_report_result($client, $id, 'running', $backed_up . "\nUpgrade started; the firewall reboots when it finishes.");
 	@unlink(CSFM_UPGRADE_LOG);
 	/* daemon(8) detaches fully, so the upgrade survives the agent cycle ending. */
-	mwexec('/usr/sbin/daemon -f /bin/sh -c ' . escapeshellarg('/usr/local/sbin/pfSense-upgrade -y > ' . CSFM_UPGRADE_LOG . ' 2>&1'));
+	mwexec(csfm_env_prefix() . '/usr/sbin/daemon -f /bin/sh -c ' . escapeshellarg('/usr/local/sbin/pfSense-upgrade -y > ' . CSFM_UPGRADE_LOG . ' 2>&1'));
 	csfm_log("System upgrade started (task {$id})", LOG_WARNING);
 	throw new CsfmTaskDeferred();
 }
@@ -396,7 +412,7 @@ function csfm_task_update_agent($client, $id, $payload) {
 	    . 'touch ' . escapeshellarg(CSFM_DB_DIR . '/checkin-now') . '; '
 	    . "/usr/local/etc/rc.d/comsense.sh restart >> {$log} 2>&1";
 	/* daemon(8) detaches fully: the install survives the agent restart it triggers. */
-	mwexec('/usr/sbin/daemon -f /bin/sh -c ' . escapeshellarg($cmd));
+	mwexec(csfm_env_prefix() . '/usr/sbin/daemon -f /bin/sh -c ' . escapeshellarg($cmd));
 	csfm_log("Agent update to {$version} started (task {$id})", LOG_NOTICE);
 	throw new CsfmTaskDeferred();
 }

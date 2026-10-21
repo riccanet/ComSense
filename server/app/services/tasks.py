@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Device, DeviceStatus, Task, TaskStatus, TaskType, aware, utcnow
+from .backups import PRE_UPGRADE_REASON
 
 # Which locally granted capability each task needs. The agent enforces the same
 # mapping itself; the server checks it only to give admins an early error.
@@ -72,6 +73,10 @@ class TaskError(ValueError):
     pass
 
 
+# Upgrades are preceded by a backup of the configuration (pinned when stored, see backups.py).
+BACKUP_BEFORE = {TaskType.upgrade_system, TaskType.upgrade_packages}
+
+
 def queue_task(
     db: Session,
     device: Device,
@@ -93,6 +98,12 @@ def queue_task(
             f"The firewall does not allow '{needed}' actions. Enable it in "
             "Services > ComSense Agent on the firewall."
         )
+    if ttype in BACKUP_BEFORE and "backup" in (device.capabilities or []) and not _pre_upgrade_backup_queued(db, device):
+        # The configuration as it is before the upgrade, kept (pinned) to roll back to. Queued first,
+        # so the firewall uploads it before it starts upgrading (tasks run in the order queued).
+        db.add(Task(device_id=device.id, type=TaskType.backup, payload={"reason": PRE_UPGRADE_REASON},
+                    created_by=actor, not_after=utcnow() + pickup_window))
+        db.flush()
     task = Task(
         device_id=device.id,
         type=ttype,
@@ -102,6 +113,12 @@ def queue_task(
     )
     db.add(task)
     return task
+
+
+def _pre_upgrade_backup_queued(db: Session, device: Device) -> bool:
+    stmt = select(Task).where(Task.device_id == device.id, Task.type == TaskType.backup,
+                              Task.status == TaskStatus.pending)
+    return any((t.payload or {}).get("reason") == PRE_UPGRADE_REASON for t in db.scalars(stmt))
 
 
 def has_open_task(db: Session, device: Device, ttype: TaskType) -> bool:

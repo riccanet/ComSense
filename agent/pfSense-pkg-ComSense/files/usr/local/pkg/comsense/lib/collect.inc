@@ -319,6 +319,10 @@ function csfm_check_updates($refresh = false) {
 		// Its verdict, e.g. "25.11.1 version of pfSense is available" or "Your system is on the latest version".
 		$lines = array_values(array_filter(array_map('trim', explode("\n", $out)), 'strlen'));
 		$info['upgrade_message'] = csfm_truncate($lines ? end($lines) : '', 300);
+		if (preg_match('/^.*(failed to (fetch|read) the repo data|failed to update the repository settings|certificate verif).*$/mi', $out, $m)) {
+			// pfSense-repoc could not reach Netgate: any version reported comes from stale data.
+			$info['error'] = 'pfSense could not fetch its repository settings from Netgate: ' . trim($m[0]);
+		}
 		if ($rc === 2) {
 			$info['update_available'] = true;
 			$info['version'] = preg_match('/^(\S+) version of \S+ is available/m', $out, $m) ? $m[1] : '';
@@ -372,7 +376,7 @@ function csfm_schedule_update_check($force = false, $refresh = false) {
 		return;
 	}
 	// A refresh must not be skipped because a routine check holds the lock: wait for it (-t 600).
-	mwexec_bg('/usr/bin/lockf -s -t ' . ($refresh ? 600 : 0) . ' /var/run/comsense_updates.lock /usr/bin/timeout 900 '
+	mwexec_bg(csfm_env_prefix() . '/usr/bin/lockf -s -t ' . ($refresh ? 600 : 0) . ' /var/run/comsense_updates.lock /usr/bin/timeout 900 '
 	    . '/usr/local/bin/php -f /usr/local/pkg/comsense/agent.php check-updates' . ($refresh ? ' refresh' : ''));
 }
 

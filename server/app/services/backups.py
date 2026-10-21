@@ -51,6 +51,9 @@ def inspect_config(xml: bytes) -> dict[str, str]:
     return info
 
 
+PRE_UPGRADE_REASON = "pre_upgrade"  # services/tasks.py queues these before upgrades
+
+
 def store_backup(
     db: Session,
     settings: Settings,
@@ -73,6 +76,9 @@ def store_backup(
     device.config_sha256 = digest
     device.last_backup_at = utcnow()
     if existing is not None:
+        if reason == PRE_UPGRADE_REASON:
+            # The configuration did not change since this backup: it is the one from before the upgrade.
+            existing.reason, existing.pinned = reason, True
         return existing, False
 
     cipher = BackupCipher(settings.backup_encryption_key)
@@ -95,6 +101,8 @@ def store_backup(
         config_revision=info["revision"],
         product_version=device.product_version,
         task_id=task_id,
+        # Kept (not pruned) as the configuration to roll back to after an upgrade.
+        pinned=reason == PRE_UPGRADE_REASON,
     )
     db.add(backup)
     return backup, True

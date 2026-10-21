@@ -198,7 +198,7 @@ reach ComSense by then, it restores its previous configuration automatically.</d
     {% for b in backups %}
       <tr>
         <td>{{ b.created_at|dt }}{% if b.pinned %} <span class="badge">pinned</span>{% endif %}</td>
-        <td>{{ b.reason }}</td>
+        <td>{{ {"pre_upgrade": "before upgrade"}.get(b.reason, b.reason) }}</td>
         <td class="small">{{ b.config_revision }}</td>
         <td>{{ b.product_version }}</td>
         <td>{{ b.size|bytes }}</td>
