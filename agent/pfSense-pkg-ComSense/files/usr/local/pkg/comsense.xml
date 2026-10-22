@@ -25,6 +25,10 @@
 	<service>
 		<name>comsense</name>
 		<rcfile>comsense.sh</rcfile>
+		<!-- Required: pfSense Plus 25.x/26.x checks a package service's executable directly when it stops
+		     packages before a reboot, and throws (aborting the reboot) when there is none. The status itself
+		     comes from the command below. -->
+		<executable>comsense-agentd</executable>
 		<description>ComSense Firewall Manager agent</description>
 		<!-- pfSense evals this as-is, without loading comsense.inc (e.g. in the dashboard's Services widget),
 		     so it may only use pfSense core functions. -->
