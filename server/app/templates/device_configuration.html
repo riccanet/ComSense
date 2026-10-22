@@ -319,6 +319,37 @@
   </table>
 </section>
 
+{% set bes = inv.get("boot_environments") or [] %}
+{% if bes %}
+<section class="card" id="boot-environments">
+  <h2>Boot environments</h2>
+  <p class="small muted">ZFS snapshots of the whole system (System &gt; Boot Environments). pfSense keeps one from before
+  each upgrade so the firewall can be booted back into it; old ones use disk space an upgrade may need.
+  The one running now and the one used at the next boot cannot be removed.</p>
+  <table>
+    <thead><tr><th>Name</th><th>State</th><th>Size</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+    {% for b in bes %}
+      <tr{% if b.name in be_removing %} class="muted"{% endif %}>
+        <td class="mono">{{ b.name }}</td>
+        <td>{% if b.active %}<span class="badge s-online">running now</span>{% endif %}
+            {% if b.next_boot %}<span class="badge s-pending">next boot</span>{% endif %}
+            {% if not b.active and not b.next_boot %}<span class="muted">—</span>{% endif %}</td>
+        <td>{{ b.space }}</td>
+        <td class="small">{{ b.created }}</td>
+        <td class="nowrap">{% if b.name in be_removing %}<span class="small muted">removal queued</span>
+          {% elif is_admin and changes_enabled and "upgrade" in (device.capabilities or []) and not b.active and not b.next_boot %}
+          {{ post_button_fields("/devices/" ~ device.id ~ "/boot-environments/remove", "Remove", "small danger",
+              "Remove boot environment " ~ b.name ~ " (" ~ b.space ~ ") from " ~ device.name ~ "? The firewall can no longer be booted back into it.",
+              {"name": b.name}) }}{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if is_admin and "upgrade" not in (device.capabilities or []) %}<p class="small muted">Allow "Upgrades" in Services &gt; ComSense Agent on the firewall to remove boot environments from here.</p>{% endif %}
+</section>
+{% endif %}
+
 <section class="card" id="packages">
   <h2>Packages</h2>
   {% set can_packages = can_operate and changes_enabled and "packages" in (device.capabilities or []) %}

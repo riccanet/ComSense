@@ -80,6 +80,7 @@ no tasks.
 | `check_updates`, `refresh_inventory` | | always |
 | `read_logs` | `{"log", "lines", "search"}`: `log` one of system, firewall, dhcp, resolver, gateways, openvpn, ipsec, auth, ntp, routing | always (read only) |
 | `free_disk_space` | | upgrade |
+| `be_destroy` | `{"name"}`: a boot environment from the reported `boot_environments` | upgrade |
 | `upgrade_system`, `upgrade_packages` | | upgrade |
 | `install_package`, `remove_package` | `{"package"}` | packages |
 | `restart_service` | `{"service"}` | services |
@@ -135,7 +136,9 @@ it, it runs `pkg clean -ay` and checks again, and fails the task without startin
 still not enough. The server refuses to queue them when the last check-in's `metrics.disk_free` (bytes,
 with `disk_total`) is below that less 1 GB (the cache the agent can clear). `free_disk_space` clears pkg's
 download cache and rotated compressed logs in `/var/log`, and lists the boot environments (it never
-removes one). The server raises a critical "upgrade_stalled" alert (System category) when a running
+removes one). Check-ins carry `boot_environments` (from `bectl list -H`: `[{"name", "active", "next_boot",
+"mountpoint", "space", "created"}]`, empty without ZFS); `be_destroy` runs `bectl destroy -o NAME` (the
+snapshot too), refusing the one running now or used at the next boot, and returns the new list. The server raises a critical "upgrade_stalled" alert (System category) when a running
 upgrade's progress has not changed for 20 minutes while the firewall still checks in, and clears it when
 the upgrade moves on or ends.
 

@@ -45,6 +45,7 @@ $csfm_task_capability = array(
 	'ddns_remove' => 'policy',
 	'update_branch' => 'upgrade',
 	'free_disk_space' => 'upgrade',
+	'be_destroy' => 'upgrade',
 	'notifications' => 'policy',
 );
 
@@ -301,8 +302,8 @@ function csfm_require_free_space($needed, $what) {
 		return sprintf('Cleared the package cache first (%s free now)', csfm_bytes($after));
 	}
 	throw new Exception(sprintf('%s not started: only %s free on the firewall, %s needed. Free space first: '
-	    . 'run "Free disk space" from its page, and remove old boot environments (bectl list, then bectl destroy '
-	    . 'NAME, never the active one).', $what, csfm_bytes($after === false ? $free : $after), csfm_bytes($needed)));
+	    . 'run "Free disk space" from its page, and remove old boot environments (its Configuration page, '
+	    . 'Boot environments).', $what, csfm_bytes($after === false ? $free : $after), csfm_bytes($needed)));
 }
 
 /*
@@ -493,15 +494,50 @@ function csfm_task_free_disk_space($client, $id, $payload) {
 	if ($rc !== 0) {
 		$lines[] = 'pkg clean: ' . csfm_truncate(trim($out), 500);
 	}
-	if (is_executable('/sbin/bectl')) {
-		list($brc, $bes) = csfm_exec('/sbin/bectl list', 30);
+	if (is_executable(CSFM_BECTL)) {
+		list($brc, $bes) = csfm_exec(CSFM_BECTL . ' list', 30);
 		if ($brc === 0 && trim($bes) !== '') {
-			$lines[] = "\nBoot environments (remove old ones on the firewall with bectl destroy NAME; never the "
-			    . "one marked N or R):\n" . trim($bes);
+			$lines[] = "\nBoot environments (old ones can be removed from the firewall's Configuration page in "
+			    . "ComSense; never the one marked N or R):\n" . trim($bes);
 		}
 	}
 	return array('output' => implode("\n", $lines),
 	    'result' => array('free_before' => $before === false ? null : (int)$before, 'free_after' => $after === false ? null : (int)$after));
+}
+
+/*
+ * Remove one boot environment and its snapshot (bectl destroy -o) to free space. Never the one running
+ * now or the one the next boot uses: those are checked here, on the firewall, whatever the server sent.
+ */
+function csfm_task_be_destroy($client, $id, $payload) {
+	$name = (string)($payload['name'] ?? '');
+	if (!preg_match('/^[A-Za-z0-9._:+-]{1,128}$/', $name)) {
+		throw new Exception('Invalid boot environment name');
+	}
+	$found = null;
+	foreach (csfm_boot_environments() as $be) {
+		if ($be['name'] === $name) {
+			$found = $be;
+		}
+	}
+	if ($found === null) {
+		throw new Exception("No boot environment '{$name}' on this firewall");
+	}
+	if ($found['active'] || $found['next_boot']) {
+		throw new Exception("'{$name}' is the boot environment " . ($found['active'] ? 'running now' : 'used at the next boot')
+		    . '; it cannot be removed');
+	}
+	$before = @disk_free_space('/');
+	list($rc, $out) = csfm_exec(CSFM_BECTL . ' destroy -o ' . escapeshellarg($name), 600);
+	if ($rc !== 0) {
+		throw new Exception("bectl destroy exited with {$rc}\n" . csfm_truncate(trim($out), 2000));
+	}
+	$after = @disk_free_space('/');
+	$msg = "Removed boot environment {$name} ({$found['space']})";
+	if ($before !== false && $after !== false) {
+		$msg .= sprintf('; free space %s -> %s', csfm_bytes($before), csfm_bytes($after));
+	}
+	return array('output' => $msg, 'result' => array('boot_environments' => csfm_boot_environments()));
 }
 
 /* ------------------------------------------------------------------ logs */

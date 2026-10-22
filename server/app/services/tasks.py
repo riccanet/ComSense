@@ -20,6 +20,7 @@ TASK_CAPABILITY: dict[TaskType, str | None] = {
     TaskType.refresh_inventory: None,
     TaskType.read_logs: None,  # read only
     TaskType.free_disk_space: "upgrade",
+    TaskType.be_destroy: "upgrade",
     TaskType.upgrade_system: "upgrade",
     TaskType.upgrade_packages: "upgrade",
     TaskType.install_package: "packages",
@@ -94,6 +95,7 @@ TASK_TITLES = {
     TaskType.refresh_inventory: "Checking in",
     TaskType.read_logs: "Reading logs",
     TaskType.free_disk_space: "Freeing disk space",
+    TaskType.be_destroy: "Removing a boot environment",
     TaskType.update_agent: "Updating the ComSense agent",
     TaskType.open_terminal: "Opening a terminal",
     TaskType.nat_add: "Adding a port forward",
@@ -173,7 +175,7 @@ def _check_free_space(device: Device, ttype: TaskType) -> None:
     if free + 1024**3 < needed:
         raise TaskError(
             f"Not enough free disk space on the firewall: {_gb(free)} free, {_gb(needed)} needed for this upgrade. "
-            "Run \"Free disk space\" from its page and remove old boot environments first."
+            "Run \"Free disk space\" from its page and remove old boot environments (its Configuration page) first."
         )
 
 

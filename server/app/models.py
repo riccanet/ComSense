@@ -70,6 +70,7 @@ class TaskType(str, enum.Enum):
     refresh_inventory = "refresh_inventory"
     read_logs = "read_logs"
     free_disk_space = "free_disk_space"
+    be_destroy = "be_destroy"  # remove a ZFS boot environment
     update_agent = "update_agent"
     open_terminal = "open_terminal"
     # Single changes from the firewall's page (names fit the existing 16-character column).

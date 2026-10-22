@@ -676,6 +676,26 @@ def test_full_lifecycle(env):
     assert "shellcmd" not in fw_config(env)["system"] or fw_config(env)["system"]["shellcmd"] == []
     assert (rec / "disabled").exists() and not list(rec.glob("*.pkg"))
 
+    # 11b1. Boot environments: reported at every check-in; an old one is removed with its snapshot, the
+    #       running one never.
+    (env["fw"] / "bes.txt").write_text("default\tNR\t/\t3.2G\t2026-10-21 23:30\n"
+                                        "pre-upgrade-24.11\t-\t-\t1.1G\t2026-10-21 23:09\n")
+    set_fw_settings(env, allow_upgrade="on")
+    agent(env, "run")
+    with env["db"]() as db:
+        bes = db.get(Device, creds["device_id"]).inventory["boot_environments"]
+    assert [(b["name"], b["active"], b["next_boot"], b["space"]) for b in bes] == [
+        ("default", True, True, "3.2G"), ("pre-upgrade-24.11", False, False, "1.1G")]
+    tid = queue(TaskType.be_destroy, {"name": "pre-upgrade-24.11"})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.success and "Removed boot environment pre-upgrade-24.11 (1.1G)" in task(tid).output
+    assert "bectl destroy -o pre-upgrade-24.11" in (env["fw"] / "actions.log").read_text()
+    with env["db"]() as db:
+        assert [b["name"] for b in db.get(Device, creds["device_id"]).inventory["boot_environments"]] == ["default"]
+    tid = queue(TaskType.be_destroy, {"name": "default"})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.failed and "running now" in task(tid).output
+
     # 11b2. Disk space: "Free disk space" reports what it freed; an upgrade without enough free space is
     #       refused before anything happens (no backup, no pfSense-upgrade).
     set_fw_settings(env, allow_upgrade="on")

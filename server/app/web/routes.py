@@ -647,6 +647,8 @@ def device_configuration(
         nat_adding=[t.payload.get("rule", {}) for t in queued if t.type == TaskType.nat_add],
         nat_editing={t.payload.get("fingerprint") for t in queued if t.type == TaskType.nat_edit},
         edit_nat=edit_nat,
+        be_removing={t.payload.get("name") for t in db.scalars(select(Task).where(
+            Task.device_id == device.id, Task.status.in_(OPEN_STATES), Task.type == TaskType.be_destroy))},
         nat_applied={t.payload.get("fingerprint") for t in applied if t.type in (TaskType.nat_edit, TaskType.nat_remove)},
         applied_changes=applied,
         form_error=form_error,
@@ -1054,6 +1056,34 @@ def device_update_branch(device_id: str, request: Request, branch: str = Form(..
         return redirect(f"/devices/{device_id}/configuration#update-branch")
     return _queue_change(request, db, settings, device, user, TaskType.update_branch, {"branch": branch},
                          f"switch the update branch to {match.get('descr') or branch}", "#update-branch")
+
+
+@router.post("/devices/{device_id}/boot-environments/remove")
+def device_be_remove(device_id: str, request: Request, name: str = Form(...),
+                     settings: Settings = Depends(get_settings), user: User = Depends(admin),
+                     db: Session = Depends(get_db)):
+    """Remove one ZFS boot environment (and its snapshot) to free space; never the running or next-boot one
+    (checked here from the last check-in, and again on the firewall)."""
+    device = _get_device(db, device_id)
+    back = f"/devices/{device_id}/configuration#boot-environments"
+    listed = (device.inventory or {}).get("boot_environments") or []
+    be = next((b for b in listed if isinstance(b, dict) and b.get("name") == name), None)
+    if be is None or not re.fullmatch(r"[A-Za-z0-9._:+-]{1,128}", name):
+        flash(request, "The firewall did not report that boot environment.", "error")
+        return redirect(back)
+    if be.get("active") or be.get("next_boot"):
+        flash(request, f"{name} is the boot environment the firewall runs or boots next; it cannot be removed.", "error")
+        return redirect(back)
+    try:
+        queue_task(db, device, TaskType.be_destroy, {"name": name}, actor=user.username,
+                   changes_enabled=settings.enable_firewall_changes)
+    except TaskError as exc:
+        flash(request, str(exc), "error")
+        return redirect(back)
+    audit(db, user.username, "task.be_destroy", target=device.id, detail=name, ip=_ip(request))
+    db.commit()
+    flash(request, f"Queued: remove boot environment {name}. The firewall runs it within seconds.", "success")
+    return redirect(back)
 
 
 def _alias_from_form(form) -> dict[str, Any]:

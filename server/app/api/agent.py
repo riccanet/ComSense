@@ -241,7 +241,7 @@ async def checkin(
     inventory = {
         k: data[k]
         for k in ("system", "interfaces", "gateways", "services", "carp", "metrics", "packages", "change_guard", "processes",
-                  "update_branch", "ddns")
+                  "update_branch", "ddns", "boot_environments")
         if k in data
     }
     if inventory:
@@ -417,6 +417,9 @@ async def task_result(
         task.finished_at = utcnow()
     if task.type == TaskType.check_updates and status == TaskStatus.success and isinstance(result, dict):
         device.updates = result
+    if (task.type == TaskType.be_destroy and status == TaskStatus.success and isinstance(result, dict)
+            and isinstance(result.get("boot_environments"), list)):
+        device.inventory = {**(device.inventory or {}), "boot_environments": result["boot_environments"]}
     if task.type in (TaskType.apply_policy, TaskType.remove_policy) and status == TaskStatus.success:
         applied = dict(device.applied_policies or {})
         if task.type == TaskType.apply_policy:

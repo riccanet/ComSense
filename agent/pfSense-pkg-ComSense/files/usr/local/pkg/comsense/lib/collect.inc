@@ -394,6 +394,35 @@ function csfm_update_branches() {
 	return is_array($repos) ? array_values(array_filter($repos, 'is_array')) : array();
 }
 
+if (!defined('CSFM_BECTL')) {
+	define('CSFM_BECTL', '/sbin/bectl');
+}
+
+/*
+ * ZFS boot environments (System > Boot Environments on pfSense Plus): name, whether it is the one running
+ * now (N) or the one the next boot uses (R), space and creation time. Empty without ZFS.
+ */
+function csfm_boot_environments() {
+	if (!is_executable(CSFM_BECTL)) {
+		return array();
+	}
+	$lines = array();
+	exec('/usr/bin/timeout 15 ' . CSFM_BECTL . ' list -H 2>/dev/null', $lines, $rc);
+	if ($rc !== 0) {
+		return array();
+	}
+	$out = array();
+	foreach ($lines as $line) {
+		$f = preg_split('/\t+/', trim($line));
+		if (count($f) < 5 || $f[0] === '') {
+			continue;
+		}
+		$out[] = array('name' => $f[0], 'active' => strpos($f[1], 'N') !== false, 'next_boot' => strpos($f[1], 'R') !== false,
+		    'mountpoint' => $f[2], 'space' => $f[3], 'created' => $f[4]);
+	}
+	return $out;
+}
+
 function csfm_collect_update_branch() {
 	$repos = csfm_update_branches();
 	if (!$repos) {
@@ -486,6 +515,7 @@ function csfm_collect_report() {
 		'processes' => csfm_section('processes', 'csfm_collect_processes'),
 		'update_branch' => csfm_section('update_branch', 'csfm_collect_update_branch'),
 		'ddns' => function_exists('csfm_collect_ddns') ? csfm_section('ddns', 'csfm_collect_ddns') : array(),
+		'boot_environments' => csfm_section('boot_environments', 'csfm_boot_environments'),
 		'config' => array(
 			'sha256' => (string)@hash_file('sha256', csfm_config_file()),
 			'revision' => (string)csfm_cfg_get('revision/description', ''),

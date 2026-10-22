@@ -21,6 +21,18 @@ define('CSFM_CFG_JSON', $dir . '/config.json');
 define('CSFM_ACTIONS_LOG', $dir . '/actions.log');
 define('CSFM_GUARD_DIR', $dir . '/guard');
 define('CSFM_LOG_DIR', $dir . '/logs');
+/* bectl: lists the lines of $dir/bes.txt (name, flags, mountpoint, space, created; tab-separated); destroy
+   removes one and logs it. */
+define('CSFM_BECTL', $dir . '/bectl');
+if (!file_exists(CSFM_BECTL)) {
+	$bes = escapeshellarg($dir . '/bes.txt');
+	$log = escapeshellarg($dir . '/actions.log');
+	file_put_contents(CSFM_BECTL, "#!/bin/sh\n"
+	    . "if [ \"\$1\" = list ]; then [ -f {$bes} ] && cat {$bes}; exit 0; fi\n"
+	    . "if [ \"\$1\" = destroy ]; then echo \"bectl destroy \$2 \$3\" >> {$log}; "
+	    . "grep -v \"^\$3\t\" {$bes} > {$bes}.new; mv {$bes}.new {$bes}; exit 0; fi\nexit 1\n");
+	chmod(CSFM_BECTL, 0755);
+}
 /* A firewall short of space for an upgrade (bytes). */
 if (getenv('CSFM_TEST_UPGRADE_MIN_FREE')) {
 	define('CSFM_UPGRADE_MIN_FREE', (int)getenv('CSFM_TEST_UPGRADE_MIN_FREE'));
