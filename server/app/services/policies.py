@@ -84,6 +84,7 @@ TYPE_LABELS = {
     PolicyType.packages: "Packages",
     PolicyType.config_set: "Config values",
     PolicyType.notifications: "Email notifications",
+    PolicyType.ssh: "SSH access",
 }
 
 
@@ -242,6 +243,30 @@ def _validate_notifications(content: dict[str, Any]) -> None:
              "notifications: content must be {\"smtp\": true or false}")
 
 
+SSH_AUTH = ("password_or_key", "key_only", "password_and_key")
+SSH_KEY_RE = re.compile(r"^(ssh-(ed25519|rsa|dss)|ecdsa-sha2-nistp(256|384|521)|sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com)"
+                        r" [A-Za-z0-9+/]+={0,3}( [^\r\n]{0,200})?$")
+
+
+def _validate_ssh(content: dict[str, Any]) -> None:
+    """SSH (System > Advanced > Admin Access): on/off, port, how to log in, keys for the admin user."""
+    unknown = set(content) - {"enabled", "port", "auth", "agent_forwarding", "admin_keys"}
+    _require(not unknown, f"ssh: unknown keys {sorted(unknown)}")
+    _require(isinstance(content.get("enabled"), bool), "ssh.enabled must be true or false")
+    port = content.get("port", 22)
+    _require(isinstance(port, int) and not isinstance(port, bool) and 1 <= port <= 65535, "ssh.port must be 1 to 65535")
+    _require(content.get("auth", "password_or_key") in SSH_AUTH, f"ssh.auth must be one of {list(SSH_AUTH)}")
+    _require(isinstance(content.get("agent_forwarding", False), bool), "ssh.agent_forwarding must be true or false")
+    keys = _str_list(content.get("admin_keys", []), "ssh.admin_keys")
+    _require(len(keys) <= 20, "ssh.admin_keys allows at most 20 keys")
+    for key in keys:
+        _require(len(key) <= 16000 and bool(SSH_KEY_RE.match(key.strip())),
+                 f"ssh.admin_keys: not an OpenSSH public key: {key[:40]}...")
+    _require(not (content["enabled"] and content.get("auth") == "key_only" and not keys),
+             "ssh: with key-only login, add at least one admin key, or the firewalls cannot be reached over SSH "
+             "unless they already have keys")
+
+
 def _alias_address_ok(value: str) -> bool:
     try:
         ipaddress.ip_network(value, strict=False)
@@ -343,6 +368,7 @@ _VALIDATORS = {
     PolicyType.config_set: _validate_config_set,
     PolicyType.port_forward: _validate_port_forwards,
     PolicyType.notifications: _validate_notifications,
+    PolicyType.ssh: _validate_ssh,
 }
 
 

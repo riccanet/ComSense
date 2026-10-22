@@ -60,6 +60,9 @@ function csfm_apply_policy($policy) {
 		case 'notifications':
 			$record = csfm_apply_notifications($content, $prev);
 			break;
+		case 'ssh':
+			$record = csfm_apply_ssh($pid, $content, $prev);
+			break;
 		default:
 			throw new CsfmPolicyError("Unsupported policy type '{$type}'");
 	}
@@ -95,6 +98,9 @@ function csfm_remove_policy($pid) {
 		case 'config_set':
 		case 'notifications':
 			$summary = csfm_restore_saved_values($prev, "ComSense: removed policy {$pid}");
+			break;
+		case 'ssh':
+			$summary = csfm_remove_ssh($pid, $prev);
 			break;
 		default:
 			/* Packages stay installed; removing the policy only stops enforcing it. */
@@ -133,6 +139,14 @@ function csfm_reload($what) {
 	if (in_array('webgui', $what, true)) {
 		/* Restart the GUI in the background so this request is not cut off. */
 		function_exists('mwexec_bg') && mwexec_bg('/etc/rc.restart_webgui');
+	}
+	if (in_array('sshd', $what, true)) {
+		/* As System > Advanced > Admin Access does after a save; it also stops sshd when SSH is off. */
+		if (function_exists('send_event')) {
+			send_event('service restart sshd');
+		} elseif (function_exists('mwexec_bg')) {
+			mwexec_bg('/etc/sshd');
+		}
 	}
 	if (in_array('filter', $what, true) && function_exists('filter_configure')) {
 		filter_configure();
@@ -834,6 +848,100 @@ function csfm_restore_saved_values($prev, $message) {
 	write_config($message);
 	csfm_reload(array_merge(array('filter', 'dns', 'ntp', 'hostname'), $prev['reload'] ?? array()));
 	return sprintf('Restored %d setting(s) to their previous values', count($prev['saved'] ?? array()));
+}
+
+/* ------------------------------------------------------------------- ssh */
+
+/*
+ * System > Advanced > Admin Access > Secure Shell: on/off, port, login method (pfSense's sshdkeyonly:
+ * absent = password or key, "enabled" = key only, "both" = password and key) and agent forwarding.
+ * Public keys are added to the admin user's authorized keys next to the ones it has; the policy's
+ * record lists those it added, so a change or removal takes away only those.
+ */
+function csfm_apply_ssh($pid, $content, $prev) {
+	if (!is_bool($content['enabled'] ?? null)) {
+		throw new CsfmPolicyError('ssh.enabled must be true or false');
+	}
+	$port = (int)($content['port'] ?? 22);
+	if ($port < 1 || $port > 65535) {
+		throw new CsfmPolicyError('ssh.port must be 1 to 65535');
+	}
+	$auth = (string)($content['auth'] ?? 'password_or_key');
+	$keyonly = array('password_or_key' => null, 'key_only' => 'enabled', 'password_and_key' => 'both');
+	if (!array_key_exists($auth, $keyonly)) {
+		throw new CsfmPolicyError("ssh.auth '{$auth}' is not supported");
+	}
+	$saved = $prev['saved'] ?? array();
+	foreach (array('enable', 'port', 'sshdkeyonly', 'sshdagentforwarding') as $k) {
+		csfm_remember($saved, "system/ssh/{$k}");
+	}
+	$content['enabled'] ? csfm_cfg_set('system/ssh/enable', 'enabled') : csfm_cfg_del('system/ssh/enable');
+	$port === 22 ? csfm_cfg_del('system/ssh/port') : csfm_cfg_set('system/ssh/port', (string)$port);
+	$keyonly[$auth] === null ? csfm_cfg_del('system/ssh/sshdkeyonly') : csfm_cfg_set('system/ssh/sshdkeyonly', $keyonly[$auth]);
+	!empty($content['agent_forwarding']) ? csfm_cfg_set('system/ssh/sshdagentforwarding', 'enabled')
+	    : csfm_cfg_del('system/ssh/sshdagentforwarding');
+
+	$want = array();
+	foreach ((array)($content['admin_keys'] ?? array()) as $key) {
+		$key = trim((string)$key);
+		if (!preg_match('/^(ssh-(ed25519|rsa|dss)|ecdsa-sha2-nistp(256|384|521)|sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com) [A-Za-z0-9+\/]+={0,3}( [^\r\n]*)?$/', $key)) {
+			throw new CsfmPolicyError('ssh.admin_keys: not an OpenSSH public key');
+		}
+		$want[] = $key;
+	}
+	$added = csfm_admin_keys_sync($prev['items'] ?? array(), $want);
+
+	write_config("ComSense: applied SSH policy {$pid}");
+	/* The filter too: the anti-lockout rule follows the SSH port. */
+	csfm_reload(array('sshd', 'filter'));
+	$summary = sprintf('SSH %s%s', $content['enabled'] ? "on, port {$port}" : 'off',
+	    $want ? sprintf('; %d admin key(s) in place', count($want)) : '');
+	return array('items' => $added, 'saved' => $saved, 'summary' => $summary);
+}
+
+function csfm_remove_ssh($pid, $prev) {
+	csfm_admin_keys_sync($prev['items'] ?? array(), array());
+	return csfm_restore_saved_values(array_merge($prev, array('reload' => array('sshd'))),
+	    "ComSense: removed SSH policy {$pid}");
+}
+
+/*
+ * Make the admin user's authorized keys hold $want, taking away the keys in $ours (added by this
+ * policy before) that are no longer wanted; keys someone added by hand are never touched. Returns the
+ * keys this policy now accounts for (the ones it added, not ones that were there already).
+ */
+function csfm_admin_keys_sync($ours, $want) {
+	$users = (array)csfm_cfg_get('system/user', array());
+	foreach ($users as $i => $u) {
+		if (($u['name'] ?? '') !== 'admin') {
+			continue;
+		}
+		$have = array_values(array_filter(array_map('trim',
+		    explode("\n", (string)base64_decode((string)($u['authorizedkeys'] ?? ''))))));
+		$keep = array_values(array_filter($have, function ($k) use ($ours, $want) {
+			return !in_array($k, $ours, true) || in_array($k, $want, true);
+		}));
+		$added = array_values(array_intersect($ours, $want));
+		foreach ($want as $k) {
+			if (!in_array($k, $keep, true)) {
+				$keep[] = $k;
+				$added[] = $k;
+			}
+		}
+		if ($keep !== $have) {
+			if ($keep) {
+				$users[$i]['authorizedkeys'] = base64_encode(implode("\n", $keep));
+			} else {
+				unset($users[$i]['authorizedkeys']);
+			}
+			csfm_cfg_set('system/user', $users);
+		}
+		return array_values(array_unique($added));
+	}
+	if ($want) {
+		throw new CsfmPolicyError('The firewall has no admin user to add SSH keys to');
+	}
+	return array();
 }
 
 function csfm_apply_system($pid, $content, $prev) {

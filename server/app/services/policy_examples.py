@@ -59,6 +59,7 @@ EXAMPLES = {
         ],
     },
     PolicyType.notifications: {"smtp": False},
+    PolicyType.ssh: {"enabled": True, "port": 22, "auth": "password_or_key", "agent_forwarding": False, "admin_keys": []},
     PolicyType.system: {
         "timezone": "America/New_York",
         "timeservers": "0.pool.ntp.org 1.pool.ntp.org",

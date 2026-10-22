@@ -113,6 +113,26 @@
     <p class="small muted">Only switches the notifications on or off; each firewall keeps its own SMTP server and
     addresses. Unassigning puts back what the firewall had before.</p>
   </section>
+  {% elif ptype.value == "ssh" %}
+  <section class="card">
+    <h2>Secure Shell (System &gt; Advanced &gt; Admin Access)</h2>
+    <div class="grid-form">
+      <label>SSH on the assigned firewalls
+        <select name="enabled"><option value="on"{% if content.get("enabled") %} selected{% endif %}>On</option>
+          <option value="off"{% if not content.get("enabled") %} selected{% endif %}>Off</option></select></label>
+      <label>Port <input name="port" type="number" min="1" max="65535" value="{{ content.get("port", 22) }}"></label>
+      <label>Login with
+        <select name="auth">{% for v, n in [("password_or_key", "Password or public key"), ("key_only", "Public key only"),
+            ("password_and_key", "Password and public key (both)")] %}<option value="{{ v }}"{% if content.get("auth", "password_or_key") == v %} selected{% endif %}>{{ n }}</option>{% endfor %}</select></label>
+      <label class="check"><input type="checkbox" name="agent_forwarding" value="on"{% if content.get("agent_forwarding") %} checked{% endif %}> Allow SSH agent forwarding</label>
+      <label class="wide">Public keys for the admin user (optional, one per line)
+        <textarea name="admin_keys" rows="4" class="mono" spellcheck="false" placeholder="ssh-ed25519 AAAAC3Nza... noc@example.com">{{ (content.get("admin_keys") or [])|join("\n") }}</textarea></label>
+    </div>
+    <p class="small muted">Applied to each assigned firewall, which restarts its SSH server. The keys are added to the
+    admin user's authorized keys, next to any it already has. SSH is reachable where the firewall's rules allow it
+    (LAN by default); do not open it on WAN. Unassigning puts back each firewall's previous SSH settings and removes
+    only the keys this configuration added.</p>
+  </section>
   {% else %}
   <section class="card">
     <label>Content (JSON) - see docs/POLICIES.md

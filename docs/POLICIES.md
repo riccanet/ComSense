@@ -107,6 +107,28 @@ Turns pfSense's own email notifications (System > Advanced > Notifications) on o
 `{"smtp": false}`. The firewall's SMTP server and addresses are left alone. Unassigning restores the
 previous setting. A single firewall can also be switched from its page.
 
+## ssh
+
+SSH access, as System > Advanced > Admin Access > Secure Shell sets it. Edited in a form under
+Configurations > SSH.
+
+```json
+{"enabled": true, "port": 22, "auth": "key_only", "agent_forwarding": false,
+ "admin_keys": ["ssh-ed25519 AAAAC3Nza... noc@example.com"]}
+```
+
+* `enabled`: SSH on or off (required).
+* `port`: 1 to 65535, default 22.
+* `auth`: `password_or_key` (default), `key_only` or `password_and_key` (pfSense's "require both").
+  Key-only needs at least one key in `admin_keys`.
+* `agent_forwarding`: allow SSH agent forwarding.
+* `admin_keys`: OpenSSH public keys added to the admin user's authorized keys, next to the keys it already
+  has (at most 20). A later revision or removing the configuration takes away only the keys it added.
+
+The agent restarts sshd and reloads the filter (the anti-lockout rule follows the SSH port). Removing the
+configuration puts back each firewall's previous SSH settings. SSH is reachable where the firewall's rules
+allow it (the LAN by default).
+
 ## system
 
 ```json

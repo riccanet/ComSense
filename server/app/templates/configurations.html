@@ -7,7 +7,7 @@
   {% if can_edit %}
   <div class="actions">
     {% set new_labels = {"aliases": "New alias set", "firewall_rules": "New rule set", "port_forward": "New port forward set",
-                         "system": "New system settings", "notifications": "New notification setting", "packages": "New package list", "config_set": "New config values"} %}
+                         "system": "New system settings", "notifications": "New notification setting", "ssh": "New SSH setting", "packages": "New package list", "config_set": "New config values"} %}
     {% for t in types %}<a class="button{{ ' primary' if loop.first }}" href="/configurations/new?type={{ t.value }}">{{ new_labels[t.value] }}</a>{% endfor %}
   </div>
   {% endif %}
@@ -16,6 +16,7 @@
 {%- if section == "aliases" %}Host, network and port lists shared by firewall rules and port forwards. Created on the firewall under Firewall &gt; Aliases.
 {%- elif section == "rules" %}Pass, block and reject rules, placed at the top or bottom of each interface's rules. Marked [CSFM] on the firewall.
 {%- elif section == "notifications" %}Turns pfSense's own email notifications (System &gt; Advanced &gt; Notifications) on or off on every assigned firewall. A single firewall can also be switched from its page.
+{%- elif section == "ssh" %}SSH access (System &gt; Advanced &gt; Admin Access &gt; Secure Shell) on every assigned firewall: on or off, port, login method and public keys for the admin user. Assign one to all firewalls so each keeps a way in when its web interface does not work.
 {%- elif section == "nat" %}Inbound port forwards (Firewall &gt; NAT &gt; Port Forward), each with a matching pass rule. Marked [CSFM] on the firewall.
 {%- else %}System settings, packages and individual config.xml values, written as JSON (see docs/POLICIES.md).{% endif %}</p>
 <table class="list">
@@ -26,7 +27,8 @@
       <td><a href="/configurations/{{ p.id }}"><strong>{{ p.name }}</strong></a>{% if not p.enabled %} <span class="badge s-disabled">off</span>{% endif %}
         {% if p.description %}<div class="small muted">{{ p.description }}</div>{% endif %}</td>
       {% if types|length > 1 %}<td>{{ type_labels[p.type] }}</td>{% endif %}
-      <td>{{ (p.content.get("aliases") or p.content.get("rules") or p.content.get("items") or [])|length or "" }}</td>
+      <td>{% if p.type.value == "ssh" %}<span class="small">{{ "On" if p.content.get("enabled") else "Off" }}, port {{ p.content.get("port", 22) }}{% if p.content.get("admin_keys") %}, {{ p.content.admin_keys|length }} key(s){% endif %}</span>
+        {%- else %}{{ (p.content.get("aliases") or p.content.get("rules") or p.content.get("items") or [])|length or "" }}{% endif %}</td>
       <td class="small">{% for a in p.assignments %}{% if a.all_devices %}All firewalls{% elif a.group %}Group {{ a.group.name }}{% elif a.organization %}{{ a.organization.name }}{% elif a.device %}{{ a.device.name }}{% endif %}{{ ", " if not loop.last }}{% else %}<span class="muted">not assigned</span>{% endfor %}</td>
       <td>{{ p.revision }}</td>
       <td class="small">{{ p.updated_at|ago }} <span class="muted">{{ p.updated_by }}</span></td>

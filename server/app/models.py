@@ -93,6 +93,7 @@ class PolicyType(str, enum.Enum):
     config_set = "config_set"
     port_forward = "port_forward"  # inbound NAT (fits the existing 14-character column)
     notifications = "notifications"  # pfSense email notifications on/off
+    ssh = "ssh"  # System > Advanced > Admin Access > Secure Shell
 
 
 class User(Base):

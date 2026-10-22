@@ -716,6 +716,46 @@ def test_full_lifecycle(env):
     agent(env, "run")
     assert task(tid).status == TaskStatus.failed and "Unknown log" in task(tid).output
 
+    # 11e. An SSH configuration: on, key-only, a key for the admin user next to the one it has; changed;
+    #      then unassigned, which puts back the firewall's own settings and removes only the policy's key.
+    hand_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHandAddedKeyHandAddedKeyHandAddedKey1 tech@laptop"
+    noc_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINocKeyNocKeyNocKeyNocKeyNocKeyNocKey12 noc@riccanet"
+    new_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINewKeyNewKeyNewKeyNewKeyNewKeyNewKey12 noc2@riccanet"
+    cfg = fw_config(env)
+    cfg["system"]["user"] = [{"name": "admin", "uid": "0", "authorizedkeys": base64.b64encode(hand_key.encode()).decode()}]
+    cfg["system"]["ssh"] = {"port": "2222"}
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
+
+    def admin_keys():
+        user = next(u for u in fw_config(env)["system"]["user"] if u["name"] == "admin")
+        return base64.b64decode(user.get("authorizedkeys", "")).decode().split("\n") if user.get("authorizedkeys") else []
+
+    with env["db"]() as db:
+        ssh = Policy(name="ssh", type=PolicyType.ssh, content={"enabled": True, "port": 22, "auth": "key_only",
+                                                                "agent_forwarding": False, "admin_keys": [noc_key]})
+        db.add(ssh)
+        db.flush()
+        db.add(PolicyAssignment(policy_id=ssh.id, device_id=creds["device_id"]))
+        db.commit()
+        ssh_id = ssh.id
+    agent(env, "run")
+    assert fw_config(env)["system"]["ssh"] == {"enable": "enabled", "sshdkeyonly": "enabled"}
+    assert admin_keys() == [hand_key, noc_key]
+    assert "send_event: service restart sshd" in (env["fw"] / "actions.log").read_text()
+    with env["db"]() as db:
+        p = db.get(Policy, ssh_id)
+        p.content = {**p.content, "admin_keys": [new_key], "auth": "password_or_key"}
+        p.revision += 1
+        db.commit()
+    agent(env, "run")
+    assert fw_config(env)["system"]["ssh"] == {"enable": "enabled"} and admin_keys() == [hand_key, new_key]
+    with env["db"]() as db:
+        for a in db.scalars(select(PolicyAssignment).where(PolicyAssignment.policy_id == ssh_id)):
+            db.delete(a)
+        db.commit()
+    agent(env, "run")
+    assert fw_config(env)["system"]["ssh"] == {"port": "2222"} and admin_keys() == [hand_key]
+
     # 12. A disabled device is locked out.
     with env["db"]() as db:
         from app.models import DeviceStatus

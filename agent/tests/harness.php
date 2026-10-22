@@ -126,6 +126,7 @@ function system_resolvconf_generate() { csfm_test_action('system_resolvconf_gene
 function system_timezone_configure() { csfm_test_action('system_timezone_configure'); }
 function system_ntp_configure() { csfm_test_action('system_ntp_configure'); }
 function mwexec_bg($cmd) { csfm_test_action("mwexec_bg: {$cmd}"); }
+function send_event($cmd) { csfm_test_action("send_event: {$cmd}"); }
 function mwexec($cmd) { csfm_test_action("mwexec: {$cmd}"); return 0; }
 function system_get_uniqueid() { return 'e2e-unique-id'; }
 function system_get_serial() { return 'E2E-SERIAL'; }

@@ -46,11 +46,13 @@ SECTIONS = [
     ("rules", "Firewall rules", (PolicyType.firewall_rules,)),
     ("nat", "NAT (inbound)", (PolicyType.port_forward,)),
     ("notifications", "Notifications", (PolicyType.notifications,)),
+    ("ssh", "SSH", (PolicyType.ssh,)),
     ("groups", "Firewall groups", ()),
     ("advanced", "Advanced", (PolicyType.system, PolicyType.packages, PolicyType.config_set)),
 ]
 SECTION_OF = {t: path for path, _, types in SECTIONS for t in types}
-FORM_TYPES = (PolicyType.aliases, PolicyType.firewall_rules, PolicyType.port_forward, PolicyType.notifications)
+FORM_TYPES = (PolicyType.aliases, PolicyType.firewall_rules, PolicyType.port_forward, PolicyType.notifications,
+              PolicyType.ssh)
 RULE_PROTOCOLS = ("any", "tcp", "udp", "tcp/udp", "icmp")
 NAT_PROTOCOLS = ("tcp", "udp", "tcp/udp")
 
@@ -168,6 +170,15 @@ def content_from_form(ptype: PolicyType, form) -> dict[str, Any]:
 
     if ptype == PolicyType.notifications:
         return {"smtp": form.get("smtp") == "on"}
+
+    if ptype == PolicyType.ssh:
+        try:
+            port = int(str(form.get("port", "22")).strip() or "22")
+        except ValueError:
+            raise PolicyError("SSH port must be a number") from None
+        keys = [k.strip() for k in str(form.get("admin_keys", "")).splitlines() if k.strip()]
+        return {"enabled": form.get("enabled") == "on", "port": port, "auth": str(form.get("auth", "password_or_key")),
+                "agent_forwarding": form.get("agent_forwarding") == "on", "admin_keys": keys}
 
     raw = str(form.get("content", ""))
     try:
@@ -355,7 +366,7 @@ def configuration_new(request: Request, type: str = "aliases", settings: Setting
     ptype = PolicyType(type) if type in PolicyType.__members__ else PolicyType.aliases
     content = {"position": "top", "rules": []} if ptype in (PolicyType.firewall_rules, PolicyType.port_forward) \
         else {"aliases": []} if ptype == PolicyType.aliases else {"smtp": False} if ptype == PolicyType.notifications \
-        else EXAMPLES[ptype]
+        else dict(EXAMPLES[ptype])
     return _editor(request, settings, db, None, ptype, content)
 
 
