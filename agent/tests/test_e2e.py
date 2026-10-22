@@ -676,9 +676,23 @@ def test_full_lifecycle(env):
     assert "shellcmd" not in fw_config(env)["system"] or fw_config(env)["system"]["shellcmd"] == []
     assert (rec / "disabled").exists() and not list(rec.glob("*.pkg"))
 
+    # 11b2. Disk space: "Free disk space" reports what it freed; an upgrade without enough free space is
+    #       refused before anything happens (no backup, no pfSense-upgrade).
+    set_fw_settings(env, allow_upgrade="on")
+    tid = queue(TaskType.free_disk_space, {})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.success and task(tid).output.startswith("Free space: "), task(tid).output
+    with env["db"]() as db:
+        metrics = db.get(Device, creds["device_id"]).inventory["metrics"]
+        assert metrics["disk_free"] > 0 and metrics["disk_total"] >= metrics["disk_free"]
+    tid = queue(TaskType.upgrade_system, {})
+    agent(env, "run", extra_env={"CSFM_TEST_UPGRADE_MIN_FREE": str(10**15)})
+    refused = task(tid)
+    assert refused.status == TaskStatus.failed and "Upgrade not started: only" in refused.output, refused.output
+    assert "pfSense-upgrade -y" not in (env["fw"] / "actions.log").read_text()
+
     # 11c. An upgrade is preceded by a backup of the configuration, kept (pinned) to roll back to: the
     #      server queues one ahead of it, and the agent uploads one itself before starting.
-    set_fw_settings(env, allow_upgrade="on")
     tid = queue(TaskType.upgrade_system, {})
     agent(env, "run")
     with env["db"]() as db:

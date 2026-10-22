@@ -29,6 +29,7 @@ def run_once(settings: Settings) -> None:
                 alert_svc.raise_offline(db, device)
 
         expire_stale_tasks(db, now)
+        alert_svc.check_stalled_upgrades(db, now)
         db.flush()
         try:
             send_alert_notifications(db, settings)

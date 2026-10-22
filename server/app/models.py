@@ -69,6 +69,7 @@ class TaskType(str, enum.Enum):
     reboot = "reboot"
     refresh_inventory = "refresh_inventory"
     read_logs = "read_logs"
+    free_disk_space = "free_disk_space"
     update_agent = "update_agent"
     open_terminal = "open_terminal"
     # Single changes from the firewall's page (names fit the existing 16-character column).

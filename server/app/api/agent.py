@@ -409,6 +409,9 @@ async def task_result(
                         "later versions update themselves.")
     result = data.get("result")
     if isinstance(result, dict):
+        if status == TaskStatus.running and isinstance(result.get("progress"), dict):
+            # When the upgrade last moved on: alerts.check_stalled_upgrades raises an alert when it stops.
+            result["progress_at"] = utcnow().isoformat()
         task.result = result
     if status != TaskStatus.running:
         task.finished_at = utcnow()

@@ -19,6 +19,7 @@ TASK_CAPABILITY: dict[TaskType, str | None] = {
     TaskType.check_updates: None,
     TaskType.refresh_inventory: None,
     TaskType.read_logs: None,  # read only
+    TaskType.free_disk_space: "upgrade",
     TaskType.upgrade_system: "upgrade",
     TaskType.upgrade_packages: "upgrade",
     TaskType.install_package: "packages",
@@ -61,7 +62,9 @@ OPEN_STATES = (TaskStatus.pending, TaskStatus.sent, TaskStatus.running)
 
 # Tasks that only read from or copy off the firewall. Everything else changes it
 # and is available only with CSFM_ENABLE_FIREWALL_CHANGES.
-SAFE_TASKS = frozenset({TaskType.backup, TaskType.check_updates, TaskType.refresh_inventory, TaskType.read_logs})
+# free_disk_space removes only pkg's download cache and rotated logs, never configuration.
+SAFE_TASKS = frozenset({TaskType.backup, TaskType.check_updates, TaskType.refresh_inventory, TaskType.read_logs,
+                        TaskType.free_disk_space})
 # Updating ComSense's own agent does not change the firewall's configuration, so it is not
 # "coming soon"; it still needs the firewall's local upgrade permission.
 AGENT_TASKS = frozenset({TaskType.update_agent})
@@ -90,6 +93,7 @@ TASK_TITLES = {
     TaskType.reboot: "Rebooting",
     TaskType.refresh_inventory: "Checking in",
     TaskType.read_logs: "Reading logs",
+    TaskType.free_disk_space: "Freeing disk space",
     TaskType.update_agent: "Updating the ComSense agent",
     TaskType.open_terminal: "Opening a terminal",
     TaskType.nat_add: "Adding a port forward",
@@ -151,6 +155,28 @@ def latest_stable_branch(update_branch: Any) -> str | None:
     return str(default["name"]) if default else None
 
 
+# Free space an upgrade needs (the agent checks too, authoritatively, right before it starts; see tasks.inc).
+MIN_FREE_SPACE = {TaskType.upgrade_system: 2 * 1024**3, TaskType.upgrade_packages: 512 * 1024**2}
+
+
+def _gb(n: float) -> str:
+    return f"{n / 1024**3:.1f} GB" if n >= 1024**3 else f"{n / 1024**2:.0f} MB"
+
+
+def _check_free_space(device: Device, ttype: TaskType) -> None:
+    """Refuse an upgrade up front when the firewall's last check-in reported too little free space.
+    The agent clears its package cache before giving up, so the cache is allowed for: up to 1 GB."""
+    free = ((device.inventory or {}).get("metrics") or {}).get("disk_free")
+    if not isinstance(free, (int, float)) or isinstance(free, bool):
+        return  # agents before 0.2.17 do not report it; the agent's own check still applies
+    needed = MIN_FREE_SPACE[ttype]
+    if free + 1024**3 < needed:
+        raise TaskError(
+            f"Not enough free disk space on the firewall: {_gb(free)} free, {_gb(needed)} needed for this upgrade. "
+            "Run \"Free disk space\" from its page and remove old boot environments first."
+        )
+
+
 # Upgrades are preceded by a backup of the configuration (pinned when stored, see backups.py).
 BACKUP_BEFORE = {TaskType.upgrade_system, TaskType.upgrade_packages}
 
@@ -176,6 +202,8 @@ def queue_task(
             f"The firewall does not allow '{needed}' actions. Enable it in "
             "Services > ComSense Agent on the firewall."
         )
+    if ttype in MIN_FREE_SPACE:
+        _check_free_space(device, ttype)
     if ttype in BACKUP_BEFORE and "backup" in (device.capabilities or []) and not _pre_upgrade_backup_queued(db, device):
         # The configuration as it is before the upgrade, kept (pinned) to roll back to. Queued first,
         # so the firewall uploads it before it starts upgrading (tasks run in the order queued).

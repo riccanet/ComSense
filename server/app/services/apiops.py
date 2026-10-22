@@ -50,6 +50,7 @@ RUNNABLE = {
     "restart_service": (TaskType.restart_service, "Restart a service (needs service)"),
     "install_package": (TaskType.install_package, "Install a package (needs package)"),
     "remove_package": (TaskType.remove_package, "Remove a package (needs package)"),
+    "free_disk_space": (TaskType.free_disk_space, "Clear the package cache and old logs"),
 }
 
 

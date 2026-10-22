@@ -121,6 +121,8 @@ function csfm_collect_metrics() {
 		'cpu_pct' => csfm_cpu_usage(),
 		'mem_pct' => csfm_memory_usage(),
 		'disk_pct' => ($total > 0) ? round(100 * ($total - $free) / $total, 1) : null,
+		'disk_free' => ($free !== false) ? (int)$free : null,
+		'disk_total' => ($total > 0) ? (int)$total : null,
 		'load' => is_array($load) ? array_map(function ($v) { return round($v, 2); }, $load) : array(),
 		'states' => $states,
 		'states_max' => $states_max,

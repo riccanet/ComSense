@@ -1,22 +1,26 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..audit import audit
-from ..models import Alert, Device, Metric, Task, TaskStatus, TaskType, utcnow
+from ..models import Alert, Device, DeviceStatus, Metric, Task, TaskStatus, TaskType, aware, utcnow
 from .appsettings import AlertCategorySettings, get_alert_category_settings
 
 OFFLINE_KEY = "offline"
 ROLLBACK_PREFIX = "rollback:"
+STALLED_PREFIX = "upgrade_stalled:"
+# An upgrade whose progress has not moved for this long, while the firewall still checks in, is stuck.
+UPGRADE_STALL = timedelta(minutes=20)
 # CPU must be high on this many check-ins in a row (about five minutes), so short spikes do not alert.
 CPU_SAMPLES = 5
 
 # Alert categories (Settings > Alert categories): key -> (name, what raises it).
 CATEGORIES = {
-    "system": ("System alerts", "Configuration changes rolled back on the firewall"),
+    "system": ("System alerts", "Configuration changes rolled back on the firewall; an upgrade that stopped making progress"),
     "wan": ("WAN connectivity", "A gateway is down or has packet loss or high latency"),
     "down": ("Firewall down", "The firewall stopped checking in"),
     "services": ("Services not running", "An enabled service on the firewall is stopped"),
@@ -110,8 +114,8 @@ def evaluate_report(db: Session, device: Device, report: dict[str, Any]) -> None
             alert.severity = severity
             alert.message = message
     for key, alert in existing.items():
-        # Rollback alerts describe an event, not a condition; they stay open until cleared.
-        if key != OFFLINE_KEY and not key.startswith(ROLLBACK_PREFIX) and key not in current:
+        # Rollback and stalled-upgrade alerts are not about the report; they are cleared elsewhere.
+        if key != OFFLINE_KEY and not key.startswith((ROLLBACK_PREFIX, STALLED_PREFIX)) and key not in current:
             alert.resolved_at = now
     offline = existing.get(OFFLINE_KEY)
     if offline is not None:
@@ -179,3 +183,34 @@ def record_rollbacks(db: Session, device: Device, events: Any) -> int:
         audit(db, "system", "device.change_rolled_back", target=device.id, detail=f"{changes}: {reason}")
     device.rolled_back_policies = rolled
     return new
+
+
+def check_stalled_upgrades(db: Session, now: datetime | None = None) -> None:
+    """Alert when a pfSense upgrade stops making progress while the firewall still checks in (a full disk,
+    a download that hangs); clear the alert once it moves again or ends. Called by the scheduler."""
+    now = now or utcnow()
+    alerting = get_alert_category_settings(db).flag("system", "enabled")
+    running = {t.id: t for t in db.scalars(select(Task).where(
+        Task.type == TaskType.upgrade_system, Task.status == TaskStatus.running))}
+    stalled: set[int] = set()
+    for task in running.values():
+        progress = (task.result or {}).get("progress") or {}
+        try:
+            last = datetime.fromisoformat((task.result or {})["progress_at"])
+        except (KeyError, TypeError, ValueError):
+            last = task.sent_at or task.created_at
+        if task.device.status != DeviceStatus.online or now - aware(last) < UPGRADE_STALL:
+            continue  # offline mid-upgrade is a reboot ("Firewall down" covers a long one)
+        stalled.add(task.id)
+        key = f"{STALLED_PREFIX}{task.id}"
+        if not alerting or db.scalar(select(Alert.id).where(Alert.key == key, Alert.resolved_at.is_(None))):
+            continue
+        minutes = int((now - aware(last)).total_seconds() // 60)
+        step = progress.get("step") or "starting"
+        db.add(Alert(device_id=task.device_id, key=key, severity="critical", message=(
+            f"pfSense upgrade has made no progress for {minutes} minutes (last step: {step}). "
+            "A full disk or a stuck download are the usual causes; check the firewall before rebooting it.")))
+    for alert in db.scalars(select(Alert).where(Alert.key.like(f"{STALLED_PREFIX}%"), Alert.resolved_at.is_(None))):
+        task_id = alert.key[len(STALLED_PREFIX):]
+        if not task_id.isdigit() or int(task_id) not in stalled:
+            alert.resolved_at = now

@@ -122,6 +122,7 @@ MANUAL_TASKS = {
     TaskType.upgrade_packages: "Upgrade all packages",
     TaskType.upgrade_system: "Upgrade pfSense (reboots)",
     TaskType.reboot: "Reboot",
+    TaskType.free_disk_space: "Free disk space (package cache, old logs)",
 }
 
 

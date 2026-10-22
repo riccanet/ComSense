@@ -79,6 +79,7 @@ no tasks.
 | `remove_policy` | `{"policy_id"}` | policy |
 | `check_updates`, `refresh_inventory` | | always |
 | `read_logs` | `{"log", "lines", "search"}`: `log` one of system, firewall, dhcp, resolver, gateways, openvpn, ipsec, auth, ntp, routing | always (read only) |
+| `free_disk_space` | | upgrade |
 | `upgrade_system`, `upgrade_packages` | | upgrade |
 | `install_package`, `remove_package` | `{"package"}` | packages |
 | `restart_service` | `{"service"}` | services |
@@ -128,6 +129,15 @@ current file: `result` is `{"log", "lines": [...], "matched", "scanned", "search
 While `upgrade_system` runs the agent reports `running` results with
 `result.progress = {"percent", "step"}` (the step and its `[n/m]` counters read from pfSense-upgrade's
 log) whenever it changes; the firewall's page shows it in a banner.
+
+Before `upgrade_system` (2 GB) and `upgrade_packages` (512 MB) the agent checks free space on `/`; short of
+it, it runs `pkg clean -ay` and checks again, and fails the task without starting anything if there is
+still not enough. The server refuses to queue them when the last check-in's `metrics.disk_free` (bytes,
+with `disk_total`) is below that less 1 GB (the cache the agent can clear). `free_disk_space` clears pkg's
+download cache and rotated compressed logs in `/var/log`, and lists the boot environments (it never
+removes one). The server raises a critical "upgrade_stalled" alert (System category) when a running
+upgrade's progress has not changed for 20 minutes while the firewall still checks in, and clears it when
+the upgrade moves on or ends.
 
 `upgrade_system` and `upgrade_packages` are preceded by a backup: the server queues a `backup` task
 with `{"reason": "pre_upgrade"}` ahead of them (when the firewall allows backups), and the agent

@@ -44,6 +44,7 @@ $csfm_task_capability = array(
 	'ddns_edit' => 'policy',
 	'ddns_remove' => 'policy',
 	'update_branch' => 'upgrade',
+	'free_disk_space' => 'upgrade',
 	'notifications' => 'policy',
 );
 
@@ -274,6 +275,37 @@ function csfm_task_remove_package($client, $id, $payload) {
 }
 
 /*
+ * Free space an upgrade needs on the root filesystem: pfSense's own upgrade downloads the new release and
+ * (on ZFS) keeps a snapshot of the old system while it replaces it; a disk that fills up halfway leaves
+ * the firewall half-upgraded. Short of it, the package download cache is cleared first.
+ */
+if (!defined('CSFM_UPGRADE_MIN_FREE')) {
+	define('CSFM_UPGRADE_MIN_FREE', 2 * 1024 * 1024 * 1024);
+}
+if (!defined('CSFM_PACKAGES_MIN_FREE')) {
+	define('CSFM_PACKAGES_MIN_FREE', 512 * 1024 * 1024);
+}
+
+function csfm_bytes($n) {
+	return $n >= 1073741824 ? sprintf('%.1f GB', $n / 1073741824) : sprintf('%d MB', $n / 1048576);
+}
+
+function csfm_require_free_space($needed, $what) {
+	$free = @disk_free_space('/');
+	if ($free === false || $free >= $needed) {
+		return '';
+	}
+	csfm_exec(CSFM_PKG . ' clean -ay', 300);
+	$after = @disk_free_space('/');
+	if ($after !== false && $after >= $needed) {
+		return sprintf('Cleared the package cache first (%s free now)', csfm_bytes($after));
+	}
+	throw new Exception(sprintf('%s not started: only %s free on the firewall, %s needed. Free space first: '
+	    . 'run "Free disk space" from its page, and remove old boot environments (bectl list, then bectl destroy '
+	    . 'NAME, never the active one).', $what, csfm_bytes($after === false ? $free : $after), csfm_bytes($needed)));
+}
+
+/*
  * Upload config.xml before an upgrade starts; the server keeps it (pinned) to roll back to. The
  * server also queues a backup ahead of every upgrade; this covers one queued without it. No backup,
  * no upgrade.
@@ -292,7 +324,8 @@ function csfm_task_upgrade_packages($client, $id, $payload) {
 	if (!$outdated) {
 		return array('output' => 'All packages are up to date');
 	}
-	$backed_up = csfm_backup_before_upgrade($client, $id);
+	$space = csfm_require_free_space(CSFM_PACKAGES_MIN_FREE, 'Package upgrade');
+	$backed_up = trim($space . "\n" . csfm_backup_before_upgrade($client, $id));
 	$names = array_map(function ($p) { return escapeshellarg($p['name']); }, $outdated);
 	list($rc, $out) = csfm_exec(CSFM_PKG . ' upgrade -y ' . implode(' ', $names), 3000);
 	csfm_schedule_update_check(true);
@@ -329,7 +362,8 @@ function csfm_task_reboot($client, $id, $payload) {
 }
 
 function csfm_task_upgrade_system($client, $id, $payload) {
-	$backed_up = csfm_backup_before_upgrade($client, $id);
+	$space = csfm_require_free_space(CSFM_UPGRADE_MIN_FREE, 'Upgrade');
+	$backed_up = trim($space . "\n" . csfm_backup_before_upgrade($client, $id));
 	csfm_state_set('inflight_upgrade', array(
 		'task_id' => $id,
 		'from_version' => csfm_product_version(),
@@ -435,6 +469,39 @@ function csfm_finish_inflight_upgrade($client) {
 	csfm_save_state($state);
 	csfm_forget_updates();
 	csfm_schedule_update_check(true);
+}
+
+/* ------------------------------------------------------------ disk space */
+
+/*
+ * Free space without touching anything the firewall runs on: pkg's download cache and rotated, compressed
+ * logs. Boot environments (ZFS) are only listed: which one to remove is the operator's call.
+ */
+function csfm_task_free_disk_space($client, $id, $payload) {
+	$before = @disk_free_space('/');
+	list($rc, $out) = csfm_exec(CSFM_PKG . ' clean -ay', 300);
+	$removed = 0;
+	foreach (array_merge((array)glob('/var/log/*.bz2'), (array)glob('/var/log/*.gz'), (array)glob('/var/log/*/*.bz2'),
+	    (array)glob('/var/log/*/*.gz')) as $f) {
+		if (is_file($f) && @unlink($f)) {
+			$removed++;
+		}
+	}
+	$after = @disk_free_space('/');
+	$lines = array(sprintf('Free space: %s -> %s (package cache cleared; %d rotated log file(s) removed)',
+	    $before === false ? '?' : csfm_bytes($before), $after === false ? '?' : csfm_bytes($after), $removed));
+	if ($rc !== 0) {
+		$lines[] = 'pkg clean: ' . csfm_truncate(trim($out), 500);
+	}
+	if (is_executable('/sbin/bectl')) {
+		list($brc, $bes) = csfm_exec('/sbin/bectl list', 30);
+		if ($brc === 0 && trim($bes) !== '') {
+			$lines[] = "\nBoot environments (remove old ones on the firewall with bectl destroy NAME; never the "
+			    . "one marked N or R):\n" . trim($bes);
+		}
+	}
+	return array('output' => implode("\n", $lines),
+	    'result' => array('free_before' => $before === false ? null : (int)$before, 'free_after' => $after === false ? null : (int)$after));
 }
 
 /* ------------------------------------------------------------------ logs */
