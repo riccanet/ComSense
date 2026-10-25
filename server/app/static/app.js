@@ -30,7 +30,8 @@
       ev.preventDefault();
       return;
     }
-    if (form.hasAttribute("data-confirm-select")) {
+    var submitter = ev.submitter;
+    if (form.hasAttribute("data-confirm-select") && !(submitter && submitter.hasAttribute("data-no-confirm"))) {
       // The select may sit outside the form (form="..."): form.elements finds it either way.
       var sel = form.elements.namedItem("task_type") || form.querySelector("select[name=task_type]");
       var risky = { reboot: 1, upgrade_system: 1, upgrade_packages: 1, latest_branch: 1 };

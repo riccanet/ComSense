@@ -90,7 +90,7 @@ def test_bulk_check_now_and_update(client, db, agent):
     assert "queued on 2 firewall(s)" in page
     page = client.post("/devices/bulk", data={"device_ids": ids, "task_type": "update_agent",
                                                    "csrf_token": csrf_from(page)}).text
-    assert "queued on 1 firewall(s); skipped 1" in page
+    assert "queued on 1 firewall(s); 1 already up to date" in page
     assert len(_tasks(db, a["device_id"], TaskType.update_agent)) == 1
     assert all(t.status == TaskStatus.pending for t in _tasks(db, b["device_id"], TaskType.refresh_inventory))
 

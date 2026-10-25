@@ -1,4 +1,4 @@
-"""Periodic housekeeping: offline detection, task timeouts, scheduled backups, retention."""
+"""Periodic housekeeping: offline detection, task timeouts, scheduled jobs and backups, retention."""
 from __future__ import annotations
 
 import asyncio
@@ -12,6 +12,7 @@ from .db import session_factory
 from .models import Device, DeviceStatus, Metric, Task, TaskStatus, TaskType, aware, utcnow
 from .services import alerts as alert_svc
 from .services.notifications import send_alert_notifications
+from .services.schedules import run_due_jobs
 from .services.tasks import TaskError, expire_stale_tasks, has_open_task, queue_task
 
 log = logging.getLogger("comsense.scheduler")
@@ -29,6 +30,7 @@ def run_once(settings: Settings) -> None:
                 alert_svc.raise_offline(db, device)
 
         expire_stale_tasks(db, now)
+        run_due_jobs(db, settings, now)
         alert_svc.check_stalled_upgrades(db, now)
         db.flush()
         try:

@@ -28,6 +28,7 @@ from .web import (
     apikey_routes,
     config_routes,
     customer_routes,
+    schedule_routes,
     mfa_routes,
     setup_routes,
     sso_routes,
@@ -163,6 +164,7 @@ def create_web_app(settings: Settings) -> FastAPI:
     app.include_router(config_routes.router)
     app.include_router(customer_routes.router)
     app.include_router(mfa_routes.router)
+    app.include_router(schedule_routes.router)
     app.include_router(setup_routes.router)
     app.include_router(sso_routes.router)
     app.include_router(sso_routes.public)

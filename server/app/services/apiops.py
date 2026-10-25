@@ -295,11 +295,11 @@ def run_task(db: Session, settings: Settings, who: Principal, firewall_id: str, 
         payload["service"] = service.strip()
     try:
         if task == "check_now":
-            from ..web.routes import _check_now  # noqa: PLC0415 - shared with the console
+            from .bulk import check_now as _check_now  # noqa: PLC0415 - shared with the console
 
             queued = _check_now(db, device, who.actor)
         elif task == "update_agent":
-            from ..web.routes import _update_agent  # noqa: PLC0415
+            from .bulk import update_agent as _update_agent  # noqa: PLC0415
 
             downloads: Path = settings.data_dir / "downloads"
             latest = latest_package(downloads)

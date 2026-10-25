@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, status_badge with context %}
+{% block title %}{{ "Edit scheduled job" if job else "Schedule a job" }}{% endblock %}
+{% block content %}
+<p class="small"><a href="/schedules">Schedules</a> /</p>
+<h1>{{ "Edit scheduled job" if job else "Schedule a job" }}</h1>
+{% if error %}<p class="flash error">{{ error }}</p>{% endif %}
+
+<form method="post" action="{{ '/schedules/' ~ job.id if job else '/schedules' }}">
+  {{ csrf() }}
+  <section class="card">
+    <h2>What and when</h2>
+    <div class="grid-form">
+      <label>Task
+        <select name="action" required>
+          <option value="">Choose…</option>
+          {% for value, label in actions.items() %}<option value="{{ value }}"{% if values.action == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Starts ({{ tz_name }})
+        <input type="datetime-local" name="run_at" value="{{ values.run_at }}" required>
+      </label>
+      <label>Repeats
+        <select name="repeat">
+          {% for value, label in repeats.items() %}<option value="{{ value }}"{% if values.repeat == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Window
+        <select name="window">
+          {% for value, label in windows.items() %}<option value="{{ value }}"{% if values.window|string == value|string %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="wide">Name <input name="name" value="{{ values.name }}" maxlength="128" placeholder="e.g. Sunday night agent updates"></label>
+    </div>
+    <p class="small muted">Upgrades are queued only on firewalls whose last update check found one, and each is preceded by a
+    configuration backup. A firewall that is offline at the start gets its task if it comes back within the window; after that
+    the task expires, so nothing upgrades in the middle of the working day. Upgrading pfSense reboots the firewall.</p>
+  </section>
+
+  <section class="card">
+    <h2>Firewalls</h2>
+    <label class="check"><input type="checkbox" name="all_devices" value="1"{% if values.all_devices %} checked{% endif %}>
+      <strong>All firewalls</strong> <span class="muted small">at the time it runs, including ones added later</span></label>
+    <p class="small muted">Or choose them (ignored when All firewalls is ticked):</p>
+    <table class="list">
+      <thead><tr><th><input type="checkbox" data-select-all="device_ids" aria-label="Select all"></th><th>Name</th>
+        <th class="hide-sm">Customer</th><th>Status</th><th class="hide-sm">Version</th><th class="hide-sm">Agent</th><th>Updates</th></tr></thead>
+      <tbody>
+      {% for d in devices %}
+        <tr>
+          <td><input type="checkbox" name="device_ids" value="{{ d.id }}"{% if d.id in values.device_ids %} checked{% endif %}></td>
+          <td>{{ d.name }}<div class="muted small">{{ d.hostname }}</div></td>
+          <td class="hide-sm">{{ d.organization.name if d.organization else "—" }}</td>
+          <td>{{ status_badge(d.status.value) }}</td>
+          <td class="hide-sm">{{ d.product_version }}</td>
+          <td class="hide-sm">{{ d.agent_version or "—" }}</td>
+          <td>{% if d.updates.update_available %}<span class="badge s-pending">{{ d.updates.version }}</span>{% endif %}
+            {% if d.updates.packages %}<span class="muted small">{{ d.updates.packages|length }} package(s)</span>{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="muted">No firewalls yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <p><button class="primary">{{ "Save" if job else "Schedule" }}</button> <a class="button" href="/schedules">Cancel</a></p>
+</form>
+{% endblock %}

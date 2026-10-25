@@ -10,7 +10,8 @@
     <select id="bulk-task" name="task_type" form="bulk">
       {% for value, label in bulk_tasks.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
     </select>
-    <button class="primary" form="bulk">Queue</button>
+    <button class="primary" form="bulk">Run now</button>
+    <button form="bulk" formaction="/schedules/new" data-no-confirm>Schedule…</button>
   </div>
   {% endif %}
 </div>

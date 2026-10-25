@@ -52,9 +52,10 @@ from ..security import (
     verify_password,
 )
 from ..enrollment import make_code
-from ..services.agentpkg import agent_outdated, latest_package, package_for
+from ..services.agentpkg import agent_outdated, latest_package
 from ..services.alerts import CATEGORIES, category_filter, category_of
 from ..services.appsettings import agent_tls_names, effective_agent_url, format_dt, get_email_settings, setup_pending
+from ..services.bulk import BULK_ACTIONS, available_actions, check_now, run_bulk, target_devices, update_agent
 from ..services.backups import BackupError, delete_backup_file, load_backup
 from ..services.logview import LINE_CHOICES, LOGS, parse_filter_line, parse_line
 from ..services.configview import config_summary, current_backup, is_system_alias, redact
@@ -73,7 +74,6 @@ from ..services.tasks import (
     SAFE_TASKS,
     TASK_CAPABILITY,
     TaskError,
-    latest_stable_branch,
     queue_task,
     task_progress,
     task_title,
@@ -123,17 +123,6 @@ MANUAL_TASKS = {
     TaskType.upgrade_system: "Upgrade pfSense (reboots)",
     TaskType.reboot: "Reboot",
     TaskType.free_disk_space: "Free disk space (package cache, old logs)",
-}
-
-
-# Actions for selected firewalls on the Firewalls page ("check_now" is a refresh that wakes them).
-BULK_TASKS = (TaskType.backup, TaskType.check_updates, TaskType.update_agent)
-BULK_LABELS = {
-    "check_now": "Check now",
-    TaskType.backup.value: "Back up configuration now",
-    TaskType.check_updates.value: "Check for updates",
-    TaskType.update_agent.value: "Update agent",
-    "latest_branch": "Set update branch to latest stable",
 }
 
 
@@ -420,7 +409,7 @@ def devices(
         q=q,
         open_alerts=open_alerts,
         latest_agent=_latest_agent_version(request),
-        bulk_tasks=BULK_LABELS,
+        bulk_tasks=available_actions(request.app.state.settings),
     )
 
 
@@ -429,82 +418,20 @@ async def devices_bulk(
     request: Request, user: User = Depends(operator), db: Session = Depends(get_db)
 ):
     form = await request.form()
-    ids = form.getlist("device_ids")
+    ids = [str(i) for i in form.getlist("device_ids")]
     action = str(form.get("task_type", ""))
-    package = None
-    if action == "latest_branch":
-        return _bulk_latest_branch(request, db, user, ids)
-    if action == "check_now":
-        ttype = TaskType.refresh_inventory
-    else:
-        try:
-            ttype = TaskType(action)
-        except ValueError as exc:
-            raise HTTPException(400, "Unknown task type") from exc
-        if ttype not in BULK_TASKS:
-            raise HTTPException(400, "That task cannot be run in bulk")
-        if ttype == TaskType.update_agent:
-            package = latest_package(request.app.state.settings.data_dir / "downloads")
-            if package is None:
-                flash(request, "No agent package is available on this server.", "error")
-                return redirect("/devices")
-    queued, skipped = 0, 0
-    for device_id in ids:
-        device = db.get(Device, str(device_id))
-        if device is None:
-            continue
-        try:
-            if action == "check_now":
-                _check_now(db, device, user.username)
-            elif package is not None:
-                _update_agent(db, device, user.username, package,
-                              request.app.state.settings.data_dir / "downloads")
-            else:
-                queue_task(db, device, ttype, actor=user.username)
-            queued += 1
-        except TaskError:
-            skipped += 1
-    audit(db, user.username, "task.bulk", detail=f"{action} x{queued}", ip=_ip(request))
+    label = BULK_ACTIONS.get(action, action)
+    try:
+        result = run_bulk(db, request.app.state.settings, action, target_devices(db, ids), user.username)
+    except TaskError as exc:
+        flash(request, f"{label}: {exc}.", "error")
+        return redirect("/devices")
+    summary = result.summary(label)
+    audit(db, user.username, "task.bulk", detail=f"{action}: {summary}"[:1000], ip=_ip(request))
     db.commit()
-    label = BULK_LABELS.get(action, action)
-    flash(request, f"{label}: queued on {queued} firewall(s); skipped {skipped}.", "success")
-    return redirect("/devices")
-
-
-def _bulk_latest_branch(request: Request, db: Session, user: User, ids: list) -> RedirectResponse:
-    """Switch each selected firewall to the newest stable update branch it offers (its own list)."""
-    settings = request.app.state.settings
-    queued, current, unknown, refused = [], 0, 0, 0
-    for device_id in ids:
-        device = db.get(Device, str(device_id))
-        if device is None:
-            continue
-        info = (device.inventory or {}).get("update_branch")
-        target = latest_stable_branch(info)
-        if target is None:
-            unknown += 1  # no branch list yet (agent before 0.2.10, or not checked in since)
-            continue
-        if isinstance(info, dict) and info.get("current") == target:
-            current += 1
-            continue
-        try:
-            queue_task(db, device, TaskType.update_branch, {"branch": target}, actor=user.username,
-                       changes_enabled=settings.enable_firewall_changes)
-            queued.append(f"{device.name}: {target}")
-        except TaskError:
-            refused += 1
-    audit(db, user.username, "task.bulk", detail=f"latest_branch x{len(queued)}: " + "; ".join(queued)[:900],
-          ip=_ip(request))
-    db.commit()
-    parts = [f"switching {len(queued)} firewall(s)"]
-    if current:
-        parts.append(f"{current} already on it")
-    if unknown:
-        parts.append(f"{unknown} have not reported their branches")
-    if refused:
-        parts.append(f"{refused} refused (the firewall does not allow upgrades, or firewall changes are off)")
-    flash(request, "Set update branch to latest stable: " + "; ".join(parts) + ". Each firewall checks for "
-          "updates on its new branch afterwards.", "success")
+    if action == "latest_branch" and result.queued:
+        summary += " Each firewall checks for updates on its new branch afterwards."
+    flash(request, summary, "success")
     return redirect("/devices")
 
 
@@ -735,23 +662,9 @@ def _latest_agent_version(request: Request) -> str:
     return package["version"] if package else ""
 
 
-def _check_now(db: Session, device: Device, actor: str) -> Task:
-    """Queue a full refresh; a firewall waiting on the agent API (long poll) picks it up at once."""
-    existing = db.scalar(
-        select(Task).where(
-            Task.device_id == device.id, Task.type == TaskType.refresh_inventory, Task.status == TaskStatus.pending
-        )
-    )
-    return existing or queue_task(db, device, TaskType.refresh_inventory, actor=actor)
-
-
-def _update_agent(db: Session, device: Device, actor: str, package: dict[str, str], downloads: Path) -> Task:
-    if not agent_outdated(device.agent_version, package["version"]):
-        raise TaskError(f"Agent {device.agent_version or '?'} is already current")
-    # Agents up to 0.2.9 cannot replace themselves; they get the bootstrap package (services/agentpkg.py).
-    package = package_for(downloads, package, device.agent_version)
-    payload = {"version": package["version"], "file": package["name"], "sha256": package["sha256"]}
-    return queue_task(db, device, TaskType.update_agent, payload, actor=actor)
+# Shared with the API (services/apiops.py) and scheduled jobs.
+_check_now = check_now
+_update_agent = update_agent
 
 
 def _active_tasks(db: Session, device: Device) -> list[Task]:

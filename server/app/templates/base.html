@@ -25,7 +25,7 @@
   <nav id="topnav">
     {% for href, label, admin_only in [
       ("/", "Dashboard", False), ("/customers", "Customers", False), ("/devices", "Firewalls", False),
-      ("/configurations", "Configurations", False), ("/alerts", "Alerts", False),
+      ("/configurations", "Configurations", False), ("/schedules", "Schedules", False), ("/alerts", "Alerts", False),
       ("/audit", "Audit log", True)] %}
       {% if not admin_only or user.role == Role.admin %}
       <a href="{{ href }}"{% if path == href or (href != "/" and path.startswith(href)) %} class="active" aria-current="page"{% endif %}>{{ label }}</a>

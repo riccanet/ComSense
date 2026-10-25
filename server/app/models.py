@@ -493,6 +493,34 @@ class AuditLog(Base):
     ip: Mapped[str] = mapped_column(String(64), default="")
 
 
+class JobStatus(str, enum.Enum):
+    scheduled = "scheduled"  # waiting for run_at
+    done = "done"  # ran (or was missed) and does not repeat
+    cancelled = "cancelled"
+
+
+class ScheduledJob(Base):
+    """A bulk action (services/bulk.py) queued on a set of firewalls at a set time, once or repeating.
+    The scheduler queues the tasks at run_at; each firewall must pick its task up within the window."""
+
+    __tablename__ = "scheduled_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), default="")
+    action: Mapped[str] = mapped_column(String(32))
+    # Firewall ids, or None for every firewall at the time the job runs (including ones added later).
+    device_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    repeat: Mapped[str] = mapped_column(String(16), default="", server_default="")  # "", "daily", "weekly"
+    window_minutes: Mapped[int] = mapped_column(Integer, default=240, server_default="240")
+    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus, native_enum=False), default=JobStatus.scheduled)
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # BulkResult.as_dict() of the last run: {queued, skipped, refused, summary}.
+    last_result: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=dict)
+
+
 def aware(dt: datetime) -> datetime:
     # SQLite drops tzinfo; treat naive values as UTC.
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)

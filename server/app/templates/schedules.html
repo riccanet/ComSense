@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% from "macros.html" import post_button with context %}
+{% block title %}Schedules{% endblock %}
+{% block content %}
+{% set can_operate = user.role.value in ("operator", "admin") %}
+<div class="heading">
+  <h1>Schedules</h1>
+  {% if can_operate %}<a class="button primary" href="/schedules/new">Schedule a job</a>{% endif %}
+</div>
+<p class="muted">Run updates, backups and other tasks on many firewalls at a set time, once or every day or week.
+You can also select firewalls on the <a href="/devices">Firewalls</a> page and choose <em>Schedule…</em>.</p>
+
+{% macro targets(job) -%}
+{% if job.device_ids is none %}All firewalls{% else %}
+<span title="{% for i in job.device_ids %}{{ names.get(i, 'removed') }}{% if not loop.last %}, {% endif %}{% endfor %}">{{ job.device_ids|length }} firewall(s)</span>
+{% endif %}
+{%- endmacro %}
+
+<section class="card">
+  <h2>Upcoming</h2>
+  <table class="list">
+    <thead><tr><th>Name</th><th>Task</th><th>Firewalls</th><th>Next run</th><th class="hide-sm">Repeats</th>
+      <th class="hide-sm">Window</th><th class="hide-sm">Last run</th>{% if can_operate %}<th></th>{% endif %}</tr></thead>
+    <tbody>
+    {% for j in upcoming %}
+      <tr>
+        <td>{% if can_operate %}<a href="/schedules/{{ j.id }}">{{ j.name }}</a>{% else %}{{ j.name }}{% endif %}
+          <div class="muted small">by {{ j.created_by }}</div></td>
+        <td>{{ actions.get(j.action, j.action) }}</td>
+        <td>{{ targets(j) }}</td>
+        <td class="nowrap">{{ j.run_at|dt }}</td>
+        <td class="hide-sm">{{ repeats.get(j.repeat, j.repeat) }}</td>
+        <td class="hide-sm">{{ windows.get(j.window_minutes, j.window_minutes ~ " min") }}</td>
+        <td class="hide-sm small">{% if j.last_run_at %}{{ j.last_run_at|ago }}<div class="muted">{{ j.last_result.summary }}</div>{% else %}—{% endif %}</td>
+        {% if can_operate %}<td class="nowrap">
+          {{ post_button("/schedules/" ~ j.id ~ "/run", "Run now", "small", "Run \"" ~ j.name ~ "\" now? Its schedule stays as it is.") }}
+          {{ post_button("/schedules/" ~ j.id ~ "/cancel", "Cancel", "small", "Cancel \"" ~ j.name ~ "\"?") }}
+        </td>{% endif %}
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="muted">Nothing scheduled.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if past %}
+<section class="card">
+  <h2>Finished and cancelled</h2>
+  <table class="list">
+    <thead><tr><th>Name</th><th>Task</th><th>Firewalls</th><th>Status</th><th>Ran</th><th>Result</th>{% if can_operate %}<th></th>{% endif %}</tr></thead>
+    <tbody>
+    {% for j in past %}
+      <tr>
+        <td>{% if can_operate %}<a href="/schedules/{{ j.id }}">{{ j.name }}</a>{% else %}{{ j.name }}{% endif %}</td>
+        <td>{{ actions.get(j.action, j.action) }}</td>
+        <td>{{ targets(j) }}</td>
+        <td>{{ j.status.value }}</td>
+        <td class="nowrap">{{ j.last_run_at|dt if j.last_run_at else "—" }}</td>
+        <td class="small">{{ (j.last_result or {}).summary or "—" }}
+          {% if j.last_result and j.last_result.queued %}<div class="muted">Queued on: {{ j.last_result.queued|join(", ") }}</div>{% endif %}</td>
+        {% if can_operate %}<td>{{ post_button("/schedules/" ~ j.id ~ "/delete", "Remove", "small", "Remove \"" ~ j.name ~ "\" from this list?") }}</td>{% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}
