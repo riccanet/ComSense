@@ -36,6 +36,17 @@ def test_upgrades_need_free_disk_space(client, db, agent):
     assert "Free disk space (package cache, old logs)" in page
 
 
+
+def test_wrapped_disk_figures_from_32_bit_agents_are_ignored(client, db, agent):
+    """Agents before 0.2.20 on 32-bit ARM wrapped disk sizes past 2 GB (an SG-3100 reported 0.06 GB free
+    and a negative total); the server leaves the decision to the agent's own check."""
+    login(client)
+    creds = enroll(agent, make_key(db), capabilities=ALL_CAPS, system={"hostname": "sg3100", "unique_id": "arm"})
+    agent.post("/api/agent/v1/checkin", json={"metrics": {"disk_pct": 40.8, "disk_free": 64 * 1024**2,
+                                                          "disk_total": -1221005312}}, headers=auth(creds["token"]))
+    queue_task(db, db.get(Device, creds["device_id"]), TaskType.upgrade_system, actor="t", changes_enabled=True)
+
+
 @pytest.mark.changes
 def test_stalled_upgrades_raise_an_alert_until_they_move_or_end(client, db, agent):
     creds, device = _firewall(agent, db, 5 * GB)

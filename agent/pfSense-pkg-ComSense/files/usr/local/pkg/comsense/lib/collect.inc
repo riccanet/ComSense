@@ -28,6 +28,17 @@ function csfm_num($value) {
 	return is_numeric($value) ? $value + 0 : 0;
 }
 
+/*
+ * A byte count from disk_free_space()/disk_total_space() (a float) for the report. (int) wraps it
+ * around on 32-bit ARM once a disk passes 2 GB (an SG-3100 reported 0.06 GB free and a negative size).
+ */
+function csfm_byte_count($value) {
+	if ($value === false || $value === null) {
+		return null;
+	}
+	return $value <= PHP_INT_MAX ? (int)$value : floor($value);
+}
+
 function csfm_product_version() {
 	$v = @file_get_contents('/etc/version');
 	return $v === false ? '' : trim($v);
@@ -121,8 +132,8 @@ function csfm_collect_metrics() {
 		'cpu_pct' => csfm_cpu_usage(),
 		'mem_pct' => csfm_memory_usage(),
 		'disk_pct' => ($total > 0) ? round(100 * ($total - $free) / $total, 1) : null,
-		'disk_free' => ($free !== false) ? (int)$free : null,
-		'disk_total' => ($total > 0) ? (int)$total : null,
+		'disk_free' => csfm_byte_count($free),
+		'disk_total' => ($total > 0) ? csfm_byte_count($total) : null,
 		'load' => is_array($load) ? array_map(function ($v) { return round($v, 2); }, $load) : array(),
 		'states' => $states,
 		'states_max' => $states_max,

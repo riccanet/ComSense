@@ -502,7 +502,7 @@ function csfm_task_free_disk_space($client, $id, $payload) {
 		}
 	}
 	return array('output' => implode("\n", $lines),
-	    'result' => array('free_before' => $before === false ? null : (int)$before, 'free_after' => $after === false ? null : (int)$after));
+	    'result' => array('free_before' => csfm_byte_count($before), 'free_after' => csfm_byte_count($after)));
 }
 
 /*

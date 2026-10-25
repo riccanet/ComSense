@@ -168,9 +168,13 @@ def _gb(n: float) -> str:
 def _check_free_space(device: Device, ttype: TaskType) -> None:
     """Refuse an upgrade up front when the firewall's last check-in reported too little free space.
     The agent clears its package cache before giving up, so the cache is allowed for: up to 1 GB."""
-    free = ((device.inventory or {}).get("metrics") or {}).get("disk_free")
+    metrics = (device.inventory or {}).get("metrics") or {}
+    free = metrics.get("disk_free")
     if not isinstance(free, (int, float)) or isinstance(free, bool):
         return  # agents before 0.2.17 do not report it; the agent's own check still applies
+    total = metrics.get("disk_total")
+    if isinstance(total, (int, float)) and total < 0:
+        return  # wrapped around by a 32-bit agent before 0.2.20, so free is wrong too; the agent's check applies
     needed = MIN_FREE_SPACE[ttype]
     if free + 1024**3 < needed:
         raise TaskError(
