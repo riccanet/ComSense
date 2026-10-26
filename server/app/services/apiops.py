@@ -6,6 +6,7 @@ Everything returns plain JSON-able data; problems raise ApiError with an HTTP st
 """
 from __future__ import annotations
 
+import re
 import secrets
 from dataclasses import dataclass
 from datetime import timedelta
@@ -51,7 +52,9 @@ RUNNABLE = {
     "install_package": (TaskType.install_package, "Install a package (needs package)"),
     "remove_package": (TaskType.remove_package, "Remove a package (needs package)"),
     "free_disk_space": (TaskType.free_disk_space, "Clear the package cache and old logs"),
+    "remove_boot_environment": (TaskType.be_destroy, "Remove an old ZFS boot environment (needs boot_environment; admin)"),
 }
+BE_NAME = re.compile(r"[A-Za-z0-9._:+-]{1,128}")
 
 
 class ApiError(Exception):
@@ -199,6 +202,7 @@ def get_firewall(db: Session, settings: Settings, firewall_id: str) -> dict[str,
         services=inv.get("services") or [],
         packages=inv.get("packages") or [],
         pfsense_updates=device.updates or {},
+        boot_environments=inv.get("boot_environments") or [],
     )
     return detail
 
@@ -273,7 +277,7 @@ def list_configurations(db: Session) -> list[dict[str, Any]]:
 
 
 def run_task(db: Session, settings: Settings, who: Principal, firewall_id: str, task: str,
-             package: str = "", service: str = "", ip: str = "") -> dict[str, Any]:
+             package: str = "", service: str = "", ip: str = "", boot_environment: str = "") -> dict[str, Any]:
     """Queue a task on a firewall, with the same checks as the console (firewall permissions, the
     firewall-changes switch)."""
     who.require(Role.operator)
@@ -293,6 +297,18 @@ def run_task(db: Session, settings: Settings, who: Principal, firewall_id: str, 
         if not service.strip():
             raise ApiError(400, "service is required")
         payload["service"] = service.strip()
+    elif ttype == TaskType.be_destroy:
+        # As on the firewall's Configuration page: admins only, and never the running or next-boot one
+        # (the agent checks that again on the firewall).
+        who.require(Role.admin)
+        name = boot_environment.strip()
+        listed = (device.inventory or {}).get("boot_environments") or []
+        be = next((b for b in listed if isinstance(b, dict) and b.get("name") == name), None)
+        if be is None or not BE_NAME.fullmatch(name):
+            raise ApiError(400, "The firewall did not report that boot environment (see get_firewall)")
+        if be.get("active") or be.get("next_boot"):
+            raise ApiError(400, f"{name} is the boot environment the firewall runs or boots next")
+        payload["name"] = name
     try:
         if task == "check_now":
             from .bulk import check_now as _check_now  # noqa: PLC0415 - shared with the console

@@ -44,6 +44,8 @@ class RunTask(BaseModel):
     task: str = Field(description="One of: " + ", ".join(sorted(apiops.RUNNABLE)))
     package: str = Field("", description="For install_package / remove_package: pfSense-pkg-...")
     service: str = Field("", description="For restart_service: the service name")
+    boot_environment: str = Field("", description="For remove_boot_environment: its name, from the firewall's "
+                                                  "boot_environments")
 
 
 class SetCustomer(BaseModel):
@@ -86,7 +88,8 @@ def create_rest_app(settings: Settings) -> FastAPI:
     @app.post("/firewalls/{firewall_id}/tasks", status_code=201, summary="Queue a task (operator)")
     def firewall_run_task(firewall_id: str, request: Request, body: RunTask, who: Principal = Depends(principal),
                           db: Session = Depends(get_db)) -> dict[str, Any]:
-        return apiops.run_task(db, settings, who, firewall_id, body.task, body.package, body.service, _ip(request))
+        return apiops.run_task(db, settings, who, firewall_id, body.task, body.package, body.service, _ip(request),
+                               body.boot_environment)
 
     @app.put("/firewalls/{firewall_id}/customer", summary="Assign a firewall to a customer (operator)")
     def firewall_customer(firewall_id: str, request: Request, body: SetCustomer = Body(...),

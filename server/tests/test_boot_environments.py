@@ -57,3 +57,29 @@ def test_only_admins_remove_boot_environments(client, db, agent):
     r = client.post(f"/devices/{creds['device_id']}/boot-environments/remove",
                     data={"name": "pre-upgrade-24.11", "csrf_token": csrf})
     assert r.status_code == 403
+
+
+@pytest.mark.changes
+def test_api_lists_and_removes_old_boot_environments_with_an_admin_key(client, db, agent):
+    from app.models import Role as R
+    from app.services import apiops
+
+    did = _firewall(agent, db)["device_id"]
+    keys = {}
+    for role in (R.operator, R.admin):
+        keys[role] = {"Authorization": f"Bearer {apiops.create_key(db, role.value, role, 'admin', None)[1]}"}
+    db.commit()
+    detail = client.get(f"/api/v1/firewalls/{did}", headers=keys[R.operator]).json()
+    assert [b["name"] for b in detail["boot_environments"]] == ["default", "pre-upgrade-24.11"]
+
+    def remove(name, role=R.admin):
+        return client.post(f"/api/v1/firewalls/{did}/tasks", headers=keys[role],
+                           json={"task": "remove_boot_environment", "boot_environment": name})
+
+    assert remove("pre-upgrade-24.11", R.operator).status_code == 403
+    assert "runs or boots next" in remove("default").json()["detail"]
+    assert remove("nope").status_code == 400
+    r = remove("pre-upgrade-24.11")
+    assert r.status_code == 201 and r.json()["type"] == "be_destroy"
+    task = db.scalar(select(Task).where(Task.type == TaskType.be_destroy))
+    assert task.payload == {"name": "pre-upgrade-24.11"}

@@ -45,7 +45,9 @@ while.
 
 Tasks: `check_now`, `backup`, `check_updates`, `update_agent`, `upgrade_packages`, `upgrade_system`
 (reboots), `reboot`, `restart_service` (with `service`), `install_package` and `remove_package` (with
-`package`, `pfSense-pkg-...`). A task is queued and runs on the firewall within seconds to minutes;
+`package`, `pfSense-pkg-...`), `free_disk_space` (package cache and old logs), and
+`remove_boot_environment` (with `boot_environment`, a name from the firewall's `boot_environments`; admin
+keys only; never the running or next-boot one). A task is queued and runs on the firewall within seconds to minutes;
 follow it with `GET /tasks/{id}`.
 
 ```sh

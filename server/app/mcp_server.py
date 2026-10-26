@@ -117,13 +117,17 @@ def build_server(settings: Settings) -> MCPServer:
         return await _call(apiops.get_task, task_id)
 
     @server.tool(annotations=RISKY)
-    async def run_task(firewall_id: str, task: str, package: str = "", service: str = "") -> dict[str, Any]:
+    async def run_task(firewall_id: str, task: str, package: str = "", service: str = "",
+                       boot_environment: str = "") -> dict[str, Any]:
         """Queue a task on a firewall (needs an operator or admin key). task is one of: check_now, backup,
         check_updates, update_agent, upgrade_packages, upgrade_system (reboots), reboot, restart_service
-        (with service), install_package / remove_package (with package, pfSense-pkg-...). Reboots and
+        (with service), install_package / remove_package (with package, pfSense-pkg-...), free_disk_space
+        (package cache and old logs), remove_boot_environment (with boot_environment, a name from
+        get_firewall's boot_environments; admin key; never the active or next-boot one). Reboots and
         upgrades interrupt the customer's network: confirm with the user first. Follow up with get_task."""
         who = _who()
-        return await _call(apiops.run_task, settings, who, firewall_id, task, package, service, _client_ip.get())
+        return await _call(apiops.run_task, settings, who, firewall_id, task, package, service, _client_ip.get(),
+                           boot_environment)
 
     @server.tool(annotations=READ)
     async def list_backups(firewall_id: str) -> list[dict[str, Any]]:
