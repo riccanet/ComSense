@@ -50,6 +50,9 @@ define('CSFM_UPGRADE_LOG', $dir . '/upgrade.log');
 define('CSFM_PFSENSE_UPGRADE_LOG', $dir . '/pf-upgrade.log');
 /* Network interfaces that exist on the "firewall": one per line in $dir/ifaces.txt. */
 function does_interface_exist($if) {
+	if (preg_match('/^vtnet\d+$/', $if)) {
+		return true;  /* the test firewall's own NICs */
+	}
 	$list = @file(getenv('CSFM_TEST_DIR') . '/ifaces.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: array();
 	return in_array($if, $list, true);
 }
@@ -118,8 +121,20 @@ function csfm_test_render_xml() {
 		}
 		$pkgs = "\t<installedpackages><comsense><config>{$fields}</config></comsense></installedpackages>\n";
 	}
+	/* Interface assignments as real XML too (a restore checks them; tasks.inc). */
+	$ifs = '';
+	foreach ((array)($config['interfaces'] ?? array()) as $key => $iface) {
+		$fields = '';
+		foreach ((array)$iface as $k => $v) {
+			if (is_scalar($v) && preg_match('/^[a-z_]+$/', $k)) {
+				$fields .= "<{$k}>" . htmlspecialchars((string)$v) . "</{$k}>";
+			}
+		}
+		$ifs .= "<{$key}>{$fields}</{$key}>";
+	}
+	$ifs = $ifs === '' ? '' : "\t<interfaces>{$ifs}</interfaces>\n";
 	return "<?xml version=\"1.0\"?>\n<pfsense>\n\t<version>23.3</version>\n"
-	    . "\t<revision><description>{$desc}</description></revision>\n" . $pkgs
+	    . "\t<revision><description>{$desc}</description></revision>\n" . $ifs . $pkgs
 	    . "\t<!-- " . base64_encode(json_encode($config)) . " -->\n</pfsense>\n";
 }
 

@@ -950,6 +950,88 @@ function csfm_keep_local_settings($xml) {
 	return $restored->saveXML();
 }
 
+/* A config.xml element as pfSense's config array: text for leaves, arrays for children (repeated tags as lists). */
+function csfm_dom_to_array($el) {
+	$out = array();
+	$hasChildren = false;
+	foreach ($el->childNodes as $child) {
+		if ($child->nodeType !== XML_ELEMENT_NODE) {
+			continue;
+		}
+		$hasChildren = true;
+		$value = csfm_dom_to_array($child);
+		if (array_key_exists($child->nodeName, $out)) {
+			if (!is_array($out[$child->nodeName]) || !array_key_exists(0, $out[$child->nodeName])) {
+				$out[$child->nodeName] = array($out[$child->nodeName]);
+			}
+			$out[$child->nodeName][] = $value;
+		} else {
+			$out[$child->nodeName] = $value;
+		}
+	}
+	return $hasChildren ? $out : $el->textContent;
+}
+
+/*
+ * Interfaces the restored configuration assigns must exist, or its first boot stops at the console's interface
+ * mismatch prompt. Package interfaces (NetBird's wt0, ...) that do not exist now are left unassigned and assigned
+ * again once they exist (as after an upgrade); a missing physical port refuses the restore. Interfaces pfSense
+ * creates from the configuration at boot (VLANs, LAGG, bridges, tunnels, PPP, ...) are not checked.
+ * Returns [xml, "DESCR (if)" unassigned].
+ */
+function csfm_restore_check_interfaces($xml) {
+	if (!class_exists('DOMDocument')) {
+		return array($xml, array());
+	}
+	$doc = new DOMDocument();
+	if (!@$doc->loadXML($xml, LIBXML_NONET)) {
+		return array($xml, array());
+	}
+	$ifaces = (new DOMXPath($doc))->query('/pfsense/interfaces')->item(0);
+	if ($ifaces === null) {
+		return array($xml, array());
+	}
+	$virtual = '/(\.|^(vlan|lagg|bridge|gif|gre|ovpn|ppp|pppoe|pptp|l2tp|tun|tap|ipsec|enc|lo|qinq|_vip|_lloop|wg|tun_wg)|_wlan|_stf$)/';
+	$detached = array();
+	$names = array();
+	$missing = array();
+	foreach (iterator_to_array($ifaces->childNodes) as $node) {
+		if ($node->nodeType !== XML_ELEMENT_NODE) {
+			continue;
+		}
+		$if = '';
+		foreach ($node->childNodes as $c) {
+			if ($c->nodeType === XML_ELEMENT_NODE && $c->nodeName === 'if') {
+				$if = trim($c->textContent);
+			}
+		}
+		if ($if === '' || csfm_interface_exists($if)) {
+			continue;
+		}
+		$key = $node->nodeName;
+		$entry = csfm_dom_to_array($node);
+		$descr = is_array($entry) && !empty($entry['descr']) ? $entry['descr'] : strtoupper($key);
+		if ($key !== 'wan' && $key !== 'lan' && preg_match(CSFM_PACKAGE_IF_RE, $if)) {
+			$detached[$key] = is_array($entry) ? $entry : array('if' => $if);
+			$names[] = "{$descr} ({$if})";
+			$ifaces->removeChild($node);
+		} elseif (!preg_match($virtual, $if)) {
+			$missing[] = "{$descr} ({$if})";
+		}
+	}
+	if ($missing) {
+		throw new Exception('Not restored: the backup assigns ' . implode(', ', $missing) . ', which this firewall does '
+		    . "not have, so it would stop at the console's interface mismatch prompt after the reboot. Restore a backup "
+		    . 'made on this hardware, or fix the assignments in the backup first.');
+	}
+	if ($detached) {
+		$state = csfm_state();
+		$state['detached_interfaces'] = array_merge($state['detached_interfaces'] ?? array(), $detached);
+		csfm_save_state($state);
+	}
+	return array($detached ? $doc->saveXML() : $xml, $names);
+}
+
 function csfm_task_restore_backup($client, $id, $payload) {
 	$backupId = (int)($payload['backup_id'] ?? 0);
 	list($gz, $headers) = $client->download("/backups/{$backupId}");
@@ -973,6 +1055,7 @@ function csfm_task_restore_backup($client, $id, $payload) {
 		    . 'disconnect the firewall from ComSense, so it was not restored.');
 	}
 	$xml = csfm_keep_local_settings($xml);
+	list($xml, $unassigned) = csfm_restore_check_interfaces($xml);
 	$tmp = CSFM_DB_DIR . '/restore-config.xml';
 	file_put_contents($tmp, $xml);
 	chmod($tmp, 0600);
@@ -999,7 +1082,9 @@ function csfm_task_restore_backup($client, $id, $payload) {
 	}
 	csfm_save_state($state);
 
-	csfm_report_result($client, $id, 'success', "Restored backup #{$backupId} ({$digest}); rebooting");
+	$note = $unassigned ? "\nLeft unassigned until the interface exists again (its package is not installed; "
+	    . 'ComSense assigns it again, with its settings, once it does): ' . implode(', ', $unassigned) : '';
+	csfm_report_result($client, $id, 'success', "Restored backup #{$backupId} ({$digest}); rebooting{$note}");
 	csfm_log("Configuration restored from backup {$backupId}; rebooting", LOG_WARNING);
 	mwexec_bg('/etc/rc.reboot');
 	throw new CsfmTaskDeferred();

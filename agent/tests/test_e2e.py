@@ -356,26 +356,59 @@ def test_full_lifecycle(env):
         reboot = db.get(Task, reboot_id)
         assert reboot.status == TaskStatus.failed and "not allowed" in reboot.output
 
-    # 7. Restore a stored backup. It keeps the firewall's current ComSense settings, not the backup's.
+    # 7. Restore a stored backup. It keeps the firewall's current ComSense settings, not the backup's. The
+    #    backup assigns NetBird's wt0, which does not exist now (package removed): left unassigned, so the boot
+    #    does not stop at the interface mismatch prompt, and assigned again once wt0 exists.
+    def restore_latest():
+        with env["db"]() as db:
+            device = db.get(Device, creds["device_id"])
+            backup = db.scalar(select(Backup).where(Backup.device_id == device.id).order_by(Backup.id.desc()))
+            task = queue_task(db, device, TaskType.restore_backup, {"backup_id": backup.id}, actor="e2e",
+                              changes_enabled=True)
+            db.commit()
+            return task.id
+
+    cfg = fw_config(env)
+    cfg["interfaces"] = {"wan": {"if": "vtnet0", "descr": "WAN"}, "lan": {"if": "vtnet1", "descr": "LAN"},
+                         "opt4": {"if": "wt0", "descr": "NETBIRD", "enable": ""}}
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
+    agent(env, "run")  # uploads the changed configuration as a backup
     cfg = fw_config(env)
     cfg["installedpackages"]["comsense"]["config"][0]["restore_marker"] = "current-permissions"
     (env["fw"] / "config.json").write_text(json.dumps(cfg))
-    with env["db"]() as db:
-        device = db.get(Device, creds["device_id"])
-        backup = db.scalar(select(Backup).where(Backup.device_id == device.id).order_by(Backup.id.desc()))
-        restore = queue_task(db, device, TaskType.restore_backup, {"backup_id": backup.id}, actor="e2e", changes_enabled=True)
-        db.commit()
-        restore_id = restore.id
+    restore_id = restore_latest()
     agent(env, "run")
     with env["db"]() as db:
         restore = db.get(Task, restore_id)
         assert restore.status == TaskStatus.success, restore.output
+        assert "Left unassigned until the interface exists again" in restore.output and "NETBIRD (wt0)" in restore.output
+    restored_xml = (env["fw"] / "conf" / "config.xml").read_text()
+    assert "<wt0>" not in restored_xml and "<if>wt0</if>" not in restored_xml and "<if>vtnet1</if>" in restored_xml
+    state_file = env["fw"] / "db" / "state.json"
+    state = json.loads(state_file.read_text())
+    assert state["detached_interfaces"]["opt4"]["if"] == "wt0"
+    del state["detached_interfaces"]
+    state_file.write_text(json.dumps(state))
     assert "mwexec_bg: /etc/rc.reboot" in (env["fw"] / "actions.log").read_text()
     # After the reboot the restore is on probation; the watchdog reboots back if contact is lost.
     guard = json.loads((guard_dir / "guard.json").read_text())
     assert guard["mode"] == "reboot" and guard["tasks"][0]["id"] == restore_id
     restored = (env["fw"] / "conf" / "config.xml").read_text()
     assert "<pfsense>" in restored and "<restore_marker>current-permissions</restore_marker>" in restored
+    # A backup assigning a port this firewall does not have is refused: it would stop at the prompt.
+    cfg = fw_config(env)
+    cfg["interfaces"]["opt5"] = {"if": "ix9", "descr": "OTHERBOX"}
+    del cfg["interfaces"]["opt4"]
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
+    agent(env, "run")
+    refused_id = restore_latest()
+    agent(env, "run")
+    with env["db"]() as db:
+        refused = db.get(Task, refused_id)
+        assert refused.status == TaskStatus.failed and "OTHERBOX (ix9), which this firewall does not have" in refused.output
+    cfg = fw_config(env)
+    del cfg["interfaces"]
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
 
     # 8. Between check-ins the agent waits on the server, which answers early when work is queued.
     def wait(seconds: str):
