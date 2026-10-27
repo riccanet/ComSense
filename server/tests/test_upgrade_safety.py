@@ -91,3 +91,24 @@ def test_stalled_upgrades_raise_an_alert_until_they_move_or_end(client, db, agen
     alert_svc.check_stalled_upgrades(db, utcnow() + timedelta(minutes=60))
     db.commit()
     assert not db.scalars(select(Alert).where(Alert.key.like("upgrade_stalled:%"), Alert.resolved_at.is_(None))).all()
+
+
+@pytest.mark.changes
+def test_netbird_interface_needs_an_agent_that_unassigns_it(client, db, agent):
+    """pfSense's upgrade removes NetBird, and wt0 left assigned stops the new version's first boot at the
+    interface mismatch prompt. Older agents are refused; newer ones unassign it and the page says so."""
+    login(client)
+    creds = enroll(agent, make_key(db), capabilities=ALL_CAPS, system={"hostname": "fw-nb", "unique_id": "nb"})
+    wt0 = [{"name": "opt4", "descr": "NETBIRD", "if": "wt0", "status": "up"}]
+    agent.post("/api/agent/v1/checkin", json={"agent_version": "0.2.21", "interfaces": wt0}, headers=auth(creds["token"]))
+    device = db.get(Device, creds["device_id"])
+    with pytest.raises(TaskError, match=r"Update the ComSense agent first: NETBIRD \(wt0\)"):
+        queue_task(db, device, TaskType.upgrade_system, actor="t", changes_enabled=True)
+    agent.post("/api/agent/v1/checkin", json={"agent_version": "0.2.23", "interfaces": wt0}, headers=auth(creds["token"]))
+    db.refresh(device)
+    queue_task(db, device, TaskType.upgrade_system, actor="t", changes_enabled=True)
+    db.commit()
+    agent.post("/api/agent/v1/checkin", json={"detached_interfaces": [{"key": "opt4", "descr": "NETBIRD", "if": "wt0"}]},
+               headers=auth(creds["token"]))
+    page = client.get(f"/devices/{creds['device_id']}").text
+    assert "Unassigned for a pfSense upgrade" in page and "NETBIRD (wt0)" in page

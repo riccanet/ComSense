@@ -241,7 +241,7 @@ async def checkin(
     inventory = {
         k: data[k]
         for k in ("system", "interfaces", "gateways", "services", "carp", "metrics", "packages", "change_guard", "processes",
-                  "update_branch", "ddns", "boot_environments")
+                  "update_branch", "ddns", "boot_environments", "detached_interfaces")
         if k in data
     }
     if inventory:

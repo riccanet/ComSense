@@ -116,6 +116,11 @@ function csfm_cycle() {
 	csfm_flush_unsent_results($client);
 	csfm_finish_inflight_upgrade($client);
 	csfm_finish_agent_update($client);
+	try {
+		csfm_reattach_package_interfaces();
+	} catch (Exception $e) {
+		csfm_record_error('Could not assign interfaces again after the upgrade: ' . $e->getMessage());
+	}
 
 	try {
 		$report = csfm_collect_report();

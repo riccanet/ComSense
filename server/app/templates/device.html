@@ -40,6 +40,12 @@
 {% for t in guard.tasks %}#{{ t }}{{ ", " if not loop.last }}{% endfor %}) until {{ guard.deadline }}. If the firewall cannot
 reach ComSense by then, it restores its previous configuration automatically.</div>
 {% endif %}
+{% if inv.get("detached_interfaces") %}
+<div class="flash warn">Unassigned for a pfSense upgrade, waiting to be assigned again:
+{% for i in inv.detached_interfaces %}{{ i.descr or i.key }} ({{ i.if }}){{ ", " if not loop.last }}{% endfor %}.
+The upgrade removes the package that creates {{ "them" if inv.detached_interfaces|length > 1 else "it" }} (NetBird, for wt0).
+Reinstall the package: ComSense assigns each interface again, with its settings and rules, within a minute of it existing.</div>
+{% endif %}
 {% if device.rolled_back_policies %}
 <section class="card highlight">
   <h2>Rolled back changes</h2>

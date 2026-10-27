@@ -15,8 +15,12 @@ require_once(__DIR__ . '/policies.inc');
 require_once(__DIR__ . '/guard.inc');
 require_once(__DIR__ . '/terminal.inc');
 
-define('CSFM_UPGRADE_LOG', '/var/log/comsense-upgrade.log');
-define('CSFM_PFSENSE_UPGRADE_LOG', '/cf/conf/upgrade_log.txt');
+if (!defined('CSFM_UPGRADE_LOG')) {
+	define('CSFM_UPGRADE_LOG', '/var/log/comsense-upgrade.log');
+}
+if (!defined('CSFM_PFSENSE_UPGRADE_LOG')) {
+	define('CSFM_PFSENSE_UPGRADE_LOG', '/cf/conf/upgrade_log.txt');
+}
 
 $csfm_task_capability = array(
 	'backup' => 'backup',
@@ -365,6 +369,17 @@ function csfm_task_reboot($client, $id, $payload) {
 function csfm_task_upgrade_system($client, $id, $payload) {
 	$space = csfm_require_free_space(CSFM_UPGRADE_MIN_FREE, 'Upgrade');
 	$backed_up = trim($space . "\n" . csfm_backup_before_upgrade($client, $id));
+	$detached = csfm_detach_package_interfaces();
+	if (csfm_interface_mismatch()) {
+		csfm_reattach_package_interfaces(true);
+		throw new Exception('Upgrade not started: an assigned interface does not exist on the firewall, so the new '
+		    . "version's first boot would stop at the console's interface mismatch prompt. Fix the assignments "
+		    . 'in Interfaces > Assignments first.');
+	}
+	if ($detached) {
+		$backed_up .= "\nUnassigned for the upgrade (pfSense removes the packages that create them; ComSense "
+		    . 'assigns them again, with their settings, once they exist again): ' . implode(', ', $detached);
+	}
 	csfm_state_set('inflight_upgrade', array(
 		'task_id' => $id,
 		'from_version' => csfm_product_version(),
@@ -443,7 +458,8 @@ function csfm_finish_inflight_upgrade($client) {
 	if (!is_array($up)) {
 		return;
 	}
-	exec('/bin/pgrep -f pfSense-upgrade', $pids, $rc);
+	/* [p]: never matches the shell running pgrep itself. */
+	exec("/bin/pgrep -f '[p]fSense-upgrade'", $pids, $rc);
 	$log = csfm_upgrade_log($up);
 	if ($rc === 0 && (time() - (int)$up['started']) < 4 * 3600) {
 		/* Still running: report how far it got when that changes (the firewall's page shows it). */
@@ -460,16 +476,129 @@ function csfm_finish_inflight_upgrade($client) {
 	$now = csfm_product_version();
 	if ($now !== $up['from_version']) {
 		csfm_report_result($client, $up['task_id'], 'success', "Upgraded {$up['from_version']} -> {$now}\n" . csfm_truncate($log, 8000));
-	} elseif (stripos($log, 'up to date') !== false || stripos($log, 'Your packages are up to date') !== false) {
-		csfm_report_result($client, $up['task_id'], 'success', "Already up to date ({$now})\n" . csfm_truncate($log, 8000));
+	} elseif (stripos($log, 'up to date') !== false) {
+		/* Not a success: the upgrade was queued because a newer version was reported, and none was installed. */
+		csfm_report_result($client, $up['task_id'], 'failed', "Not upgraded: pfSense found no newer version to install "
+		    . "(still {$now}). Run Check for updates and check the update branch.\n" . csfm_truncate($log, 8000));
 	} else {
-		csfm_report_result($client, $up['task_id'], 'failed', "Version is still {$now}\n" . csfm_truncate($log, 8000));
+		csfm_report_result($client, $up['task_id'], 'failed', "Not upgraded: the version is still {$now}. If the "
+		    . "firewall rebooted, the new version did not finish its first boot (see the console).\n" . csfm_truncate($log, 8000));
 	}
 	$state = csfm_state();
 	unset($state['inflight_upgrade']);
 	csfm_save_state($state);
 	csfm_forget_updates();
 	csfm_schedule_update_check(true);
+}
+
+/* ------------------------------------------------ package interfaces across upgrades */
+
+/*
+ * Interfaces created by add-on packages: NetBird (wt0), Tailscale, ZeroTier. A pfSense upgrade removes packages
+ * that are not in Netgate's repository, so on the new version's first boot the interface is gone, and pfSense
+ * stops at the console's "interface mismatch" prompt until someone reassigns the interfaces by hand. Before an
+ * upgrade the agent unassigns them, keeping their settings (rules and other references keep their optN name),
+ * and assigns them again, as they were, once the interface exists again: right after an upgrade that did not
+ * happen, or once the package is reinstalled on the new version.
+ */
+if (!defined('CSFM_PACKAGE_IF_RE')) {
+	define('CSFM_PACKAGE_IF_RE', '/^(wt|tailscale|zt)[0-9a-z]*$/');
+}
+
+function csfm_interface_exists($ifname) {
+	if (function_exists('does_interface_exist')) {
+		return (bool)does_interface_exist($ifname);
+	}
+	exec('/sbin/ifconfig ' . escapeshellarg($ifname) . ' >/dev/null 2>&1', $out, $rc);
+	return $rc === 0;
+}
+
+/* pfSense's own boot-time check, on the configuration as it is now (no-op where it is not available). */
+function csfm_interface_mismatch() {
+	return function_exists('is_interface_mismatch') && is_interface_mismatch();
+}
+
+/* Unassign package interfaces; returns "DESCR (if)" for each. Their settings are kept in the agent's state. */
+function csfm_detach_package_interfaces() {
+	$detached = csfm_state()['detached_interfaces'] ?? array();
+	$names = array();
+	foreach ((array)csfm_cfg_get('interfaces', array()) as $key => $iface) {
+		if ($key === 'wan' || $key === 'lan' || !is_array($iface)
+		    || !preg_match(CSFM_PACKAGE_IF_RE, (string)($iface['if'] ?? ''))) {
+			continue;
+		}
+		$detached[$key] = $iface;
+		$names[] = ($iface['descr'] ?? strtoupper($key)) . " ({$iface['if']})";
+	}
+	if (!$names) {
+		return array();
+	}
+	/* Saved before the configuration changes, so the settings are never lost. */
+	csfm_state_set('detached_interfaces', $detached);
+	foreach (array_keys($detached) as $key) {
+		csfm_cfg_del("interfaces/{$key}");
+	}
+	write_config('ComSense: unassigned ' . implode(', ', $names) . ' for the upgrade');
+	csfm_log('Unassigned for the upgrade: ' . implode(', ', $names), LOG_WARNING);
+	return $names;
+}
+
+/*
+ * Assign interfaces unassigned for an upgrade again, each once it exists (or all, $force, when an upgrade did
+ * not start). Called every cycle; nothing happens while an upgrade runs. Returns "DESCR (if)" for each.
+ */
+function csfm_reattach_package_interfaces($force = false) {
+	$state = csfm_state();
+	$detached = $state['detached_interfaces'] ?? array();
+	if (!$detached || (!$force && isset($state['inflight_upgrade']))) {
+		return array();
+	}
+	$done = array();
+	foreach ($detached as $key => $iface) {
+		$name = ($iface['descr'] ?? strtoupper($key)) . " ({$iface['if']})";
+		$taken = csfm_cfg_get("interfaces/{$key}");
+		if (is_array($taken)) {
+			/* Assigned again by hand (or the slot reused): leave it as it is. */
+			csfm_log("Not re-assigning {$name}: {$key} is assigned to " . ($taken['if'] ?? '?') . ' now', LOG_WARNING);
+			unset($detached[$key]);
+			continue;
+		}
+		if (!$force && !csfm_interface_exists((string)$iface['if'])) {
+			continue;
+		}
+		csfm_cfg_set("interfaces/{$key}", $iface);
+		unset($detached[$key]);
+		$done[$key] = $name;
+	}
+	$state = csfm_state();
+	if ($detached) {
+		$state['detached_interfaces'] = $detached;
+	} else {
+		unset($state['detached_interfaces']);
+	}
+	csfm_save_state($state);
+	if ($done) {
+		write_config('ComSense: assigned ' . implode(', ', $done) . ' again after the upgrade');
+		if (function_exists('interface_configure')) {
+			foreach (array_keys($done) as $key) {
+				interface_configure($key, true);
+			}
+		}
+		if (function_exists('filter_configure')) {
+			filter_configure();
+		}
+		csfm_log('Assigned again after the upgrade: ' . implode(', ', $done), LOG_WARNING);
+	}
+	return array_values($done);
+}
+
+/* For the check-in: interfaces waiting to be assigned again, as {key, descr, if}. */
+function csfm_detached_interfaces_report() {
+	$out = array();
+	foreach (csfm_state()['detached_interfaces'] ?? array() as $key => $iface) {
+		$out[] = array('key' => (string)$key, 'descr' => (string)($iface['descr'] ?? ''), 'if' => (string)($iface['if'] ?? ''));
+	}
+	return $out;
 }
 
 /* ------------------------------------------------------------ disk space */

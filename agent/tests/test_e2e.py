@@ -731,6 +731,36 @@ def test_full_lifecycle(env):
     upgrade_line = next(line for line in actions.splitlines() if "pfSense-upgrade -y" in line)
     assert upgrade_line.startswith("mwexec: /usr/bin/env -i ") and "'PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin" in upgrade_line
 
+    # 11c2. The upgrade above ends without a new version: that is a failure, not "already up to date".
+    (env["fw"] / "upgrade.log").write_text(">>> Updating repositories metadata...done.\nYour packages are up to date\n")
+    agent(env, "run")
+    ended = task(tid)
+    assert ended.status == TaskStatus.failed and "Not upgraded: pfSense found no newer version" in ended.output, ended.output
+
+    # 11c3. NetBird's wt0 is unassigned for the upgrade (pfSense removes the package, and the new version's first
+    #       boot would stop at the interface mismatch prompt), and assigned again, as it was, once wt0 exists.
+    netbird = {"if": "wt0", "descr": "NETBIRD", "enable": "", "ipaddr": "none"}
+    cfg = fw_config(env)
+    cfg.setdefault("interfaces", {})["opt4"] = netbird
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
+    tid = queue(TaskType.upgrade_system, {})
+    agent(env, "run")
+    started = task(tid)
+    assert started.status == TaskStatus.running and "Unassigned for the upgrade" in started.output, started.output
+    assert "NETBIRD (wt0)" in started.output and "opt4" not in fw_config(env)["interfaces"]
+    (env["fw"] / "upgrade.log").write_text(">>> Upgrading pfSense kernel...\n")  # rebooted into the old version
+    agent(env, "run")
+    assert "the version is still" in task(tid).output and task(tid).status == TaskStatus.failed
+    assert "opt4" not in fw_config(env)["interfaces"]  # wt0 does not exist yet (package not reinstalled)
+    with env["db"]() as db:
+        assert db.get(Device, creds["device_id"]).inventory["detached_interfaces"] == [
+            {"key": "opt4", "descr": "NETBIRD", "if": "wt0"}]
+    (env["fw"] / "ifaces.txt").write_text("wt0\n")
+    agent(env, "run")
+    assert fw_config(env)["interfaces"]["opt4"] == netbird
+    with env["db"]() as db:
+        assert db.get(Device, creds["device_id"]).inventory["detached_interfaces"] == []
+
     # 11d. Logs, read on demand and searched on the firewall: the newest matching lines come back.
     logs = env["fw"] / "logs"
     logs.mkdir(exist_ok=True)

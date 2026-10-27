@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Device, DeviceStatus, Task, TaskStatus, TaskType, aware, utcnow
+from .agentpkg import agent_outdated
 from .backups import PRE_UPGRADE_REASON
 
 # Which locally granted capability each task needs. The agent enforces the same
@@ -183,6 +184,32 @@ def _check_free_space(device: Device, ttype: TaskType) -> None:
         )
 
 
+# Interfaces created by add-on packages (NetBird's wt0, Tailscale, ZeroTier). A pfSense upgrade removes those
+# packages, and the new version's first boot then stops at the console's interface mismatch prompt. Agents from
+# AGENT_DETACHES_INTERFACES on unassign them around the upgrade (agent tasks.inc); older ones must update first.
+PACKAGE_INTERFACE_RE = re.compile(r"^(wt|tailscale|zt)[0-9a-z]*$")
+AGENT_DETACHES_INTERFACES = "0.2.23"
+
+
+def package_interfaces(device: Device) -> list[str]:
+    """Assigned interfaces an upgrade would leave without their device, as 'DESCR (if)'."""
+    out = []
+    for i in (device.inventory or {}).get("interfaces") or []:
+        if isinstance(i, dict) and PACKAGE_INTERFACE_RE.match(str(i.get("if", ""))):
+            out.append(f"{i.get('descr') or i.get('name')} ({i.get('if')})")
+    return out
+
+
+def _check_package_interfaces(device: Device) -> None:
+    found = package_interfaces(device)
+    if found and agent_outdated(device.agent_version, AGENT_DETACHES_INTERFACES):
+        raise TaskError(
+            f"Update the ComSense agent first: {', '.join(found)} is assigned, and the upgrade removes the package "
+            "that creates it, so the new version would stop at the console's interface mismatch prompt on its first "
+            f"boot. Agent {AGENT_DETACHES_INTERFACES} and later unassign it for the upgrade and assign it again afterwards."
+        )
+
+
 # Upgrades are preceded by a backup of the configuration (pinned when stored, see backups.py).
 BACKUP_BEFORE = {TaskType.upgrade_system, TaskType.upgrade_packages}
 
@@ -210,6 +237,8 @@ def queue_task(
         )
     if ttype in MIN_FREE_SPACE:
         _check_free_space(device, ttype)
+    if ttype == TaskType.upgrade_system:
+        _check_package_interfaces(device)
     if ttype in BACKUP_BEFORE and "backup" in (device.capabilities or []) and not _pre_upgrade_backup_queued(db, device):
         # The configuration as it is before the upgrade, kept (pinned) to roll back to. Queued first,
         # so the firewall uploads it before it starts upgrading (tasks run in the order queued).

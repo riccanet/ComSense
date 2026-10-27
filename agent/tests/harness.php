@@ -45,6 +45,14 @@ if (!file_exists(CSFM_UPGRADE_BIN)) {
 	    . "echo 'Messages:'\necho '>>> Updating repositories metadata...'\necho '2.7.2 version of pfSense is available'\nexit 2\n");
 	chmod(CSFM_UPGRADE_BIN, 0755);
 }
+/* pfSense-upgrade's output (the test writes what an upgrade left behind). */
+define('CSFM_UPGRADE_LOG', $dir . '/upgrade.log');
+define('CSFM_PFSENSE_UPGRADE_LOG', $dir . '/pf-upgrade.log');
+/* Network interfaces that exist on the "firewall": one per line in $dir/ifaces.txt. */
+function does_interface_exist($if) {
+	$list = @file(getenv('CSFM_TEST_DIR') . '/ifaces.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: array();
+	return in_array($if, $list, true);
+}
 /* Fast timings: no settle delays, and a probation window the test can control. */
 define('CSFM_VERIFY_DELAY', 0);
 define('CSFM_RETRY_DELAY', 0);

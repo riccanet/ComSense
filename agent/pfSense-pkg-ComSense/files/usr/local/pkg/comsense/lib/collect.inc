@@ -534,6 +534,8 @@ function csfm_collect_report() {
 		),
 		'applied_policies' => (object)$applied,
 		'rollbacks' => array_values($state['rollbacks'] ?? array()),
+		/* Package interfaces unassigned for an upgrade, waiting for their interface to exist again (tasks.inc). */
+		'detached_interfaces' => function_exists('csfm_detached_interfaces_report') ? csfm_detached_interfaces_report() : array(),
 	);
 	if (function_exists('csfm_guard') && ($guard = csfm_guard()) !== null) {
 		$report['change_guard'] = array(
