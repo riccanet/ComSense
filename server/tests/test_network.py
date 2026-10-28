@@ -6,7 +6,7 @@ from conftest import auth, enroll, login, make_key
 
 from app.models import Device, Role
 from app.services import apiops
-from app.services.neighbors import mac_key, matches
+from app.services.neighbors import by_ip, mac_key, matches
 
 NEIGHBORS = {
     "arp": [{"ip": "201.1.1.50", "mac": "a4:f8:ff:c8:67:32", "if": "mvneta1", "iface": "LAN", "hostname": "",
@@ -36,6 +36,7 @@ def test_mac_matching():
     for q in ("a4:f8:ff:c8:67:32", "A4-F8-FF-C8-67-32", "a4f8.ffc8.6732", "a4f8ffc86732", "67:32", "printer", "201.1.1.50"):
         assert matches(e, q), q
     assert not matches(e, "a4:f8:ff:c8:67:33") and mac_key("A4-F8") == "a4f8"
+    assert [x["ip"] for x in by_ip([{"ip": "10.0.0.10"}, {"ip": ""}, {"ip": "10.0.0.9"}])] == ["10.0.0.9", "10.0.0.10", ""]
 
 
 def test_reported_stored_shown_and_found(client, db, agent):
@@ -56,10 +57,14 @@ def test_reported_stored_shown_and_found(client, db, agent):
     assert "nvr" in filtered and "frontdesk-printer" not in filtered
     assert "has not reported its ARP table" in client.get(f"/devices/{quiet}/network").text
 
-    found = client.get("/find?q=A4-F8-FF-C8-67-32").text
-    assert "fw-sv" in found and "201.1.1.50" in found and "DHCP lease" in found and "fw-other" not in found
-    assert "Not found on any firewall" in client.get("/find?q=ff:ff:ff:ff:ff:fe").text
-    assert "Find device" in client.get("/devices").text
+    # The firewall's overview lists its leases and finds a device by MAC in any notation, IP or name.
+    overview = client.get(f"/devices/{sv}").text
+    assert "DHCP leases" in overview and "frontdesk-printer" in overview
+    found = client.get(f"/devices/{sv}?find=A4-F8-FF-C8-67-32").text
+    assert "frontdesk-printer" in found and "Also in the ARP table" in found and "nvr" not in found
+    missing = client.get(f"/devices/{sv}?find=ff:ff:ff:ff:ff:fe").text
+    assert "No lease matches" in missing and "Not in this firewall's ARP table" in missing
+    assert "Not reported yet" in client.get(f"/devices/{quiet}").text
 
 
 def test_api_search_and_network(client, db, agent):

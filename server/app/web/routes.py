@@ -447,9 +447,11 @@ def pending_banner(request: Request, page: str = "/", user: User = Depends(viewe
 
 @router.get("/devices/{device_id}", response_class=HTMLResponse)
 def device_detail(
-    device_id: str, request: Request, user: User = Depends(viewer), db: Session = Depends(get_db),
+    device_id: str, request: Request, find: str = "", user: User = Depends(viewer), db: Session = Depends(get_db),
 ):
     device = _get_device(db, device_id)
+    find = find.strip()[:100]
+    network = neighbors_svc.device_entries(device, find)
     since = utcnow() - timedelta(hours=24)
     metrics = db.scalars(
         select(Metric).where(Metric.device_id == device.id, Metric.ts >= since).order_by(Metric.ts)
@@ -498,6 +500,11 @@ def device_detail(
             select(DeviceGroup).where(DeviceGroup.devices.any(Device.id == device.id)).order_by(DeviceGroup.name)
         ).all(),
         type_labels=TYPE_LABELS,
+        find=find,
+        leases=neighbors_svc.by_ip(network["leases"]),
+        lease_total=len((device.neighbors or {}).get("leases") or []),
+        find_arp=neighbors_svc.by_ip(network["arp"]) if find else [],
+        find_static=neighbors_svc.by_ip(network["static"]) if find else [],
         terminal_sessions=db.scalars(
             select(TerminalSession).where(TerminalSession.device_id == device.id)
             .order_by(TerminalSession.created_at.desc()).limit(10)
@@ -1082,13 +1089,6 @@ def device_network(device_id: str, request: Request, q: str = "", user: User = D
                   entries=neighbors_svc.device_entries(device, q), totals={k: len((device.neighbors or {}).get(k) or [])
                                                                          for k in neighbors_svc.KINDS})
 
-
-@router.get("/find", response_class=HTMLResponse)
-def find_device(request: Request, q: str = "", user: User = Depends(viewer), db: Session = Depends(get_db)):
-    """Find a device by MAC address (any notation), IP address or hostname on every firewall."""
-    rows = neighbors_svc.search(db, q) if len(q.strip()) >= 2 else []
-    return render(request, "find_device.html", q=q, rows=rows, kinds=neighbors_svc.KIND_LABELS,
-                  limit_hit=len(rows) >= 200)
 
 
 @router.post("/devices/{device_id}/update-agent")

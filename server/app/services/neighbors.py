@@ -2,6 +2,7 @@
 device by MAC address, IP address or hostname across every firewall."""
 from __future__ import annotations
 
+import ipaddress
 import re
 from datetime import datetime
 from typing import Any
@@ -63,6 +64,16 @@ def matches(entry: dict[str, Any], query: str) -> bool:
 def device_entries(device: Device, query: str = "") -> dict[str, list[dict[str, Any]]]:
     data = device.neighbors or {}
     return {kind: [e for e in data.get(kind) or [] if isinstance(e, dict) and matches(e, query)] for kind in KINDS}
+
+
+def by_ip(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Entries in address order (192.168.1.9 before 192.168.1.10); ones without a valid address last."""
+    def key(e: dict[str, Any]):
+        try:
+            return (0, ipaddress.ip_address(str(e.get("ip") or "")))
+        except ValueError:
+            return (1, ipaddress.ip_address("0.0.0.0"))
+    return sorted(entries, key=key)
 
 
 def search(db: Session, query: str, limit: int = 200) -> list[dict[str, Any]]:

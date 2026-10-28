@@ -172,6 +172,50 @@ Reinstall the package: ComSense assigns each interface again, with its settings 
   </table>
 </section>
 
+<section class="card" id="leases">
+  <div class="heading">
+    <h2>DHCP leases <span class="muted small">{% if find %}{{ leases|length }} of {% endif %}{{ lease_total }}</span></h2>
+    <a class="button small" href="/devices/{{ device.id }}/network" title="ARP table, all leases and static mappings">Network</a>
+  </div>
+  <form method="get" action="/devices/{{ device.id }}#leases" class="toolbar">
+    <input name="find" value="{{ find }}" placeholder="Find by MAC address (any notation), IP address or hostname" aria-label="Find a device">
+    <button>Find</button>{% if find %} <a class="button" href="/devices/{{ device.id }}#leases">Clear</a>{% endif %}
+  </form>
+  {% if not device.neighbors_at %}
+  <p class="muted">Not reported yet: the firewall sends its leases every five minutes (agent 0.2.25 and later).</p>
+  {% else %}
+  <table class="list">
+    <thead><tr><th>IP address</th><th>MAC address</th><th>Hostname</th><th class="hide-sm">Lease ends (UTC)</th></tr></thead>
+    <tbody>
+    {% for e in leases[:100] %}
+      <tr><td class="mono">{{ e.ip }}</td><td class="mono">{{ e.mac }}</td><td>{{ e.hostname or "—" }}</td><td class="hide-sm small">{{ e.ends }}</td></tr>
+    {% else %}
+      <tr><td colspan="4" class="muted">{% if find %}No lease matches “{{ find }}”.{% else %}No active leases.{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if leases|length > 100 %}<p class="small muted">The first 100 are shown; use Find, or the <a href="/devices/{{ device.id }}/network">Network page</a>.</p>{% endif %}
+  {% if find %}
+  {% if find_arp %}
+  <h3>Also in the ARP table</h3>
+  <table class="list">
+    <thead><tr><th>IP address</th><th>MAC address</th><th>Interface</th></tr></thead>
+    <tbody>{% for e in find_arp %}<tr><td class="mono">{{ e.ip }}</td><td class="mono">{{ e.mac }}</td><td>{{ e.iface }} <span class="muted small">{{ e.if }}</span></td></tr>{% endfor %}</tbody>
+  </table>
+  {% endif %}
+  {% if find_static %}
+  <h3>DHCP static mappings</h3>
+  <table class="list">
+    <thead><tr><th>IP address</th><th>MAC address</th><th>Hostname</th><th>Interface</th></tr></thead>
+    <tbody>{% for e in find_static %}<tr><td class="mono">{{ e.ip or "—" }}</td><td class="mono">{{ e.mac }}</td><td>{{ e.hostname or e.descr or "—" }}</td><td>{{ e.iface }}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% endif %}
+  {% if not leases and not find_arp and not find_static %}<p class="small muted">Not in this firewall's ARP table or static mappings either.</p>{% endif %}
+  {% endif %}
+  <p class="small muted">Reported {{ device.neighbors_at|ago }}.</p>
+  {% endif %}
+</section>
+
 <section class="card">
   <h2>Configurations</h2>
   {% if not changes_enabled %}<p class="small muted">Firewall changes are turned off on this server, so configurations are not sent to firewalls yet.</p>{% endif %}
