@@ -55,6 +55,7 @@ from ..enrollment import make_code
 from ..services.agentpkg import agent_outdated, latest_package
 from ..services.alerts import CATEGORIES, category_filter, category_of
 from ..services.appsettings import agent_tls_names, effective_agent_url, format_dt, get_email_settings, setup_pending
+from ..services import neighbors as neighbors_svc
 from ..services.bulk import BULK_ACTIONS, available_actions, check_now, run_bulk, target_devices, update_agent
 from ..services.backups import BackupError, delete_backup_file, load_backup
 from ..services.logview import LINE_CHOICES, LOGS, parse_filter_line, parse_line
@@ -1057,17 +1058,37 @@ def device_alias_remove(device_id: str, request: Request, name: str = Form(...),
 
 
 @router.post("/devices/{device_id}/check-now")
-def device_check_now(device_id: str, request: Request, user: User = Depends(operator), db: Session = Depends(get_db)):
+def device_check_now(device_id: str, request: Request, next: str = Form(""), user: User = Depends(operator),
+                     db: Session = Depends(get_db)):
     device = _get_device(db, device_id)
+    back = local_path(next, f"/devices/{device_id}")
     try:
         _check_now(db, device, user.username)
     except TaskError as exc:
         flash(request, str(exc), "error")
-        return redirect(f"/devices/{device_id}")
+        return redirect(back)
     audit(db, user.username, "device.check_now", target=device.id, ip=_ip(request))
     db.commit()
     flash(request, "Check requested. A connected firewall reports back within a few seconds; this page updates when it does.", "success")
-    return redirect(f"/devices/{device_id}")
+    return redirect(back)
+
+
+@router.get("/devices/{device_id}/network", response_class=HTMLResponse)
+def device_network(device_id: str, request: Request, q: str = "", user: User = Depends(viewer),
+                   db: Session = Depends(get_db)):
+    """The firewall's ARP entries, DHCP leases and static mappings, as it last reported them."""
+    device = _get_device(db, device_id)
+    return render(request, "device_network.html", device=device, page_token=_device_page_token(db, device), q=q,
+                  entries=neighbors_svc.device_entries(device, q), totals={k: len((device.neighbors or {}).get(k) or [])
+                                                                         for k in neighbors_svc.KINDS})
+
+
+@router.get("/find", response_class=HTMLResponse)
+def find_device(request: Request, q: str = "", user: User = Depends(viewer), db: Session = Depends(get_db)):
+    """Find a device by MAC address (any notation), IP address or hostname on every firewall."""
+    rows = neighbors_svc.search(db, q) if len(q.strip()) >= 2 else []
+    return render(request, "find_device.html", q=q, rows=rows, kinds=neighbors_svc.KIND_LABELS,
+                  limit_hit=len(rows) >= 200)
 
 
 @router.post("/devices/{device_id}/update-agent")

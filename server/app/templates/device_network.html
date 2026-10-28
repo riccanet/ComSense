@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge, csrf with context %}
+{% block title %}{{ device.name }}: network{% endblock %}
+{% block banner %}{% include "_task_banner.html" %}{% endblock %}
+{% block content %}
+{% set can_operate = user.role.value in ("operator", "admin") %}
+<p class="small"><a href="/devices">Firewalls</a> / <a href="/devices/{{ device.id }}">{{ device.name }}</a> /</p>
+<div class="heading" data-poll="/devices/{{ device.id }}/poll" data-poll-token="{{ page_token }}">
+  <h1>Network {{ status_badge(device.status.value) }}</h1>
+  {% if can_operate and device.status.value not in ("pending", "disabled") %}
+  <div class="actions">
+    <form method="post" action="/devices/{{ device.id }}/check-now" class="inline">
+      {{ csrf() }}<input type="hidden" name="next" value="/devices/{{ device.id }}/network">
+      <button>Refresh now</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+<form method="get" class="toolbar">
+  <input name="q" value="{{ q }}" placeholder="Filter by MAC (any notation), IP, hostname or interface" aria-label="Filter">
+  <button>Filter</button>{% if q %} <a class="button" href="/devices/{{ device.id }}/network">Clear</a>{% endif %}
+</form>
+{% if device.neighbors_at %}
+<p class="small muted">Reported {{ device.neighbors_at|dt }} ({{ device.neighbors_at|ago }}). Firewalls send these every five minutes.</p>
+{% else %}
+<p class="flash warn">This firewall has not reported its ARP table and DHCP leases yet. They need agent 0.2.25 or later
+and arrive within five minutes of it running{% if can_operate %}, or right after Refresh now{% endif %}.</p>
+{% endif %}
+
+<section class="card">
+  <h2>DHCP leases <span class="muted small">{{ entries.leases|length }}{% if q %} of {{ totals.leases }}{% endif %}</span></h2>
+  <table class="list">
+    <thead><tr><th>IP address</th><th>MAC address</th><th>Hostname</th><th class="hide-sm">Lease start</th><th class="hide-sm">Lease end</th></tr></thead>
+    <tbody>
+    {% for e in entries.leases|sort(attribute="ip") %}
+      <tr><td class="mono">{{ e.ip }}</td><td class="mono">{{ e.mac }}</td><td>{{ e.hostname or "—" }}</td>
+        <td class="hide-sm small">{{ e.starts }}</td><td class="hide-sm small">{{ e.ends }}</td></tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">{% if q %}No lease matches.{% else %}No active leases.{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if entries.leases %}<p class="small muted">Lease times are UTC, as the DHCP server records them.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>ARP table <span class="muted small">{{ entries.arp|length }}{% if q %} of {{ totals.arp }}{% endif %}</span></h2>
+  <table class="list">
+    <thead><tr><th>IP address</th><th>MAC address</th><th>Interface</th><th class="hide-sm">Hostname</th><th class="hide-sm">Expires</th></tr></thead>
+    <tbody>
+    {% for e in entries.arp|sort(attribute="iface") %}
+      <tr><td class="mono">{{ e.ip }}</td><td class="mono">{{ e.mac }}</td><td>{{ e.iface }} <span class="muted small">{{ e.if }}</span></td>
+        <td class="hide-sm">{{ e.hostname or "—" }}</td>
+        <td class="hide-sm small">{% if e.permanent %}permanent (the firewall's own){% elif e.expires is not none %}{{ e.expires }} s{% endif %}</td></tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">{% if q %}No entry matches.{% else %}No entries.{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>DHCP static mappings <span class="muted small">{{ entries.static|length }}{% if q %} of {{ totals.static }}{% endif %}</span></h2>
+  <table class="list">
+    <thead><tr><th>IP address</th><th>MAC address</th><th>Hostname</th><th class="hide-sm">Description</th><th>Interface</th></tr></thead>
+    <tbody>
+    {% for e in entries.static|sort(attribute="ip") %}
+      <tr><td class="mono">{{ e.ip or "—" }}</td><td class="mono">{{ e.mac }}</td><td>{{ e.hostname or "—" }}</td>
+        <td class="hide-sm">{{ e.descr }}</td><td>{{ e.iface }}</td></tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">{% if q %}No mapping matches.{% else %}None.{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

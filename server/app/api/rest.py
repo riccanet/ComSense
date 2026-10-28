@@ -81,6 +81,16 @@ def create_rest_app(settings: Settings) -> FastAPI:
     def firewall(firewall_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
         return apiops.get_firewall(db, settings, firewall_id)
 
+    @app.get("/firewalls/{firewall_id}/network", dependencies=read,
+             summary="A firewall's ARP entries, DHCP leases and static mappings (q filters by MAC, IP or name)")
+    def firewall_network(firewall_id: str, q: str = "", db: Session = Depends(get_db)) -> dict[str, Any]:
+        return apiops.get_network(db, firewall_id, q)
+
+    @app.get("/devices/search", dependencies=read,
+             summary="Find a device by MAC address (any notation), IP address or hostname on every firewall")
+    def device_search(q: str = Query(..., min_length=2), db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+        return apiops.find_device(db, q)
+
     @app.get("/firewalls/{firewall_id}/tasks", dependencies=read, summary="A firewall's recent tasks")
     def firewall_tasks(firewall_id: str, limit: int = 50, db: Session = Depends(get_db)) -> list[dict[str, Any]]:
         return apiops.list_tasks(db, firewall_id, limit)

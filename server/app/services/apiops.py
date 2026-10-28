@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from ..audit import audit
 from ..config import Settings
+from . import neighbors
 from ..models import (
     Alert,
     ApiKey,
@@ -205,6 +206,20 @@ def get_firewall(db: Session, settings: Settings, firewall_id: str) -> dict[str,
         boot_environments=inv.get("boot_environments") or [],
     )
     return detail
+
+
+def get_network(db: Session, firewall_id: str, query: str = "") -> dict[str, Any]:
+    """A firewall's ARP entries, DHCP leases and static mappings, optionally filtered."""
+    device = _device(db, firewall_id)
+    return {"firewall_id": device.id, "firewall": device.name, "collected": _iso(device.neighbors_at),
+            **neighbors.device_entries(device, query)}
+
+
+def find_device(db: Session, query: str) -> list[dict[str, Any]]:
+    """Every firewall's ARP entries, DHCP leases and static mappings matching a MAC (any notation), IP or name."""
+    if len(query.strip()) < 2:
+        raise ApiError(400, "query must be at least 2 characters")
+    return neighbors.as_api(neighbors.search(db, query))
 
 
 def list_customers(db: Session) -> list[dict[str, Any]]:

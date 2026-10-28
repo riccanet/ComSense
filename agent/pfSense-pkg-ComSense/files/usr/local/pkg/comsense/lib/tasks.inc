@@ -234,6 +234,7 @@ function csfm_task_check_updates($client, $id, $payload) {
 }
 
 function csfm_task_refresh_inventory($client, $id, $payload) {
+	csfm_state_set('neighbors_at', 0);  /* ARP and DHCP leases with the next check-in too */
 	csfm_forget_updates();
 	csfm_schedule_update_check(true);
 	return array('output' => 'Full inventory is sent with every check-in; update check restarted.');

@@ -45,6 +45,15 @@ if (!file_exists(CSFM_UPGRADE_BIN)) {
 	    . "echo 'Messages:'\necho '>>> Updating repositories metadata...'\necho '2.7.2 version of pfSense is available'\nexit 2\n");
 	chmod(CSFM_UPGRADE_BIN, 0755);
 }
+/* ARP table and DHCP leases: arp prints $dir/arp.txt; lease files live in $dir. Sent with every check-in. */
+define('CSFM_ARP_BIN', $dir . '/arp');
+if (!file_exists(CSFM_ARP_BIN)) {
+	file_put_contents(CSFM_ARP_BIN, "#!/bin/sh\n[ \"\$1\" = -an ] && cat " . escapeshellarg($dir . '/arp.txt') . " 2>/dev/null\nexit 0\n");
+	chmod(CSFM_ARP_BIN, 0755);
+}
+define('CSFM_ISC_LEASES', $dir . '/dhcpd.leases');
+define('CSFM_KEA_LEASES', $dir . '/kea-dhcp4.leases');
+define('CSFM_NEIGHBORS_EVERY', (int)(getenv('CSFM_TEST_NEIGHBORS_EVERY') ?: 0));
 /* pfSense-upgrade's output (the test writes what an upgrade left behind). */
 define('CSFM_UPGRADE_LOG', $dir . '/upgrade.log');
 define('CSFM_PFSENSE_UPGRADE_LOG', $dir . '/pf-upgrade.log');

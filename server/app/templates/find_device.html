@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Find a device{% endblock %}
+{% block content %}
+<p class="small"><a href="/devices">Firewalls</a> /</p>
+<h1>Find a device</h1>
+<form method="get" class="toolbar">
+  <input name="q" value="{{ q }}" placeholder="MAC address (any notation), IP address or hostname" aria-label="Find" autofocus>
+  <button class="primary">Find</button>
+</form>
+<p class="small muted">Searches the ARP tables, DHCP leases and DHCP static mappings every firewall reports (every five
+minutes). A device that has not talked to its firewall recently may not be listed.</p>
+
+{% if q and q|length < 2 %}
+<p class="flash warn">Type at least two characters.</p>
+{% elif q %}
+<section class="card">
+  <h2>{{ rows|length }}{% if limit_hit %}+{% endif %} result{{ "s" if rows|length != 1 }} for “{{ q }}”</h2>
+  <table class="list">
+    <thead><tr><th>Firewall</th><th class="hide-sm">Customer</th><th>Found in</th><th>IP address</th><th>MAC address</th>
+      <th>Hostname</th><th class="hide-sm">Interface</th><th class="hide-sm">Reported</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td><a href="/devices/{{ r.firewall_id }}/network?q={{ (r.mac or r.ip)|urlencode }}">{{ r.firewall }}</a></td>
+        <td class="hide-sm">{{ r.customer or "—" }}</td>
+        <td>{{ kinds[r.kind] }}{% if r.kind == "leases" and r.ends %}<div class="muted small">until {{ r.ends }} UTC</div>{% endif %}</td>
+        <td class="mono">{{ r.ip or "—" }}</td><td class="mono">{{ r.mac }}</td>
+        <td>{{ r.hostname or r.descr or "—" }}</td>
+        <td class="hide-sm">{{ r.iface or "—" }}</td>
+        <td class="hide-sm small">{{ r.seen|ago }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="muted">Not found on any firewall.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if limit_hit %}<p class="small muted">Only the first 200 results are shown; search for something more specific.</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

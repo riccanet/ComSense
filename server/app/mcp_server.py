@@ -105,6 +105,20 @@ def build_server(settings: Settings) -> MCPServer:
         return await _call(apiops.acknowledge_alert, who, alert_id, _client_ip.get())
 
     @server.tool(annotations=READ)
+    async def find_device(query: str) -> list[dict[str, Any]]:
+        """Find a device on every firewall's network by MAC address (any notation, or part of one), IP address
+        or hostname: ARP entries, DHCP leases and DHCP static mappings, with the firewall and interface. Firewalls
+        report these every few minutes (run_task check_now for fresh ones)."""
+        _who()
+        return await _call(apiops.find_device, query)
+
+    @server.tool(annotations=READ)
+    async def get_network(firewall_id: str, query: str = "") -> dict[str, Any]:
+        """One firewall's ARP entries, DHCP leases and static mappings, optionally filtered by MAC, IP or name."""
+        _who()
+        return await _call(apiops.get_network, firewall_id, query)
+
+    @server.tool(annotations=READ)
     async def list_tasks(firewall_id: str, limit: int = 20) -> list[dict[str, Any]]:
         """A firewall's recent tasks with their status and output."""
         _who()

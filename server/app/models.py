@@ -214,6 +214,10 @@ class Device(Base):
     # Last time the agent uploaded its config, even when it matched a stored backup.
     last_backup_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     notes: Mapped[str] = mapped_column(Text, default="")
+    # ARP entries and DHCP leases the agent reports every few minutes: {"arp": [...], "leases": [...],
+    # "static": [...]} (services/neighbors.py), and when they last came in.
+    neighbors: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    neighbors_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     organization: Mapped[Organization | None] = relationship(back_populates="devices")
     tasks: Mapped[list[Task]] = relationship(

@@ -38,6 +38,7 @@ from ..services import agentpkg
 from ..services import terminal as terminal_svc
 from ..services import alerts as alert_svc
 from ..services.backups import BackupError, load_backup, prune_backups, store_backup
+from ..services.neighbors import clean as clean_neighbors
 from ..services.policies import reconcile_device_policies
 from ..services.tasks import take_pending_tasks, task_to_wire
 
@@ -251,6 +252,10 @@ async def checkin(
             device.wan_ip = _str(addresses[0] if addresses else "", 64)
     if isinstance(data.get("updates"), dict):
         device.updates = data["updates"]
+    neighbors = clean_neighbors(data.get("neighbors"))
+    if neighbors is not None:  # sent every few minutes, not with every check-in
+        device.neighbors = neighbors
+        device.neighbors_at = utcnow()
     if isinstance(data.get("applied_policies"), dict):
         device.applied_policies = {str(k): str(v) for k, v in data["applied_policies"].items()}
 

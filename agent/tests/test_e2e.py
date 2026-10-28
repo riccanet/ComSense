@@ -794,6 +794,43 @@ def test_full_lifecycle(env):
     with env["db"]() as db:
         assert db.get(Device, creds["device_id"]).inventory["detached_interfaces"] == []
 
+    # 11c4. ARP entries and DHCP leases (ISC and Kea) and static mappings come in with the check-in, every few
+    #       minutes (here: every run) and right after Check now; the server finds a device by MAC on every firewall.
+    (env["fw"] / "arp.txt").write_text(
+        "? (192.168.1.50) at a4:f8:ff:c8:67:32 on vtnet1 expires in 1199 seconds [ethernet]\n"
+        "? (192.168.1.77) at (incomplete) on vtnet1 expired [ethernet]\n")
+    (env["fw"] / "dhcpd.leases").write_text(
+        "lease 192.168.1.50 {\n  starts 3 2026/10/28 10:00:00;\n  ends 3 2026/10/28 12:00:00;\n"
+        "  binding state active;\n  next binding state free;\n  hardware ethernet a4:f8:ff:c8:67:32;\n"
+        '  client-hostname "frontdesk-printer";\n}\n')
+    (env["fw"] / "kea-dhcp4.leases").write_text(
+        "address,hwaddr,client_id,valid_lifetime,expire,subnet_id,fqdn_fwd,fqdn_rev,hostname,state,user_context,pool_id\n"
+        f"192.168.1.60,00:aa:bb:cc:dd:ee,,7200,{int(time.time()) + 3600},1,0,0,laptop.,0,,0\n")
+    cfg = fw_config(env)
+    cfg["interfaces"] = {"wan": {"if": "vtnet0", "descr": "WAN"}, "lan": {"if": "vtnet1", "descr": "LAN"}}
+    cfg["dhcpd"] = {"lan": {"staticmap": [{"mac": "00:11:22:33:44:55", "ipaddr": "192.168.1.10", "hostname": "nvr"}]}}
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
+    agent(env, "run")
+    with env["db"]() as db:
+        nb = db.get(Device, creds["device_id"]).neighbors
+    assert nb["arp"] == [{"ip": "192.168.1.50", "mac": "a4:f8:ff:c8:67:32", "if": "vtnet1", "iface": "LAN",
+                          "hostname": "", "permanent": False, "expires": 1199}], nb
+    assert {(lease["ip"], lease["hostname"], lease["server"]) for lease in nb["leases"]} == {
+        ("192.168.1.50", "frontdesk-printer", "isc"), ("192.168.1.60", "laptop", "kea")}
+    assert nb["static"] == [{"ip": "192.168.1.10", "mac": "00:11:22:33:44:55", "hostname": "nvr", "descr": "",
+                             "iface": "LAN"}]
+    from app.services.neighbors import search
+    with env["db"]() as db:
+        assert {r["kind"] for r in search(db, "A4-F8-FF-C8-67-32")} == {"arp", "leases"}
+    # Between reports the check-in leaves them out; the server keeps the last ones.
+    (env["fw"] / "arp.txt").write_text("")
+    agent(env, "run", extra_env={"CSFM_TEST_NEIGHBORS_EVERY": "3600"})
+    with env["db"]() as db:
+        assert len(db.get(Device, creds["device_id"]).neighbors["arp"]) == 1
+    cfg = fw_config(env)
+    del cfg["interfaces"], cfg["dhcpd"]
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
+
     # 11d. Logs, read on demand and searched on the firewall: the newest matching lines come back.
     logs = env["fw"] / "logs"
     logs.mkdir(exist_ok=True)

@@ -36,6 +36,8 @@ while.
 | POST | `/firewalls/{id}/tasks` | Queue a task: `{"task": "backup"}` (operator) |
 | PUT | `/firewalls/{id}/customer` | `{"customer_id": 3}` or `{"customer_id": null}` (operator) |
 | GET | `/firewalls/{id}/backups` | Stored configuration backups (metadata) |
+| GET | `/firewalls/{id}/network?q=` | ARP entries, DHCP leases and static mappings, optionally filtered |
+| GET | `/devices/search?q=` | Find a device by MAC (any notation), IP or hostname on every firewall |
 | GET | `/tasks/{id}` | One task with its status and output |
 | GET | `/tasks-available` | The task names `POST /firewalls/{id}/tasks` accepts |
 | GET | `/customers`, `/customers/{id}` | Customers; one customer with its firewalls |

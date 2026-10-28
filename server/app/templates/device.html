@@ -14,6 +14,7 @@
   <div class="actions">
     {% set agent_old = latest_agent and device.agent_version and device.agent_version|agent_outdated(latest_agent) %}
     <a class="button" href="/devices/{{ device.id }}/configuration" title="Port forwards, aliases, services, email notifications and notes">Configuration</a>
+    <a class="button" href="/devices/{{ device.id }}/network" title="ARP table, DHCP leases and static mappings">Network</a>
     {% if can_operate %}<a class="button" href="/devices/{{ device.id }}/logs" title="System, firewall, DHCP, VPN and other logs, searched on the firewall">Logs</a>{% endif %}
     {% if can_operate and device.status.value not in ("pending", "disabled") %}
     {{ post_button("/devices/" ~ device.id ~ "/check-now", "Check now", "", "") }}

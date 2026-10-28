@@ -498,6 +498,152 @@ function csfm_collect_processes() {
 }
 
 /* One report section; a failing collector costs only its own section, never the check-in. */
+/* ------------------------------------------------------------- ARP and DHCP leases */
+
+if (!defined('CSFM_ARP_BIN')) {
+	define('CSFM_ARP_BIN', '/usr/sbin/arp');
+}
+if (!defined('CSFM_ISC_LEASES')) {
+	define('CSFM_ISC_LEASES', '/var/dhcpd/var/db/dhcpd.leases');
+}
+if (!defined('CSFM_KEA_LEASES')) {
+	define('CSFM_KEA_LEASES', '/var/lib/kea/dhcp4.leases');
+}
+/* Sent with the check-in this often (and right after "Check now"); the lists can be long. */
+if (!defined('CSFM_NEIGHBORS_EVERY')) {
+	define('CSFM_NEIGHBORS_EVERY', 300);
+}
+define('CSFM_NEIGHBORS_MAX', 4000);
+
+/* Interface device (igc0.10) -> its name in pfSense (GUEST). */
+function csfm_interface_names() {
+	$names = array();
+	foreach ((array)csfm_cfg_get('interfaces', array()) as $key => $iface) {
+		if (is_array($iface) && !empty($iface['if'])) {
+			$names[$iface['if']] = (string)($iface['descr'] ?? strtoupper($key));
+		}
+	}
+	return $names;
+}
+
+function csfm_collect_arp($names) {
+	$out = array();
+	list($rc, $text) = csfm_exec(CSFM_ARP_BIN . ' -an', 20);
+	foreach (explode("\n", (string)$text) as $line) {
+		/* ? (192.168.1.10) at a4:f8:ff:c8:67:32 on igc0 expires in 1199 seconds [ethernet] */
+		if (!preg_match('/^(\S+) \(([0-9.]+)\) at ([0-9a-f]{1,2}(?::[0-9a-f]{1,2}){5}) on (\S+)(.*)$/i', trim($line), $m)) {
+			continue;
+		}
+		$expires = preg_match('/expires in (\d+)/', $m[5], $e) ? (int)$e[1] : null;
+		$out[] = array('ip' => $m[2], 'mac' => strtolower($m[3]), 'if' => $m[4], 'iface' => $names[$m[4]] ?? $m[4],
+		    'hostname' => $m[1] === '?' ? '' : $m[1], 'permanent' => stripos($m[5], 'permanent') !== false,
+		    'expires' => $expires);
+		if (count($out) >= CSFM_NEIGHBORS_MAX) {
+			break;
+		}
+	}
+	return $out;
+}
+
+/* Active leases from ISC dhcpd's lease file (the last record of each address wins, as in dhcpd). */
+function csfm_isc_leases($file) {
+	$text = @file_get_contents($file);
+	if ($text === false) {
+		return array();
+	}
+	$leases = array();
+	if (preg_match_all('/lease ([0-9.]+) \{(.*?)\n\}/s', $text, $blocks, PREG_SET_ORDER)) {
+		foreach ($blocks as $b) {
+			$body = $b[2];
+			$get = function ($re) use ($body) { return preg_match($re, $body, $m) ? $m[1] : ''; };
+			$leases[$b[1]] = array(
+				'ip' => $b[1],
+				'mac' => strtolower($get('/hardware ethernet ([0-9a-f:]+);/i')),
+				'hostname' => $get('/client-hostname "([^"]*)";/'),
+				'starts' => $get('/starts \d+ ([0-9\/]+ [0-9:]+);/'),
+				'ends' => $get('/ends \d+ ([0-9\/]+ [0-9:]+);/'),
+				'state' => $get('/\n\s*binding state (\w+);/'),
+				'server' => 'isc',
+			);
+		}
+	}
+	return array_values(array_filter($leases, function ($l) { return $l['state'] === 'active' && $l['mac'] !== ''; }));
+}
+
+/* Current leases from Kea's memfile (CSV; the newest line of each address wins). */
+function csfm_kea_leases($file) {
+	$leases = array();
+	foreach (array($file . '.2', $file) as $path) {  /* .2: lines not yet folded in by Kea's cleanup */
+		$fh = @fopen($path, 'r');
+		if ($fh === false) {
+			continue;
+		}
+		$head = fgetcsv($fh, 0, ',', '"', '\\');
+		$col = is_array($head) ? array_flip($head) : array();
+		while ($col && ($row = fgetcsv($fh, 0, ',', '"', '\\')) !== false) {
+			$ip = $row[$col['address'] ?? -1] ?? '';
+			if ($ip === '') {
+				continue;
+			}
+			$expire = (int)($row[$col['expire'] ?? -1] ?? 0);
+			$valid = (int)($row[$col['valid_lifetime'] ?? -1] ?? 0);
+			$leases[$ip] = array(
+				'ip' => $ip,
+				'mac' => strtolower((string)($row[$col['hwaddr'] ?? -1] ?? '')),
+				'hostname' => rtrim((string)($row[$col['hostname'] ?? -1] ?? ''), '.'),
+				'starts' => $expire && $valid ? gmdate('Y/m/d H:i:s', $expire - $valid) : '',
+				'ends' => $expire ? gmdate('Y/m/d H:i:s', $expire) : '',
+				'state' => ((string)($row[$col['state'] ?? -1] ?? '0') === '0' && $expire > time()) ? 'active' : 'expired',
+				'server' => 'kea',
+			);
+		}
+		fclose($fh);
+	}
+	return array_values(array_filter($leases, function ($l) { return $l['state'] === 'active' && $l['mac'] !== ''; }));
+}
+
+/* DHCP static mappings from the configuration (Services > DHCP Server). */
+function csfm_dhcp_static($names) {
+	$out = array();
+	$ifaces = (array)csfm_cfg_get('interfaces', array());
+	foreach ((array)csfm_cfg_get('dhcpd', array()) as $key => $cfg) {
+		if (!is_array($cfg)) {
+			continue;
+		}
+		$maps = $cfg['staticmap'] ?? array();
+		if (isset($maps['mac'])) {
+			$maps = array($maps);
+		}
+		$dev = (string)($ifaces[$key]['if'] ?? '');
+		foreach ((array)$maps as $map) {
+			if (!is_array($map) || empty($map['mac'])) {
+				continue;
+			}
+			$out[] = array('ip' => (string)($map['ipaddr'] ?? ''), 'mac' => strtolower((string)$map['mac']),
+			    'hostname' => (string)($map['hostname'] ?? ''), 'descr' => (string)($map['descr'] ?? ''),
+			    'iface' => $names[$dev] ?? strtoupper((string)$key));
+		}
+	}
+	return $out;
+}
+
+/* The firewall's ARP table and DHCP leases, every CSFM_NEIGHBORS_EVERY seconds (null in between). */
+function csfm_collect_neighbors() {
+	$last = (int)(csfm_state()['neighbors_at'] ?? 0);
+	if (time() - $last < CSFM_NEIGHBORS_EVERY) {
+		return null;
+	}
+	csfm_state_set('neighbors_at', time());
+	$names = csfm_interface_names();
+	$leases = array_merge(csfm_isc_leases(CSFM_ISC_LEASES), csfm_kea_leases(CSFM_KEA_LEASES));
+	return array(
+		'arp' => csfm_collect_arp($names),
+		'leases' => array_slice($leases, 0, CSFM_NEIGHBORS_MAX),
+		'static' => array_slice(csfm_dhcp_static($names), 0, CSFM_NEIGHBORS_MAX),
+		'collected' => time(),
+	);
+}
+
 function csfm_section($name, $fn) {
 	try {
 		return $fn();
@@ -537,6 +683,10 @@ function csfm_collect_report() {
 		/* Package interfaces unassigned for an upgrade, waiting for their interface to exist again (tasks.inc). */
 		'detached_interfaces' => function_exists('csfm_detached_interfaces_report') ? csfm_detached_interfaces_report() : array(),
 	);
+	$neighbors = csfm_section('neighbors', 'csfm_collect_neighbors');
+	if (is_array($neighbors) && $neighbors) {
+		$report['neighbors'] = $neighbors;
+	}
 	if (function_exists('csfm_guard') && ($guard = csfm_guard()) !== null) {
 		$report['change_guard'] = array(
 			'tasks' => array_map(function ($t) { return $t['id']; }, $guard['tasks']),
