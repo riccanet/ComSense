@@ -114,6 +114,14 @@ def test_add_edit_and_remove_aliases_from_the_configuration_page(client, db, age
     assert add.payload == {"alias": {"name": "Cameras", "type": "host", "address": ["192.168.1.40", "192.168.1.41"],
                                      "descr": "CCTV", "detail": ["Door", ""]}}
     assert "being added" in r.text
+    # Many entries at once: a pasted list on one line, commas, spaces, a range and a network.
+    client.post(f"/devices/{did}/aliases", data={"name": "Front_Desk", "type": "host", "csrf_token": csrf,
+                                                 "entries": "10.0.0.5 10.0.0.6, 10.0.0.7 Front desk PCs\n"
+                                                            "10.0.0.20-10.0.0.40; 192.0.2.0/24 Guest net"})
+    many = db.scalar(select(Task).where(Task.type == TaskType.alias_add, Task.id != add.id))
+    assert many.payload["alias"]["address"] == ["10.0.0.5", "10.0.0.6", "10.0.0.7", "10.0.0.20-10.0.0.40",
+                                                 "192.0.2.0/24"]
+    assert many.payload["alias"]["detail"] == ["", "", "Front desk PCs", "", "Guest net"]
 
     client.post(f"/devices/{did}/aliases/edit", data={"name": "Web_Servers", "type": "host",
                                                      "entries": "192.168.1.12", "descr": "Front end", "csrf_token": csrf})

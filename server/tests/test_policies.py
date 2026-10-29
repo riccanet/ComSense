@@ -134,3 +134,15 @@ def test_only_admins_write_raw_config_set_configurations(client, db):
     assert r.status_code == 403
     r = client.post("/configurations", data={"type": "notifications", "name": "quiet", "smtp": "off", "csrf_token": csrf})
     assert r.status_code == 200 and db.scalar(select(Policy).where(Policy.name == "quiet")) is not None
+
+
+def test_alias_entries_as_typed_or_pasted():
+    from app.services.policies import parse_alias_entries
+
+    assert parse_alias_entries("10.0.0.5 10.0.0.6 Front desk") == (["10.0.0.5", "10.0.0.6"], ["Front desk", "Front desk"])
+    assert parse_alias_entries("10.0.0.5, 10.0.0.6;10.0.0.7\n\n10.0.0.5 dup") == (
+        ["10.0.0.5", "10.0.0.6", "10.0.0.7"], ["", "", ""])
+    # Words in a description are never taken for entries, even hex-looking ones; ports and ranges are.
+    assert parse_alias_entries("printer.local cafe bad 2nd floor") == (["printer.local"], ["cafe bad 2nd floor"])
+    assert parse_alias_entries("80 443 8000:8100 web") == (["80", "443", "8000:8100"], ["web", "web", "web"])
+    assert parse_alias_entries("fd00::1 fd00::2/64 lab")[0] == ["fd00::1", "fd00::2/64"]

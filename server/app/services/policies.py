@@ -286,6 +286,40 @@ def _alias_address_ok(value: str) -> bool:
     return bool(re.match(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,252}$", value))  # a host name or another alias
 
 
+_PORT_NUMBERS = re.compile(r"^[0-9]{1,5}(:[0-9]{1,5})?$")
+
+
+def _more_entries(token: str) -> bool:
+    """A further entry on a line: an address, network, range or port number, never a word of the description."""
+    if _PORT_NUMBERS.match(token):
+        return True
+    return bool(re.fullmatch(r"[0-9a-fA-F.:/-]+", token)) and any(c.isdigit() for c in token) \
+        and (":" in token or "." in token) and _alias_address_ok(token)
+
+
+def parse_alias_entries(text: str) -> tuple[list[str], list[str]]:
+    """Alias entries as typed or pasted: one or more per line, separated by new lines, commas, semicolons or
+    spaces. After the first value on a line, further addresses, networks, ranges and ports are entries too;
+    the rest of the line is a description, given to each entry from that line.
+    "10.0.0.5 10.0.0.6 Front desk" -> (["10.0.0.5", "10.0.0.6"], ["Front desk", "Front desk"])."""
+    values: list[str] = []
+    notes: list[str] = []
+    for line in re.split(r"[\n;,]", text or ""):
+        tokens = line.split()
+        if not tokens:
+            continue
+        line_values = [tokens[0]]
+        rest = tokens[1:]
+        while rest and _more_entries(rest[0]):
+            line_values.append(rest.pop(0))
+        note = " ".join(rest)[:200]
+        for v in line_values:
+            if v not in values:
+                values.append(v)
+                notes.append(note)
+    return values, notes
+
+
 def validate_alias(alias: dict[str, Any]) -> None:
     """One alias, as added or changed from a firewall's page."""
     try:

@@ -65,6 +65,7 @@ from ..services.policies import (
     TYPE_LABELS,
     PolicyError,
     desired_policies,
+    parse_alias_entries,
     policy_hash,
     validate_alias,
     validate_port_forward_rule,
@@ -1009,12 +1010,7 @@ def device_be_remove(device_id: str, request: Request, name: str = Form(...),
 
 def _alias_from_form(form) -> dict[str, Any]:
     """One alias from the add or edit form on the Configuration page (raises PolicyError)."""
-    addresses, notes = [], []
-    for line in str(form.get("entries", "")).replace(",", "\n").splitlines():
-        value, _, note = line.strip().partition(" ")
-        if value:
-            addresses.append(value)
-            notes.append(note.strip()[:200])
+    addresses, notes = parse_alias_entries(str(form.get("entries", "")))
     alias: dict[str, Any] = {"name": str(form.get("name", "")).strip(), "type": str(form.get("type", "host")),
                              "address": addresses, "descr": str(form.get("descr", "")).strip()[:200]}
     if any(notes):

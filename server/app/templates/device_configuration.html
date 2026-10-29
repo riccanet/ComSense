@@ -27,7 +27,8 @@
       <label>Name {% if new %}<input name="name" required pattern="[A-Za-z0-9_]{1,31}" placeholder="Office_Hosts">
         {% else %}<input value="{{ a.name }}" disabled><input type="hidden" name="name" value="{{ a.name }}">{% endif %}</label>
       <label>Type <select name="type">{% for t in alias_types %}<option{% if a.type == t %} selected{% endif %}>{{ t }}</option>{% endfor %}</select></label>
-      <label class="wide">Entries <textarea name="entries" rows="4" required placeholder="one per line, with an optional description after a space, e.g.&#10;10.0.0.5 Office printer&#10;192.0.2.0/24">{{ a.entries or "" }}</textarea></label>
+      <label class="wide">Entries <span class="muted small">(as many as you need: one per line, or a pasted list separated by commas or spaces; text after the addresses on a line is their description)</span>
+        <textarea name="entries" rows="6" required placeholder="10.0.0.5 Office printer&#10;10.0.0.6, 10.0.0.7, 10.0.0.8 Front desk PCs&#10;192.0.2.0/24&#10;10.0.0.20-10.0.0.40">{{ a.entries or "" }}</textarea></label>
       <label class="wide">Description <input name="descr" maxlength="200" value="{{ a.descr or "" }}"></label>
 {% endmacro %}
 

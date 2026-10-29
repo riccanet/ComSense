@@ -12,7 +12,7 @@
 <tr>
   <td><input type="hidden" name="a_row" value="{{ key }}"><input name="a_name" value="{{ r.name }}" placeholder="Office_Hosts" pattern="[A-Za-z0-9_]{1,31}" aria-label="Alias name"></td>
   <td><select name="a_type" aria-label="Type">{% for t in alias_types %}<option value="{{ t }}"{% if r.type == t %} selected{% endif %}>{{ t }}</option>{% endfor %}</select></td>
-  <td><textarea name="a_address" rows="3" placeholder="one per line, e.g.&#10;10.0.0.5 Office printer&#10;192.0.2.0/24" aria-label="Entries">{{ r.address }}</textarea></td>
+  <td><textarea name="a_address" rows="4" placeholder="10.0.0.5 Office printer&#10;10.0.0.6, 10.0.0.7 Front desk&#10;192.0.2.0/24" aria-label="Entries">{{ r.address }}</textarea></td>
   <td><input name="a_descr" value="{{ r.descr }}" aria-label="Description"></td>
   <td><button type="button" class="small" data-remove-row title="Remove">&times;</button></td>
 </tr>
@@ -68,7 +68,7 @@
   {% if ptype.value == "aliases" %}
   <section class="card">
     <div class="table-scroll"><table class="rows-table">
-      <thead><tr><th>Name</th><th>Type</th><th>Entries <span class="muted small">(value, then an optional note)</span></th><th>Description</th><th></th></tr></thead>
+      <thead><tr><th>Name</th><th>Type</th><th>Entries <span class="muted small">(as many as needed: one per line or a list separated by commas or spaces; text after the addresses is their note)</span></th><th>Description</th><th></th></tr></thead>
       <tbody id="rows">{% for r in rows %}{{ alias_row(loop.index, r) }}{% endfor %}</tbody>
     </table></div>
     <template id="rows-template">{{ alias_row("__KEY__", {"type": "host"}) }}</template>

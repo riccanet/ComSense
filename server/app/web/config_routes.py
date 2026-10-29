@@ -29,6 +29,7 @@ from ..services.policies import (
     PolicyError,
     desired_policies,
     endpoint_text,
+    parse_alias_entries,
     policy_hash,
     validate_policy,
 )
@@ -112,12 +113,7 @@ def content_from_form(ptype: PolicyType, form) -> dict[str, Any]:
         for row in _rows(form, "a_", ("name", "type", "address", "descr")):
             if not row["name"] and not row["address"]:
                 continue
-            addresses, details = [], []
-            for line in row["address"].replace(",", "\n").splitlines():
-                value, _, note = line.strip().partition(" ")
-                if value:
-                    addresses.append(value)
-                    details.append(note.strip())
+            addresses, details = parse_alias_entries(row["address"])
             alias: dict[str, Any] = {"name": row["name"], "type": row["type"], "address": addresses,
                                      "descr": row["descr"] or "Managed by ComSense"}
             if any(details):
