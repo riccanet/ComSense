@@ -325,7 +325,29 @@ function csfm_backup_before_upgrade($client, $id) {
 	return 'Configuration backed up before the upgrade (#' . ($resp['backup_id'] ?? '?') . ')';
 }
 
+/*
+ * The FreeBSD major version pkg's repository is for, and the one the firewall runs: different when the update
+ * branch is set to a newer pfSense version than is installed. Packages from that repository are built for the
+ * new version; pkg would install them (and itself) onto the old one, which pfSense's Package Manager refuses to
+ * do. [repository, running], or null when they match or cannot be told.
+ */
+function csfm_pkg_abi_mismatch() {
+	list($rc, $abi) = csfm_exec(CSFM_PKG . ' config abi', 60);
+	if ($rc !== 0 || !preg_match('/FreeBSD:(\d+):/', (string)$abi, $m)) {
+		return null;
+	}
+	$running = (int)php_uname('r');
+	return ($running > 0 && (int)$m[1] !== $running) ? array((int)$m[1], $running) : null;
+}
+
 function csfm_task_upgrade_packages($client, $id, $payload) {
+	$abi = csfm_pkg_abi_mismatch();
+	if ($abi !== null) {
+		throw new Exception("Packages not upgraded: the update branch's repository is for a newer pfSense version "
+		    . "(FreeBSD {$abi[0]}) than this firewall runs (FreeBSD {$abi[1]}), so its packages would not match the "
+		    . 'system. Upgrade pfSense first (its packages are upgraded with it), or set the update branch back to '
+		    . "this firewall's version.");
+	}
 	$outdated = csfm_outdated_packages();
 	if (!$outdated) {
 		return array('output' => 'All packages are up to date');
@@ -335,6 +357,10 @@ function csfm_task_upgrade_packages($client, $id, $payload) {
 	$names = array_map(function ($p) { return escapeshellarg($p['name']); }, $outdated);
 	list($rc, $out) = csfm_exec(CSFM_PKG . ' upgrade -y ' . implode(' ', $names), 3000);
 	csfm_schedule_update_check(true);
+	if ($rc === 124) {
+		throw new Exception("pkg upgrade was stopped after 50 minutes; some packages may be half-upgraded. "
+		    . "Check System > Package Manager on the firewall.\n" . csfm_truncate($out));
+	}
 	if ($rc !== 0) {
 		throw new Exception("pkg upgrade exited with {$rc}\n" . csfm_truncate($out));
 	}

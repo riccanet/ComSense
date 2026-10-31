@@ -45,6 +45,16 @@ if (!file_exists(CSFM_UPGRADE_BIN)) {
 	    . "echo 'Messages:'\necho '>>> Updating repositories metadata...'\necho '2.7.2 version of pfSense is available'\nexit 2\n");
 	chmod(CSFM_UPGRADE_BIN, 0755);
 }
+/* pkg-static: "config abi" prints $dir/pkg-abi (e.g. FreeBSD:16:aarch64, a newer branch's repository); the rest
+   is logged and fails. */
+define('CSFM_PKG', $dir . '/pkg-static');
+if (!file_exists(CSFM_PKG)) {
+	$abi = escapeshellarg($dir . '/pkg-abi');
+	$log = escapeshellarg($dir . '/actions.log');
+	file_put_contents(CSFM_PKG, "#!/bin/sh\nif [ \"\$1 \$2\" = \"config abi\" ] && [ -f {$abi} ]; then cat {$abi}; exit 0; fi\n"
+	    . "echo \"pkg-static \$*\" >> {$log}\nexit 1\n");
+	chmod(CSFM_PKG, 0755);
+}
 /* ARP table and DHCP leases: arp prints $dir/arp.txt; lease files live in $dir. Sent with every check-in. */
 define('CSFM_ARP_BIN', $dir . '/arp');
 if (!file_exists(CSFM_ARP_BIN)) {

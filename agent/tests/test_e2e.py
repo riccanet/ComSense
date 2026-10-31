@@ -794,6 +794,16 @@ def test_full_lifecycle(env):
     with env["db"]() as db:
         assert db.get(Device, creds["device_id"]).inventory["detached_interfaces"] == []
 
+    # 11c3b. "Upgrade packages" refuses when the update branch's repository is for a newer FreeBSD than the
+    #        firewall runs: pkg would put the new version's packages (and pkg itself) on the old system.
+    (env["fw"] / "pkg-abi").write_text("FreeBSD:99:amd64\n")
+    tid = queue(TaskType.upgrade_packages, {})
+    agent(env, "run")
+    refused = task(tid)
+    assert refused.status == TaskStatus.failed and "Packages not upgraded" in refused.output, refused.output
+    assert "FreeBSD 99" in refused.output and "pkg-static upgrade" not in (env["fw"] / "actions.log").read_text()
+    (env["fw"] / "pkg-abi").unlink()
+
     # 11c4. ARP entries and DHCP leases (ISC and Kea) and static mappings come in with the check-in, every few
     #       minutes (here: every run) and right after Check now; the server finds a device by MAC on every firewall.
     (env["fw"] / "arp.txt").write_text(

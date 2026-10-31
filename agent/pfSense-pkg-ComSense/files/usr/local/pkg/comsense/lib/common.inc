@@ -7,7 +7,7 @@
  */
 
 if (!defined('CSFM_AGENT_VERSION')) {
-	define('CSFM_AGENT_VERSION', '0.2.25');
+	define('CSFM_AGENT_VERSION', '0.2.28');
 }
 if (!defined('CSFM_DB_DIR')) {
 	/* Overridable so the agent can be exercised outside a firewall. */
@@ -20,7 +20,9 @@ define('CSFM_CA_FILE', CSFM_DB_DIR . '/server-ca.pem');
 define('CSFM_CONFIG_PATH', 'installedpackages/comsense/config/0');
 define('CSFM_SYSTEM_CA_BUNDLE', '/etc/ssl/cert.pem');
 /* pkg(8) on pfSense; /usr/sbin/pkg is only FreeBSD's bootstrap stub. */
-define('CSFM_PKG', '/usr/local/sbin/pkg-static');
+if (!defined('CSFM_PKG')) {
+	define('CSFM_PKG', '/usr/local/sbin/pkg-static');
+}
 if (!defined('CSFM_UPGRADE_BIN')) {
 	/* pfSense's own update tool (System > Update uses it too). */
 	define('CSFM_UPGRADE_BIN', '/usr/local/sbin/pfSense-upgrade');
