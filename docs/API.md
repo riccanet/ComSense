@@ -40,6 +40,8 @@ while.
 | POST | `/firewalls/{id}/nat` | Add a port forward (operator): `port`, `target`, optional `interface`, `protocol`, `local_port`, `source`, `source_port`, `destination`, `description`, `disabled` |
 | PATCH | `/firewalls/{id}/nat/{forward_id}` | Change a port forward (operator); only the fields given change |
 | DELETE | `/firewalls/{id}/nat/{forward_id}` | Remove a port forward and its linked rule (operator) |
+| GET | `/firewalls/{id}/config?path=&depth=` | Any part of config.xml as structured data (`system`, `interfaces/opt1`, `filter/rule/3`...), secrets shown as `[hidden]` |
+| POST | `/firewalls/{id}/config` | Edit any setting (admin): `{"operations": [{"op": "set|delete|append|insert", "path": ..., "value": ..., "expect": {...}}], "summary": ...}`; never package settings, accounts, certificates, cron or shell commands |
 | GET | `/firewalls/{id}/rules?interface=` | Firewall rules in order, optionally one interface, and aliases |
 | GET | `/firewalls/{id}/network?q=` | ARP entries, DHCP leases and static mappings, optionally filtered |
 | GET | `/devices/search?q=` | Find a device by MAC (any notation), IP or hostname on every firewall |

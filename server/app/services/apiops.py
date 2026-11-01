@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from ..audit import audit
 from ..config import Settings
-from . import neighbors
+from . import configedit, neighbors
 from ..models import (
     Alert,
     ApiKey,
@@ -334,6 +334,36 @@ def remove_port_forward(db: Session, settings: Settings, who: Principal, firewal
     return _queue_nat(db, settings, who, device, TaskType.nat_remove,
                       {"fingerprint": forward_id, "descr": current["descr"][:200]},
                       f"remove port forward {current['descr'] or forward_id}", ip)
+
+
+def get_config(db: Session, settings: Settings, firewall_id: str, path: str = "", depth: int = 3) -> dict[str, Any]:
+    """Any part of the firewall's configuration as structured data, from its current backup (secrets hidden).
+    Without a path: the top-level sections. Deep subtrees are outlined below `depth` levels; ask for a deeper
+    path to see more."""
+    device, backup, _, _ = _config(db, settings, firewall_id)
+    tree = configedit.config_tree(settings, backup)
+    path = path.strip().strip("/")
+    found, value = configedit.lookup(tree, path) if path else (True, tree)
+    if not found:
+        raise ApiError(404, f"Nothing at '{path}' in the firewall's configuration")
+    return {"firewall_id": device.id, "firewall": device.name, "backup_id": backup.id,
+            "backup_taken": _iso(backup.created_at), "path": path, "editable": configedit.editable(path) if path else None,
+            "value": configedit.outline(value, max(1, min(int(depth), 8)) if path else 1)}
+
+
+def edit_config(db: Session, settings: Settings, who: Principal, firewall_id: str, operations: Any,
+                summary: str = "", ip: str = "") -> dict[str, Any]:
+    """Edit any part of the configuration (admin): set / delete / append / insert operations on config paths,
+    applied together by the agent under probation, then the affected services reloaded."""
+    who.require(Role.admin)
+    device, _, _, _ = _config(db, settings, firewall_id)
+    try:
+        ops = configedit.validate_ops(operations)
+    except configedit.ConfigEditError as exc:
+        raise ApiError(400, str(exc)) from exc
+    summary = (summary or "").strip()[:200] or ", ".join(f"{o['op']} {o['path']}" for o in ops[:4])
+    return _queue_nat(db, settings, who, device, TaskType.config_edit, {"ops": ops, "summary": summary},
+                      f"edit configuration: {summary}", ip)
 
 
 def get_firewall_rules(db: Session, settings: Settings, firewall_id: str, interface: str = "") -> dict[str, Any]:

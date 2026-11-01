@@ -85,6 +85,7 @@ class TaskType(str, enum.Enum):
     ddns_remove = "ddns_remove"
     update_branch = "update_branch"
     notifications = "notifications"
+    config_edit = "config_edit"  # any part of the configuration (services/configedit.py)
 
 
 class PolicyType(str, enum.Enum):

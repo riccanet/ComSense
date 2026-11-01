@@ -62,6 +62,12 @@ class PortForward(BaseModel):
     disabled: bool | None = None
 
 
+class ConfigEdit(BaseModel):
+    operations: list[dict[str, Any]] = Field(description='Each {"op": "set|delete|append|insert", "path": '
+                                                         '"system/hostname", "value": ..., "expect": {...}}')
+    summary: str = Field("", description="What the edit does, for the task list and audit log")
+
+
 class SetCustomer(BaseModel):
     customer_id: int | None = Field(description="The customer's id, or null to leave the firewall unassigned")
 
@@ -124,6 +130,17 @@ def create_rest_app(settings: Settings) -> FastAPI:
     def firewall_nat_remove(firewall_id: str, forward_id: str, request: Request, who: Principal = Depends(principal),
                             db: Session = Depends(get_db)) -> dict[str, Any]:
         return apiops.remove_port_forward(db, settings, who, firewall_id, forward_id, _ip(request))
+
+    @app.get("/firewalls/{firewall_id}/config", dependencies=read,
+             summary="Any part of the configuration (path=system, interfaces/opt1, filter/rule/3...), secrets hidden")
+    def firewall_config(firewall_id: str, path: str = "", depth: int = 3,
+                        db: Session = Depends(get_db)) -> dict[str, Any]:
+        return apiops.get_config(db, settings, firewall_id, path, depth)
+
+    @app.post("/firewalls/{firewall_id}/config", status_code=201, summary="Edit the configuration (admin)")
+    def firewall_config_edit(firewall_id: str, request: Request, body: ConfigEdit, who: Principal = Depends(principal),
+                             db: Session = Depends(get_db)) -> dict[str, Any]:
+        return apiops.edit_config(db, settings, who, firewall_id, body.operations, body.summary, _ip(request))
 
     @app.get("/firewalls/{firewall_id}/rules", dependencies=read,
              summary="Firewall rules in order (interface= filters by name or id) and aliases, from the newest backup")

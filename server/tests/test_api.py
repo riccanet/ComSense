@@ -145,7 +145,7 @@ def test_mcp_server(client, db, agent, settings):
         tools = {t["name"]: t for t in _mcp(c, viewer, "tools/list").json()["result"]["tools"]}
         assert {"list_firewalls", "get_firewall", "run_task", "list_alerts", "acknowledge_alert", "get_nat_rules",
                 "get_firewall_rules", "find_device", "get_network", "add_port_forward", "update_port_forward",
-                "remove_port_forward"} <= set(tools)
+                "remove_port_forward", "get_config", "edit_config"} <= set(tools)
         assert tools["get_nat_rules"]["annotations"]["readOnlyHint"] is True
         assert tools["list_firewalls"]["annotations"]["readOnlyHint"] is True
         assert tools["run_task"]["annotations"]["destructiveHint"] is True

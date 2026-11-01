@@ -42,6 +42,7 @@ TASK_CAPABILITY: dict[TaskType, str | None] = {
     TaskType.ddns_remove: "policy",
     TaskType.update_branch: "upgrade",
     TaskType.notifications: "policy",
+    TaskType.config_edit: "policy",
 }
 
 # How long a task may stay "sent"/"running" without a final result.
@@ -110,6 +111,7 @@ TASK_TITLES = {
     TaskType.ddns_remove: "Removing a dynamic DNS entry",
     TaskType.update_branch: "Switching the update branch",
     TaskType.notifications: "Changing email notifications",
+    TaskType.config_edit: "Editing the configuration",
 }
 
 
@@ -118,6 +120,8 @@ def task_title(task: Task) -> str:
     detail = task.payload.get("package") or task.payload.get("service") or task.payload.get("version") or ""
     if task.type == TaskType.apply_policy:
         detail = (task.payload.get("policy") or {}).get("name", "")
+    elif task.type == TaskType.config_edit:
+        detail = str(task.payload.get("summary") or "")[:80]
     return f"{title} ({detail})" if detail and isinstance(detail, str) else title
 
 

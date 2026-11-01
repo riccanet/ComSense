@@ -7,7 +7,7 @@
  */
 
 if (!defined('CSFM_AGENT_VERSION')) {
-	define('CSFM_AGENT_VERSION', '0.2.30');
+	define('CSFM_AGENT_VERSION', '0.2.33');
 }
 if (!defined('CSFM_DB_DIR')) {
 	/* Overridable so the agent can be exercised outside a firewall. */
@@ -83,6 +83,13 @@ function csfm_log($message, $priority = LOG_NOTICE) {
 	syslog($priority, $message);
 	if (defined('CSFM_VERBOSE') && CSFM_VERBOSE) {
 		fwrite(STDERR, $message . "\n");
+	}
+}
+
+/* PHP before 8.1 (older pfSense CE). */
+if (!function_exists('array_is_list')) {
+	function array_is_list(array $a) {
+		return $a === array() || array_keys($a) === range(0, count($a) - 1);
 	}
 }
 

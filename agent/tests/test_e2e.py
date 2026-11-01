@@ -816,6 +816,47 @@ def test_full_lifecycle(env):
     assert "FreeBSD 99" in refused.output and "pkg-static upgrade" not in (env["fw"] / "actions.log").read_text()
     (env["fw"] / "pkg-abi").unlink()
 
+    # 11c3c. Any part of the configuration, edited as operations on config paths (the API/MCP edit_config):
+    #        checked first, written once, the affected parts reloaded; package settings and accounts refused.
+    from app.services.configedit import validate_ops
+    cfg = fw_config(env)
+    cfg.setdefault("dhcpd", {})["lan"] = {"enable": "", "staticmap": [{"mac": "00:11:22:33:44:55", "ipaddr": "192.168.1.10"}]}
+    cfg.setdefault("filter", {})["rule"] = [{"descr": "first"}, {"descr": "second"}]
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
+    ops = validate_ops([
+        {"op": "set", "path": "system/timezone", "value": "America/New_York"},
+        {"op": "append", "path": "dhcpd/lan/staticmap", "value": {"mac": "aa:bb:cc:dd:ee:ff", "ipaddr": "192.168.1.11",
+                                                                 "descr": "Printer"}},
+        {"op": "insert", "path": "filter/rule/0", "value": {"descr": "new top", "type": "pass"}},
+        {"op": "delete", "path": "filter/rule/2", "expect": {"descr": "second"}},  # "second" moved down one
+        {"op": "set", "path": "dhcpd/lan/enable", "value": False},
+    ])
+    tid = queue(TaskType.config_edit, {"ops": ops, "summary": "e2e edit"})
+    agent(env, "run")
+    done = task(tid)
+    assert done.status == TaskStatus.success, done.output
+    cfg = fw_config(env)
+    assert cfg["system"]["timezone"] == "America/New_York"
+    assert [m["ipaddr"] for m in cfg["dhcpd"]["lan"]["staticmap"]] == ["192.168.1.10", "192.168.1.11"]
+    assert [r["descr"] for r in cfg["filter"]["rule"]] == ["new top", "first"] and "enable" not in cfg["dhcpd"]["lan"]
+    actions = (env["fw"] / "actions.log").read_text()
+    assert "services_dhcpd_configure" in actions and "write_config: ComSense: e2e edit" in actions
+    # A list item that moved since it was read is refused, and nothing is written.
+    tid = queue(TaskType.config_edit, {"ops": validate_ops([
+        {"op": "set", "path": "system/timezone", "value": "UTC"},
+        {"op": "set", "path": "filter/rule/1/descr", "value": "x", "expect": {"descr": "second"}}])})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.failed and "has changed since it was read" in task(tid).output
+    assert fw_config(env)["system"]["timezone"] == "America/New_York"
+    # The agent refuses protected paths whatever the server sent.
+    tid = queue(TaskType.config_edit, {"ops": [{"op": "set", "path": "installedpackages/comsense/config/0/x",
+                                                "value": "1"}]})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.failed and "cannot be edited" in task(tid).output
+    cfg = fw_config(env)
+    del cfg["dhcpd"], cfg["filter"]
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
+
     # 11c4. ARP entries and DHCP leases (ISC and Kea) and static mappings come in with the check-in, every few
     #       minutes (here: every run) and right after Check now; the server finds a device by MAC on every firewall.
     (env["fw"] / "arp.txt").write_text(

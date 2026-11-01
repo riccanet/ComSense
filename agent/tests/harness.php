@@ -180,6 +180,7 @@ function g_get($key) {
 }
 
 function filter_configure() { csfm_test_action('filter_configure'); }
+function services_dhcpd_configure() { csfm_test_action('services_dhcpd_configure'); }
 function system_resolvconf_generate() { csfm_test_action('system_resolvconf_generate'); }
 function system_timezone_configure() { csfm_test_action('system_timezone_configure'); }
 function system_ntp_configure() { csfm_test_action('system_ntp_configure'); }

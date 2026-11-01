@@ -51,11 +51,12 @@ $csfm_task_capability = array(
 	'free_disk_space' => 'upgrade',
 	'be_destroy' => 'upgrade',
 	'notifications' => 'policy',
+	'config_edit' => 'policy',
 );
 
 /* Tasks that change the configuration and run under the change guard (guard.inc). */
 $csfm_guarded_tasks = array('apply_policy', 'remove_policy', 'nat_add', 'nat_remove', 'nat_edit',
-	'alias_add', 'alias_edit', 'alias_remove', 'ddns_add', 'ddns_edit', 'ddns_remove');
+	'alias_add', 'alias_edit', 'alias_remove', 'ddns_add', 'ddns_edit', 'ddns_remove', 'config_edit');
 
 class CsfmTaskDeferred extends Exception {
 	/* Thrown by tasks that already reported their own result. */
@@ -183,6 +184,9 @@ function csfm_task_label($type, $payload) {
 	}
 	if ($type === 'open_terminal') {
 		return 'open a remote terminal';
+	}
+	if ($type === 'config_edit') {
+		return 'edit configuration: ' . ($payload['summary'] ?? 'settings');
 	}
 	if ($type === 'update_agent') {
 		return 'update agent to ' . ($payload['version'] ?? '?');
@@ -524,6 +528,202 @@ function csfm_finish_inflight_upgrade($client) {
 	csfm_save_state($state);
 	csfm_forget_updates();
 	csfm_schedule_update_check(true);
+}
+
+/* ----------------------------------------------------------- configuration edits */
+
+/*
+ * Any part of the configuration that pfSense's own pages edit, as operations on config.xml paths (the same
+ * paths and list indexes as config_get_path: "system/hostname", "filter/rule/3", "dhcpd/lan/staticmap"):
+ *   set     path, value         replace the value or subtree
+ *   delete  path                remove it (a list item: the items after it move up)
+ *   append  path, value         add an item to the end of the list at path
+ *   insert  path, value         add an item before the list item at path ("filter/rule/0": first)
+ * An operation may carry "expect": fields the item at path must have now, so an index that moved since the
+ * caller read the configuration is refused instead of changing the wrong item. Package settings, accounts,
+ * certificates and what runs commands as root are refused, here and on the server. All operations are
+ * checked first and written in one write_config; the affected parts are then reloaded. The change runs under
+ * the change guard, like every other change, so it is undone if the firewall loses the server.
+ */
+define('CSFM_EDIT_PROTECTED', '#^(installedpackages|system/(user|group|authserver|shellcmd|earlyshellcmd|'
+    . 'afterfilterchangeshellcmd)|cert|ca|crl|cron|revision)(/|$)#');
+
+function csfm_edit_path_ok($path) {
+	return is_string($path) && preg_match('#^[A-Za-z0-9_\-][A-Za-z0-9_.\-]*(/[A-Za-z0-9_\-][A-Za-z0-9_.\-]*)*$#', $path)
+	    && strlen($path) <= 300
+	    && !preg_match(CSFM_EDIT_PROTECTED, $path);
+}
+
+/* What to reload after edits under these top-level sections (the first match of each path). */
+function csfm_edit_reloads($paths) {
+	$map = array(
+		'filter' => 'filter', 'nat' => 'filter', 'aliases' => 'filter', 'schedules' => 'filter',
+		'shaper' => 'filter', 'dnshaper' => 'filter', 'virtualip' => 'vips', 'interfaces' => 'interfaces',
+		'vlans' => 'interfaces', 'laggs' => 'interfaces', 'bridges' => 'interfaces', 'gifs' => 'interfaces',
+		'gres' => 'interfaces', 'ppps' => 'interfaces', 'ifgroups' => 'interfaces', 'gateways' => 'routing',
+		'staticroutes' => 'routing', 'dhcpd' => 'dhcp', 'dhcpdv6' => 'dhcp', 'dhcrelay' => 'dhcp',
+		'dhcrelay6' => 'dhcp', 'kea' => 'dhcp', 'unbound' => 'dns', 'dnsmasq' => 'dns', 'openvpn' => 'openvpn',
+		'ipsec' => 'ipsec', 'syslog' => 'syslog', 'snmpd' => 'snmp', 'dyndnses' => 'dyndns', 'ntpd' => 'ntp',
+		'captiveportal' => 'captiveportal', 'wol' => '', 'notifications' => '', 'diag' => '', 'widgets' => '',
+	);
+	$system = array('hostname' => 'hostname', 'domain' => 'hostname', 'dnsserver' => 'dns', 'dnsallowoverride' => 'dns',
+	    'timezone' => 'ntp', 'timeservers' => 'ntp', 'webgui' => 'webgui', 'ssh' => 'sshd', 'enablesshd' => 'sshd');
+	$out = array();
+	foreach ($paths as $path) {
+		$parts = explode('/', $path);
+		if ($parts[0] === 'system') {
+			$out[] = $system[$parts[1] ?? ''] ?? 'filter';
+		} elseif (array_key_exists($parts[0], $map)) {
+			$out[] = $map[$parts[0]];
+		} else {
+			$out[] = 'all';
+		}
+	}
+	return array_values(array_unique(array_filter($out)));
+}
+
+function csfm_edit_reload($what) {
+	if (in_array('all', $what, true)) {
+		/* A part without a narrower reload: everything, as pfSense does after restoring a configuration. */
+		mwexec_bg('/etc/rc.reload_all');
+		return array('all (in the background)');
+	}
+	$done = array();
+	$call = function ($fn) use (&$done) {
+		$args = array_slice(func_get_args(), 1);
+		if (function_exists($fn)) {
+			call_user_func_array($fn, $args);
+			$done[] = $fn;
+		}
+	};
+	if (in_array('interfaces', $what, true)) {
+		$call('interfaces_vlan_configure');
+		$call('interfaces_configure');
+	}
+	if (in_array('vips', $what, true)) {
+		$call('interfaces_vips_configure');
+	}
+	if (in_array('routing', $what, true)) {
+		$call('system_routing_configure');
+		$call('setup_gateways_monitor');
+	}
+	if (in_array('dhcp', $what, true)) {
+		$call('services_dhcpd_configure');
+		$call('services_dhcrelay_configure');
+	}
+	if (in_array('openvpn', $what, true)) {
+		$call('openvpn_resync_all');
+	}
+	if (in_array('ipsec', $what, true)) {
+		$call('ipsec_configure');
+	}
+	if (in_array('syslog', $what, true)) {
+		$call('system_syslogd_start');
+	}
+	if (in_array('snmp', $what, true)) {
+		$call('services_snmpd_configure');
+	}
+	if (in_array('dyndns', $what, true)) {
+		$call('services_dyndns_configure');
+	}
+	if (in_array('captiveportal', $what, true)) {
+		$call('captiveportal_configure');
+	}
+	/* The rest as policies do (hostname, dns, ntp, webgui, sshd), then the rules last. */
+	$rest = array_values(array_intersect($what, array('hostname', 'dns', 'ntp', 'webgui', 'sshd', 'routing')));
+	$rest[] = 'filter';
+	csfm_reload($rest);
+	return array_merge($done, $rest);
+}
+
+function csfm_edit_check($n, $op) {
+	$kind = $op['op'] ?? '';
+	$path = $op['path'] ?? '';
+	if (!in_array($kind, array('set', 'delete', 'append', 'insert'), true)) {
+		throw new Exception("Operation {$n}: unknown op '{$kind}'");
+	}
+	if (!csfm_edit_path_ok($path)) {
+		throw new Exception("Operation {$n}: path '{$path}' cannot be edited");
+	}
+	if (in_array($kind, array('set', 'append', 'insert'), true) && !array_key_exists('value', $op)) {
+		throw new Exception("Operation {$n}: '{$kind}' needs a value");
+	}
+	if (in_array($kind, array('delete', 'insert'), true) && csfm_cfg_get($path) === null) {
+		throw new Exception("Operation {$n}: nothing at '{$path}'");
+	}
+	if (!empty($op['expect']) && is_array($op['expect'])) {
+		$current = csfm_cfg_get($path);
+		foreach ($op['expect'] as $field => $want) {
+			$have = is_array($current) ? ($current[$field] ?? null) : null;
+			$have = is_array($have) ? json_encode($have) : (string)$have;
+			$want = is_array($want) ? json_encode($want) : (string)$want;
+			if ($have !== $want) {
+				throw new Exception("Operation {$n}: '{$path}' has changed since it was read ({$field} is not "
+				    . "'{$want}'); read the configuration again");
+			}
+		}
+	}
+}
+
+function csfm_edit_apply($op) {
+	$path = $op['path'];
+	$parts = explode('/', $path);
+	$last = array_pop($parts);
+	$parent = implode('/', $parts);
+	switch ($op['op']) {
+		case 'set':
+			csfm_cfg_set($path, $op['value']);
+			break;
+		case 'delete':
+			$list = $parent === '' ? null : csfm_cfg_get($parent);
+			if (ctype_digit($last) && is_array($list) && array_is_list($list)) {
+				array_splice($list, (int)$last, 1);
+				csfm_cfg_set($parent, $list);
+			} else {
+				csfm_cfg_del($path);
+			}
+			break;
+		case 'append':
+			$list = csfm_cfg_get($path, array());
+			$list = is_array($list) ? (array_is_list($list) ? $list : array($list)) : array();
+			$list[] = $op['value'];
+			csfm_cfg_set($path, $list);
+			break;
+		case 'insert':
+			$list = csfm_cfg_get($parent, array());
+			if (!ctype_digit($last) || !is_array($list) || !array_is_list($list)) {
+				throw new Exception("insert needs a list item path, like filter/rule/0 ('{$path}')");
+			}
+			array_splice($list, (int)$last, 0, array($op['value']));
+			csfm_cfg_set($parent, $list);
+			break;
+	}
+}
+
+function csfm_task_config_edit($client, $id, $payload) {
+	global $config;
+	$ops = $payload['ops'] ?? null;
+	if (!is_array($ops) || !$ops || count($ops) > 200) {
+		throw new Exception('A configuration edit needs 1 to 200 operations');
+	}
+	/* In order, each seeing the ones before it; any failure puts the configuration back untouched. */
+	$before = $config;
+	$lines = array();
+	try {
+		foreach (array_values($ops) as $i => $op) {
+			csfm_edit_check($i + 1, $op);
+			csfm_edit_apply($op);
+			$lines[] = "{$op['op']} {$op['path']}";
+		}
+	} catch (Exception $e) {
+		$config = $before;
+		throw $e;
+	}
+	$summary = (string)($payload['summary'] ?? '') ?: implode(', ', array_slice($lines, 0, 5));
+	write_config('ComSense: ' . csfm_truncate($summary, 200));
+	$reloaded = csfm_edit_reload(csfm_edit_reloads(array_map(function ($op) { return $op['path']; }, $ops)));
+	return array('output' => implode("\n", $lines) . "\nReloaded: " . implode(', ', $reloaded),
+	    'result' => array('operations' => count($ops), 'reloaded' => $reloaded));
 }
 
 /* ------------------------------------------------ package interfaces across upgrades */

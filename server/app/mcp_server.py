@@ -152,6 +152,38 @@ def build_server(settings: Settings) -> MCPServer:
         return await _call(apiops.remove_port_forward, settings, who, firewall_id, forward_id, _client_ip.get())
 
     @server.tool(annotations=READ)
+    async def get_config(firewall_id: str, path: str = "", depth: int = 3) -> dict[str, Any]:
+        """Read any part of a pfSense firewall's configuration (config.xml) as structured data, from its current
+        backup; passwords and keys show as "[hidden]". Without a path: the top-level sections (system,
+        interfaces, filter, nat, aliases, dhcpd, unbound, openvpn, ipsec, gateways, staticroutes, vlans,
+        virtualip, syslog, snmpd, ntpd, captiveportal, ...). Paths are slash-separated, with list items by
+        index: "system", "interfaces/opt1", "filter/rule/3", "dhcpd/lan/staticmap", "unbound/hosts/0".
+        Subtrees deeper than `depth` are outlined; read a deeper path to see them. Read before edit_config, and
+        use the same paths and indexes there. "editable" says whether edit_config may change the path."""
+        _who()
+        return await _call(apiops.get_config, settings, firewall_id, path, depth)
+
+    @server.tool(annotations=RISKY)
+    async def edit_config(firewall_id: str, operations: list[dict[str, Any]], summary: str = "") -> dict[str, Any]:
+        """Edit any setting pfSense's own pages edit (needs an admin key), as operations on the same paths
+        get_config shows, applied together:
+          {"op": "set", "path": "system/timezone", "value": "America/New_York"}  replace a value or subtree
+          {"op": "set", "path": "interfaces/opt2/enable", "value": false}       false removes a flag (true sets it)
+          {"op": "delete", "path": "filter/rule/7"}                             remove (later items move up)
+          {"op": "append", "path": "dhcpd/lan/staticmap", "value": {"mac": "...", "ipaddr": "...", "descr": "..."}}
+          {"op": "insert", "path": "filter/rule/0", "value": {...}}           add before an item (0: first)
+        Operations apply in order, each seeing the ones before it (an insert moves later list items down); if
+        any fails, none is applied. Add "expect": {"descr": "..."} to an operation on a list item so it is refused if that index now holds
+        something else. Values use pfSense's own field names (read a similar existing item first). Never edited:
+        package settings (installedpackages), user accounts, groups, authentication servers, certificates, cron
+        and shell commands. Secrets read as "[hidden]" must not be sent back. The firewall applies the edit
+        within seconds, reloads what it affects (rules, interfaces, DHCP, DNS, VPNs...), and undoes it
+        automatically if it then loses contact with ComSense (probation). Changes the customer's live network:
+        confirm the exact operations with the user first; follow up with get_task, then get_config."""
+        who = _who()
+        return await _call(apiops.edit_config, settings, who, firewall_id, operations, summary, _client_ip.get())
+
+    @server.tool(annotations=READ)
     async def get_firewall_rules(firewall_id: str, interface: str = "") -> dict[str, Any]:
         """A firewall's rules (Firewall > Rules) in its order, optionally for one interface by name (WAN, LAN,
         GUEST, Floating, OpenVPN...), with the aliases they can use and their entries. From the newest
