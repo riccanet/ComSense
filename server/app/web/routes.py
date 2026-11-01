@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from jinja2 import Undefined
 from sqlalchemy import func, select
@@ -402,16 +402,18 @@ def devices(
             select(Alert.device_id, func.count()).where(Alert.resolved_at.is_(None)).group_by(Alert.device_id)
         ).all()
     )
+    devices_list = db.scalars(stmt).all()
     return render(
         request,
         "devices.html",
-        devices=db.scalars(stmt).all(),
+        devices=devices_list,
         orgs=db.scalars(select(Organization).order_by(Organization.name)).all(),
         org=org,
         q=q,
         open_alerts=open_alerts,
         latest_agent=_latest_agent_version(request),
         bulk_tasks=available_actions(request.app.state.settings),
+        activity=_fleet_activity(db, list(devices_list)),
     )
 
 
@@ -435,6 +437,14 @@ async def devices_bulk(
         summary += " Each firewall checks for updates on its new branch afterwards."
     flash(request, summary, "success")
     return redirect("/devices")
+
+
+@router.get("/devices/activity")
+def devices_activity(ids: str = "", user: User = Depends(viewer), db: Session = Depends(get_db)) -> JSONResponse:
+    """Status and current task of the listed firewalls (the Firewalls page refreshes its Status column with it)."""
+    wanted = [i for i in ids.split(",") if i][:1000]
+    devices = list(db.scalars(select(Device).where(Device.id.in_(wanted)))) if wanted else []
+    return JSONResponse(_fleet_activity(db, devices))
 
 
 @router.get("/pending-banner", response_class=HTMLResponse)
@@ -694,6 +704,35 @@ def _task_banner(db: Session, device: Device) -> list[dict[str, Any]]:
                         "step": "Rebooting; waiting for the firewall to come back"}
         out.append({"id": t.id, "title": task_title(t), "status": t.status.value, "progress": progress,
                     "since": t.sent_at or t.created_at})
+    return out
+
+
+def _fleet_activity(db: Session, devices: list[Device]) -> dict[str, dict[str, Any]]:
+    """What each firewall is doing, for the Firewalls page's Status column: its status, the task it is running
+    (or the next one queued) with its progress, and how many more are queued."""
+    by_id = {d.id: d for d in devices}
+    tasks = db.scalars(select(Task).where(
+        Task.device_id.in_(list(by_id)), Task.status.in_(OPEN_STATES),
+        Task.type.not_in((TaskType.open_terminal, TaskType.read_logs)),
+    ).order_by(Task.id)).all() if by_id else []
+    open_by_device: dict[str, list[Task]] = {}
+    for t in tasks:
+        open_by_device.setdefault(t.device_id, []).append(t)
+    out: dict[str, dict[str, Any]] = {}
+    for device_id, device in by_id.items():
+        entry: dict[str, Any] = {"status": device.status.value, "text": "", "state": "", "percent": None, "more": 0}
+        open_tasks = open_by_device.get(device_id, [])
+        if open_tasks:
+            active = [t for t in open_tasks if t.status in (TaskStatus.sent, TaskStatus.running)]
+            current = active[0] if active else open_tasks[0]
+            progress = task_progress(current)
+            text = task_title(current)
+            if current.type == TaskType.upgrade_system and current.status == TaskStatus.running \
+                    and device.status == DeviceStatus.offline:
+                text, progress = "Upgrading pfSense: rebooting", {"percent": max(92, (progress or {}).get("percent", 0))}
+            entry.update(text=text if active else f"Queued: {text}", state="running" if active else "queued",
+                         percent=progress["percent"] if progress else None, more=len(open_tasks) - 1)
+        out[device_id] = entry
     return out
 
 

@@ -25,7 +25,7 @@
   <button>Filter</button>
 </form>
 
-<form method="post" action="/devices/bulk" id="bulk" data-confirm-select>
+<form method="post" action="/devices/bulk" id="bulk" data-confirm-select data-activity-url="/devices/activity">
   {{ csrf() }}
   <table class="list">
     <thead>
@@ -42,7 +42,11 @@
         <td><a href="/devices/{{ d.id }}">{{ d.name }}</a><div class="muted small">{{ d.hostname }}</div>
           {% if d.organization %}<div class="small show-sm">{{ d.organization.name }}</div>{% endif %}</td>
         <td class="hide-sm">{% if d.organization %}<a href="/customers/{{ d.organization.id }}">{{ d.organization.name }}</a>{% else %}—{% endif %}</td>
-        <td>{{ status_badge(d.status.value) }}</td>
+        {% set act = activity.get(d.id, {}) %}
+        <td data-activity="{{ d.id }}">{{ status_badge(d.status.value) }}
+          <div class="activity small{% if act.state == "running" %} running{% elif act.state == "queued" %} muted{% endif %}"{% if not act.text %} hidden{% endif %}>
+            <span class="activity-text">{{ act.text }}</span>{% if act.percent is not none and act.percent is defined %} <span class="activity-pct">{{ act.percent }}%</span>{% endif %}{% if act.more %} <span class="activity-more muted">+{{ act.more }} queued</span>{% endif %}
+          </div></td>
         <td class="hide-sm">{{ "Plus" if d.edition == "plus" else "CE" if d.edition == "ce" else d.edition }} {{ d.product_version }}{% if d.arch %} <span class="muted small">{{ d.arch|arch }}</span>{% endif %}</td>
         <td class="nowrap hide-sm">{{ d.agent_version or "—" }}{% if latest_agent and d.agent_version and d.agent_version|agent_outdated(latest_agent) %} <span class="badge s-pending" title="This server provides {{ latest_agent }}">update</span>{% endif %}</td>
         <td class="nowrap">{% for ip in d|wan_ips %}{% if loop.first %}{{ ip }}{% else %}<div class="muted small">{{ ip }}</div>{% endif %}{% endfor %}</td>

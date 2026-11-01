@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from conftest import ALL_CAPS, auth, enroll, login, make_key
+from sqlalchemy import select
 
 from app.models import Device, DeviceStatus, Task, TaskStatus, TaskType
 from app.services.tasks import queue_task
@@ -47,3 +48,26 @@ def test_banner_shows_queued_and_running_tasks_with_upgrade_progress(client, db,
         t.status = TaskStatus.success
     db.commit()
     assert "task-banner" not in client.get(f"/devices/{did}").text
+
+
+def test_firewalls_page_shows_what_each_firewall_is_doing(client, db, agent):
+    """The Status column names the task a firewall runs (with upgrade progress) or the next one queued, and
+    /devices/activity gives the same for the page to refresh it."""
+    login(client)
+    busy = enroll(agent, make_key(db), system={"hostname": "fw-busy", "unique_id": "busy"})
+    idle = enroll(agent, make_key(db), system={"hostname": "fw-idle", "unique_id": "idle"})
+    device = db.get(Device, busy["device_id"])
+    queue_task(db, device, TaskType.backup, actor="t")
+    queue_task(db, device, TaskType.check_updates, actor="t")
+    db.commit()
+    page = client.get("/devices").text
+    assert "Queued: Backing up the configuration" in page and "+1 queued" in page
+
+    backup = db.scalar(select(Task).where(Task.type == TaskType.backup))
+    backup.status = TaskStatus.running
+    backup.result = {"progress": {"percent": 40, "step": "x"}}
+    db.commit()
+    data = client.get("/devices/activity", params={"ids": f"{busy['device_id']},{idle['device_id']}"}).json()
+    assert data[busy["device_id"]] == {"status": "online", "text": "Backing up the configuration", "state": "running",
+                                       "percent": 40, "more": 1}
+    assert data[idle["device_id"]]["text"] == "" and data[idle["device_id"]]["status"] == "online"

@@ -182,6 +182,52 @@
         .catch(function () {});
     }, 4000);
   }
+  // Firewalls page: the Status column follows each firewall (online/offline and the task it is running, with
+  // upgrade progress) without reloading the page, so ticked checkboxes and the open select stay as they are.
+  var fleet = document.querySelector("[data-activity-url]");
+  if (fleet && window.fetch) {
+    var cells = {};
+    fleet.querySelectorAll("[data-activity]").forEach(function (td) { cells[td.getAttribute("data-activity")] = td; });
+    var ids = Object.keys(cells);
+    var refresh = function () {
+      if (document.hidden || !ids.length) return;
+      fetch(fleet.getAttribute("data-activity-url") + "?ids=" + encodeURIComponent(ids.join(",")),
+            { credentials: "same-origin", headers: { Accept: "application/json" } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!data) return;
+          Object.keys(data).forEach(function (id) {
+            var td = cells[id], a = data[id];
+            if (!td) return;
+            var badge = td.querySelector(".badge");
+            if (badge) { badge.className = "badge s-" + a.status; badge.textContent = a.status; }
+            var box = td.querySelector(".activity");
+            if (!box) return;
+            box.hidden = !a.text;
+            box.className = "activity small" + (a.state === "running" ? " running" : a.state === "queued" ? " muted" : "");
+            box.textContent = "";
+            var text = document.createElement("span");
+            text.className = "activity-text";
+            text.textContent = a.text || "";
+            box.appendChild(text);
+            if (a.percent !== null && a.percent !== undefined) {
+              var pct = document.createElement("span");
+              pct.className = "activity-pct";
+              pct.textContent = " " + a.percent + "%";
+              box.appendChild(pct);
+            }
+            if (a.more) {
+              var more = document.createElement("span");
+              more.className = "activity-more muted";
+              more.textContent = " +" + a.more + " queued";
+              box.appendChild(more);
+            }
+          });
+        })
+        .catch(function () {});
+    };
+    window.setInterval(refresh, 5000);
+  }
   // Logs: narrow the rows already shown to those containing the typed text (no new fetch).
   document.querySelectorAll("[data-filter-rows]").forEach(function (input) {
     var body = document.querySelector(input.getAttribute("data-filter-rows"));

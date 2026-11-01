@@ -419,3 +419,11 @@ progress.task-progress::-moz-progress-bar { background: var(--ok); border-radius
   .inline-dl dd, .card dd { overflow-wrap: anywhere; }
   .toolbar input, .toolbar select { max-width: 100%; }
 }
+
+/* Firewalls page: what each firewall is doing now, under its status badge. */
+.activity { margin-top: .2rem; line-height: 1.25; max-width: 16rem; }
+.activity.running .activity-text::before { content: ""; display: inline-block; width: .5rem; height: .5rem; margin-right: .3rem;
+  border-radius: 50%; background: var(--ok); vertical-align: middle; animation: activity-pulse 1.2s ease-in-out infinite; }
+.activity-pct { font-weight: 600; }
+@keyframes activity-pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .activity.running .activity-text::before { animation: none; } }
