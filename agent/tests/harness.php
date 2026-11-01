@@ -61,6 +61,15 @@ if (!file_exists(CSFM_ARP_BIN)) {
 	file_put_contents(CSFM_ARP_BIN, "#!/bin/sh\n[ \"\$1\" = -an ] && cat " . escapeshellarg($dir . '/arp.txt') . " 2>/dev/null\nexit 0\n");
 	chmod(CSFM_ARP_BIN, 0755);
 }
+/* pfctl: -si reports $dir/states.txt as the current state count; -nf fails on a ruleset naming BADTABLE. */
+define('CSFM_RULES_DEBUG', $dir . '/rules.debug');
+define('CSFM_PFCTL', $dir . '/pfctl');
+if (!file_exists(CSFM_PFCTL)) {
+	$states = escapeshellarg($dir . '/states.txt');
+	file_put_contents(CSFM_PFCTL, "#!/bin/sh\nif [ \"\$1\" = -si ]; then echo \"  current entries \$(cat {$states} 2>/dev/null || echo 5)\"; exit 0; fi\n"
+	    . "if [ \"\$1\" = -nf ] && grep -q BADTABLE \"\$2\"; then echo \"\$2:107: cannot load \\\"/var/db/aliastables/BADTABLE.txt\\\": Invalid argument\"; exit 1; fi\nexit 0\n");
+	chmod(CSFM_PFCTL, 0755);
+}
 define('CSFM_ISC_LEASES', $dir . '/dhcpd.leases');
 define('CSFM_KEA_LEASES', $dir . '/kea-dhcp4.leases');
 define('CSFM_NEIGHBORS_EVERY', (int)(getenv('CSFM_TEST_NEIGHBORS_EVERY') ?: 0));
@@ -180,6 +189,12 @@ function g_get($key) {
 }
 
 function filter_configure() { csfm_test_action('filter_configure'); }
+/* Generates the "ruleset" from the configuration: pfctl (below) rejects it while any alias is named BADTABLE. */
+function filter_configure_sync() {
+	global $config;
+	file_put_contents(CSFM_RULES_DEBUG, json_encode($config['aliases'] ?? array()));
+	csfm_test_action('filter_configure_sync');
+}
 function services_dhcpd_configure() { csfm_test_action('services_dhcpd_configure'); }
 function system_resolvconf_generate() { csfm_test_action('system_resolvconf_generate'); }
 function system_timezone_configure() { csfm_test_action('system_timezone_configure'); }

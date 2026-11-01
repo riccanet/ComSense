@@ -633,7 +633,7 @@ function csfm_edit_reload($what) {
 	/* The rest as policies do (hostname, dns, ntp, webgui, sshd), then the rules last. */
 	$rest = array_values(array_intersect($what, array('hostname', 'dns', 'ntp', 'webgui', 'sshd', 'routing')));
 	$rest[] = 'filter';
-	csfm_reload($rest);
+	csfm_reload($rest, true);
 	return array_merge($done, $rest);
 }
 
@@ -727,10 +727,31 @@ function csfm_task_config_edit($client, $id, $payload) {
 		throw $e;
 	}
 	$summary = (string)($payload['summary'] ?? '') ?: implode(', ', array_slice($lines, 0, 5));
+	$what = csfm_edit_reloads(array_map(function ($op) { return $op['path']; }, $ops));
+	$check = !in_array('all', $what, true);  /* a full reload runs in the background: nothing to check yet */
+	$brokenBefore = $check ? csfm_rules_error() : '';
 	write_config('ComSense: ' . csfm_truncate($summary, 200));
-	$reloaded = csfm_edit_reload(csfm_edit_reloads(array_map(function ($op) { return $op['path']; }, $ops)));
-	return array('output' => implode("\n", $lines) . "\nReloaded: " . implode(', ', $reloaded),
-	    'result' => array('operations' => count($ops), 'reloaded' => $reloaded));
+	$reloaded = csfm_edit_reload($what);
+	$output = implode("\n", $lines) . "\nReloaded: " . implode(', ', $reloaded);
+	$rulesError = $check ? csfm_rules_error() : '';
+	if ($rulesError !== '' && $brokenBefore === '') {
+		/* This edit broke the rules: put the configuration back as it was and load that again. */
+		$config = $before;
+		write_config('ComSense: undid "' . csfm_truncate($summary, 150) . '": the firewall rules failed to load');
+		csfm_edit_reload($what);
+		throw new Exception("The firewall rules failed to load after this edit, so it was undone and the "
+		    . "previous configuration restored. pf said: {$rulesError}");
+	}
+	if ($rulesError !== '') {
+		$output .= "\nWarning: the firewall rules still fail to load, as they did before this edit, so the "
+		    . "firewall is running without its rules (no NAT). pf said: {$rulesError}";
+	} elseif ($brokenBefore !== '') {
+		$output .= "\nThe firewall rules failed to load before this edit and load again now.";
+	} elseif ($check) {
+		$output .= "\nThe firewall rules loaded.";
+	}
+	return array('output' => $output, 'result' => array('operations' => count($ops), 'reloaded' => $reloaded,
+	    'rules_error' => $rulesError, 'rules_were_broken' => $brokenBefore !== ''));
 }
 
 /* ------------------------------------------------ package interfaces across upgrades */

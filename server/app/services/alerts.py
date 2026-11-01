@@ -17,10 +17,16 @@ STALLED_PREFIX = "upgrade_stalled:"
 UPGRADE_STALL = timedelta(minutes=20)
 # CPU must be high on this many check-ins in a row (about five minutes), so short spikes do not alert.
 CPU_SAMPLES = 5
+# The firewall's rules failed to load: pfSense then runs without them, so nothing is NATed and every device
+# behind the firewall is cut off while the firewall itself stays online. The agent reports pf's error when it
+# sees no states; for agents that do not, no states on this many check-ins in a row raises it.
+RULES_KEY = "rules"
+EMPTY_STATE_SAMPLES = 3
 
 # Alert categories (Settings > Alert categories): key -> (name, what raises it).
 CATEGORIES = {
-    "system": ("System alerts", "Configuration changes rolled back on the firewall; an upgrade that stopped making progress"),
+    "system": ("System alerts", "Configuration changes rolled back on the firewall; an upgrade that stopped making "
+               "progress; firewall rules that failed to load"),
     "wan": ("WAN connectivity", "A gateway is down or has packet loss or high latency"),
     "down": ("Firewall down", "The firewall stopped checking in"),
     "services": ("Services not running", "An enabled service on the firewall is stopped"),
@@ -54,8 +60,8 @@ def category_filter(category: str):
     return ~or_(*by_category.values())
 
 
-def _conditions(report: dict[str, Any], cfg: AlertCategorySettings,
-                cpu_history: list[float | None]) -> dict[str, tuple[str, str]]:
+def _conditions(report: dict[str, Any], cfg: AlertCategorySettings, cpu_history: list[float | None],
+                states_history: list[int | None] | None = None) -> dict[str, tuple[str, str]]:
     """Derive {key: (severity, message)} from a check-in report."""
     found: dict[str, tuple[str, str]] = {}
     for gw in report.get("gateways") or []:
@@ -84,6 +90,14 @@ def _conditions(report: dict[str, Any], cfg: AlertCategorySettings,
     states, states_max = metrics.get("states"), metrics.get("states_max")
     if _number(states) and _number(states_max) and states_max > 0 and 100 * states / states_max >= cfg.states_pct:
         found["states"] = ("warning", f"State table is {100 * states / states_max:.0f}% full ({states} of {states_max})")
+    rules_error = str(metrics.get("rules_error") or "").strip()
+    states_history = states_history or []
+    if rules_error:
+        found[RULES_KEY] = ("critical", "The firewall rules failed to load, so the firewall is running without them "
+                                        "(no NAT: devices behind it have no internet). pf said: " + rules_error[:400])
+    elif len(states_history) >= EMPTY_STATE_SAMPLES and all(s == 0 for s in states_history[:EMPTY_STATE_SAMPLES]):
+        found[RULES_KEY] = ("critical", f"No connections through the firewall for {EMPTY_STATE_SAMPLES} check-ins: "
+                                        "its rules may have failed to load (check with pfctl -nf /tmp/rules.debug)")
     return {k: v for k, v in found.items() if cfg.flag(category_of(k), "enabled")}
 
 
@@ -97,13 +111,19 @@ def _cpu_history(db: Session, device: Device) -> list[float | None]:
     return list(db.scalars(stmt.limit(CPU_SAMPLES)))
 
 
+def _states_history(db: Session, device: Device) -> list[int | None]:
+    stmt = select(Metric.states).where(Metric.device_id == device.id).order_by(Metric.ts.desc(), Metric.id.desc())
+    return list(db.scalars(stmt.limit(EMPTY_STATE_SAMPLES)))
+
+
 def open_alerts(db: Session, device: Device) -> dict[str, Alert]:
     stmt = select(Alert).where(Alert.device_id == device.id, Alert.resolved_at.is_(None))
     return {a.key: a for a in db.scalars(stmt)}
 
 
 def evaluate_report(db: Session, device: Device, report: dict[str, Any]) -> None:
-    current = _conditions(report, get_alert_category_settings(db), _cpu_history(db, device))
+    current = _conditions(report, get_alert_category_settings(db), _cpu_history(db, device),
+                          _states_history(db, device))
     existing = open_alerts(db, device)
     now = utcnow()
     for key, (severity, message) in current.items():

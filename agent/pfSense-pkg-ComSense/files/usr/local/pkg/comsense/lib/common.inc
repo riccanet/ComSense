@@ -7,7 +7,7 @@
  */
 
 if (!defined('CSFM_AGENT_VERSION')) {
-	define('CSFM_AGENT_VERSION', '0.2.34');
+	define('CSFM_AGENT_VERSION', '0.2.36');
 }
 if (!defined('CSFM_DB_DIR')) {
 	/* Overridable so the agent can be exercised outside a firewall. */
@@ -22,6 +22,13 @@ define('CSFM_SYSTEM_CA_BUNDLE', '/etc/ssl/cert.pem');
 /* pkg(8) on pfSense; /usr/sbin/pkg is only FreeBSD's bootstrap stub. */
 if (!defined('CSFM_PKG')) {
 	define('CSFM_PKG', '/usr/local/sbin/pkg-static');
+}
+if (!defined('CSFM_PFCTL')) {
+	define('CSFM_PFCTL', '/sbin/pfctl');
+}
+if (!defined('CSFM_RULES_DEBUG')) {
+	/* The ruleset pfSense generates from config.xml and loads into pf (filter.inc). */
+	define('CSFM_RULES_DEBUG', '/tmp/rules.debug');
 }
 if (!defined('CSFM_UPGRADE_BIN')) {
 	/* pfSense's own update tool (System > Update uses it too). */
@@ -288,4 +295,18 @@ function csfm_exec($cmd, $timeout = 600) {
 
 function csfm_truncate($text, $limit = 60000) {
 	return strlen($text) > $limit ? substr($text, -$limit) : $text;
+}
+
+/*
+ * Whether pf accepts the ruleset pfSense generated: '' when it does, otherwise pf's error. pfSense keeps the
+ * previous rules, or none after a boot, when its ruleset fails to load (a bad table file left by a removed
+ * package, say), and then nothing is NATed: the firewall stays online while everything behind it is cut off.
+ */
+function csfm_rules_error() {
+	if (!is_file(CSFM_RULES_DEBUG)) {
+		return '';
+	}
+	$out = array();
+	exec(escapeshellarg(CSFM_PFCTL) . ' -nf ' . escapeshellarg(CSFM_RULES_DEBUG) . ' 2>&1', $out, $rc);
+	return $rc === 0 ? '' : csfm_truncate(trim(implode("\n", $out)) ?: "pfctl exit code {$rc}", 500);
 }

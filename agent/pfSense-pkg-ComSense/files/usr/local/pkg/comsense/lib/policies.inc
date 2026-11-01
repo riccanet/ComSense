@@ -114,7 +114,7 @@ function csfm_remove_policy($pid) {
 
 /* ------------------------------------------------------------- reloads */
 
-function csfm_reload($what) {
+function csfm_reload($what, $sync = false) {
 	$what = array_unique($what);
 	if (in_array('hostname', $what, true)) {
 		function_exists('system_hostname_configure') && system_hostname_configure();
@@ -148,7 +148,16 @@ function csfm_reload($what) {
 			mwexec_bg('/etc/sshd');
 		}
 	}
-	if (in_array('filter', $what, true) && function_exists('filter_configure')) {
+	if (in_array('filter', $what, true)) {
+		csfm_filter_reload($sync);
+	}
+}
+
+/* Reload the rules: queued for pfSense's reload daemon, or, with $sync, now, so the result can be checked. */
+function csfm_filter_reload($sync = false) {
+	if ($sync && function_exists('filter_configure_sync')) {
+		filter_configure_sync();
+	} elseif (function_exists('filter_configure')) {
 		filter_configure();
 	}
 }

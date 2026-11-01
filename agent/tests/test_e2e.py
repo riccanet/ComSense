@@ -856,8 +856,37 @@ def test_full_lifecycle(env):
                                                 "value": "1"}]})
     agent(env, "run")
     assert task(tid).status == TaskStatus.failed and "cannot be edited" in task(tid).output
+    # An edit after which the firewall rules no longer load (pf rejects the ruleset) is undone at once.
+    tid = queue(TaskType.config_edit, {"ops": validate_ops([
+        {"op": "append", "path": "aliases/alias", "value": {"name": "BADTABLE", "type": "urltable"}}])})
+    agent(env, "run")
+    undone = task(tid)
+    assert undone.status == TaskStatus.failed and "failed to load after this edit, so it was undone" in undone.output
+    assert "BADTABLE.txt" in undone.output and "BADTABLE" not in json.dumps(fw_config(env).get("aliases", {}))
+    # Rules that already failed to load (a package's leftovers): the edit that removes the cause says they load again.
     cfg = fw_config(env)
-    del cfg["dhcpd"], cfg["filter"]
+    cfg["aliases"] = {"alias": [{"name": "BADTABLE", "type": "urltable"}, {"name": "office", "type": "host"}]}
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
+    (env["fw"] / "rules.debug").write_text(json.dumps(cfg["aliases"]))
+    # Meanwhile the check-in shows no states, and the agent reports why.
+    (env["fw"] / "states.txt").write_text("0\n")
+    agent(env, "run")
+    with env["db"]() as db:
+        dev = db.get(Device, creds["device_id"])
+        assert "BADTABLE.txt" in dev.inventory["metrics"]["rules_error"]
+        assert any(a.key == "rules" and a.resolved_at is None for a in dev.alerts)
+    tid = queue(TaskType.config_edit, {"ops": validate_ops([
+        {"op": "delete", "path": "aliases/alias/0", "expect": {"name": "BADTABLE"}}])})
+    agent(env, "run")
+    fixed = task(tid)
+    assert fixed.status == TaskStatus.success and "failed to load before this edit and load again now" in fixed.output
+    (env["fw"] / "states.txt").write_text("25\n")
+    agent(env, "run")
+    with env["db"]() as db:
+        assert not db.get(Device, creds["device_id"]).inventory["metrics"]["rules_error"]
+        assert not any(a.key == "rules" and a.resolved_at is None for a in db.get(Device, creds["device_id"]).alerts)
+    cfg = fw_config(env)
+    del cfg["dhcpd"], cfg["filter"], cfg["aliases"]
     (env["fw"] / "config.json").write_text(json.dumps(cfg))
 
     # 11c4. ARP entries and DHCP leases (ISC and Kea) and static mappings come in with the check-in, every few

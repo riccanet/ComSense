@@ -79,6 +79,31 @@ def test_cpu_alerts_only_when_it_stays_high(client, db, agent):
     assert "cpu" not in _open(db)
 
 
+def test_rules_that_failed_to_load_alert(client, db, agent):
+    """A firewall whose rules failed to load is online but passes no traffic (no NAT): no states at all."""
+    login(client)
+    creds = enroll(agent, make_key(db))
+    error = '/tmp/rules.debug:107: cannot load "/var/db/aliastables/pfB_Top_v6.txt": Invalid argument'
+
+    def checkin(**metrics):
+        agent.post("/api/agent/v1/checkin", json={"metrics": {"cpu_pct": 1, **metrics}}, headers=auth(creds["token"]))
+
+    # The agent reports pf's error: alert at once, with the error.
+    checkin(states=0, rules_error=error)
+    alert = _open(db)["rules"]
+    assert alert.severity == "critical" and "pfB_Top_v6" in alert.message and "no NAT" in alert.message
+    checkin(states=812, rules_error="")
+    assert "rules" not in _open(db)
+    # An agent that does not report the error: no states on three check-ins in a row.
+    for _ in range(2):
+        checkin(states=0)
+        assert "rules" not in _open(db)
+    checkin(states=0)
+    assert "No connections through the firewall" in _open(db)["rules"].message
+    checkin(states=40)
+    assert "rules" not in _open(db)
+
+
 def test_rollbacks_with_system_alerts_off_are_recorded_resolved(client, db, agent):
     csrf = login(client)
     _save(client, csrf, system_enabled=None)

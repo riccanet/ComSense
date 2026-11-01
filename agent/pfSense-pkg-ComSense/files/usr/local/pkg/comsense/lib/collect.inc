@@ -105,14 +105,14 @@ function csfm_memory_usage() {
 function csfm_states() {
 	$current = null;
 	$max = null;
-	exec('/sbin/pfctl -si 2>/dev/null', $out);
+	exec(escapeshellarg(CSFM_PFCTL) . ' -si 2>/dev/null', $out);
 	foreach ($out as $line) {
 		if (preg_match('/current entries\s+(\d+)/', $line, $m)) {
 			$current = (int)$m[1];
 		}
 	}
 	$out = array();
-	exec('/sbin/pfctl -sm 2>/dev/null', $out);
+	exec(escapeshellarg(CSFM_PFCTL) . ' -sm 2>/dev/null', $out);
 	foreach ($out as $line) {
 		if (preg_match('/^states\s+hard limit\s+(\d+)/', $line, $m)) {
 			$max = (int)$m[1];
@@ -137,6 +137,8 @@ function csfm_collect_metrics() {
 		'load' => is_array($load) ? array_map(function ($v) { return round($v, 2); }, $load) : array(),
 		'states' => $states,
 		'states_max' => $states_max,
+		/* No states at all: check whether the rules loaded (only then, as it parses the whole ruleset). */
+		'rules_error' => ($states === 0 && ($uptime === null || $uptime > 300)) ? csfm_rules_error() : '',
 		'uptime' => $uptime,
 		'mbuf' => csfm_sysctl('kern.ipc.nmbclusters'),
 	);
