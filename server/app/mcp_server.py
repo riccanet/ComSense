@@ -106,12 +106,50 @@ def build_server(settings: Settings) -> MCPServer:
 
     @server.tool(annotations=READ)
     async def get_nat_rules(firewall_id: str) -> dict[str, Any]:
-        """A firewall's NAT: port forwards (interface, protocol, source, destination and port, internal target and
+        """A firewall's NAT: port forwards (id for update_port_forward/remove_port_forward, interface, protocol, source, destination and port, internal target and
         port, description, disabled, associated filter rule), outbound NAT (mode: automatic, hybrid, advanced or
         disabled, and its rules) and 1:1 mappings. Read from the firewall's newest configuration backup, which
         the firewall uploads whenever its configuration changes."""
         _who()
         return await _call(apiops.get_nat_rules, settings, firewall_id)
+
+    @server.tool(annotations=RISKY)
+    async def add_port_forward(firewall_id: str, port: str, target: str, interface: str = "wan", protocol: str = "tcp",
+                               local_port: str = "", source: str = "any", source_port: str = "",
+                               destination: str = "wan address", description: str = "",
+                               disabled: bool = False) -> dict[str, Any]:
+        """Add a port forward (needs an operator or admin key): external port (a number, range 8000-8100 or port
+        alias) on interface (name like WAN/VERIZON or id like wan/opt1) to target (internal IP or alias) and
+        local_port (default: the external port). Source restricts who may connect (address, network or alias).
+        The firewall applies it within seconds under probation (undone if it then loses contact with ComSense),
+        with a linked pass rule. Confirm with the user first; follow up with get_task, then get_nat_rules."""
+        who = _who()
+        fields = {"port": port, "target": target, "interface": interface, "protocol": protocol,
+                  "local_port": local_port, "source": source, "source_port": source_port,
+                  "destination": destination, "description": description, "disabled": disabled}
+        return await _call(apiops.add_port_forward, settings, who, firewall_id, fields, _client_ip.get())
+
+    @server.tool(annotations=RISKY)
+    async def update_port_forward(firewall_id: str, forward_id: str, port: str | None = None, target: str | None = None,
+                                  interface: str | None = None, protocol: str | None = None,
+                                  local_port: str | None = None, source: str | None = None,
+                                  source_port: str | None = None, destination: str | None = None,
+                                  description: str | None = None, disabled: bool | None = None) -> dict[str, Any]:
+        """Change a port forward (needs an operator or admin key); forward_id is its id from get_nat_rules. Only
+        the fields given change (disabled=true turns it off without removing it). Port forwards from ComSense
+        Configurations are changed there instead. Confirm with the user first; follow up with get_task."""
+        who = _who()
+        fields = {"port": port, "target": target, "interface": interface, "protocol": protocol,
+                  "local_port": local_port, "source": source, "source_port": source_port,
+                  "destination": destination, "description": description, "disabled": disabled}
+        return await _call(apiops.edit_port_forward, settings, who, firewall_id, forward_id, fields, _client_ip.get())
+
+    @server.tool(annotations=RISKY)
+    async def remove_port_forward(firewall_id: str, forward_id: str) -> dict[str, Any]:
+        """Remove a port forward and its linked filter rule (needs an operator or admin key); forward_id is its id
+        from get_nat_rules. Confirm with the user first; follow up with get_task."""
+        who = _who()
+        return await _call(apiops.remove_port_forward, settings, who, firewall_id, forward_id, _client_ip.get())
 
     @server.tool(annotations=READ)
     async def get_firewall_rules(firewall_id: str, interface: str = "") -> dict[str, Any]:

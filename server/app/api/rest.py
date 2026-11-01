@@ -48,6 +48,20 @@ class RunTask(BaseModel):
                                                   "boot_environments")
 
 
+class PortForward(BaseModel):
+    """A port forward's fields. When changing one, leave out what stays as it is."""
+    interface: str | None = Field(None, description="Interface name (WAN, VERIZON) or id (wan, opt1); default wan")
+    protocol: str | None = Field(None, description="tcp, udp, tcp/udp, icmp, any...; default tcp")
+    source: str | None = Field(None, description='"any" (default), an address, network or alias; "!" to negate')
+    source_port: str | None = None
+    destination: str | None = Field(None, description='Default "wan address"; or an address or alias')
+    port: str | None = Field(None, description="External port, range (8000-8100) or port alias")
+    target: str | None = Field(None, description="Internal IP address or alias")
+    local_port: str | None = Field(None, description="Internal port; default: the external port")
+    description: str | None = None
+    disabled: bool | None = None
+
+
 class SetCustomer(BaseModel):
     customer_id: int | None = Field(description="The customer's id, or null to leave the firewall unassigned")
 
@@ -95,6 +109,21 @@ def create_rest_app(settings: Settings) -> FastAPI:
              summary="NAT: port forwards, outbound NAT (mode and rules) and 1:1 mappings, from the newest backup")
     def firewall_nat(firewall_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
         return apiops.get_nat_rules(db, settings, firewall_id)
+
+    @app.post("/firewalls/{firewall_id}/nat", status_code=201, summary="Add a port forward (operator)")
+    def firewall_nat_add(firewall_id: str, request: Request, body: PortForward, who: Principal = Depends(principal),
+                         db: Session = Depends(get_db)) -> dict[str, Any]:
+        return apiops.add_port_forward(db, settings, who, firewall_id, body.model_dump(), _ip(request))
+
+    @app.patch("/firewalls/{firewall_id}/nat/{forward_id}", summary="Change a port forward (operator)")
+    def firewall_nat_edit(firewall_id: str, forward_id: str, request: Request, body: PortForward,
+                          who: Principal = Depends(principal), db: Session = Depends(get_db)) -> dict[str, Any]:
+        return apiops.edit_port_forward(db, settings, who, firewall_id, forward_id, body.model_dump(), _ip(request))
+
+    @app.delete("/firewalls/{firewall_id}/nat/{forward_id}", summary="Remove a port forward (operator)")
+    def firewall_nat_remove(firewall_id: str, forward_id: str, request: Request, who: Principal = Depends(principal),
+                            db: Session = Depends(get_db)) -> dict[str, Any]:
+        return apiops.remove_port_forward(db, settings, who, firewall_id, forward_id, _ip(request))
 
     @app.get("/firewalls/{firewall_id}/rules", dependencies=read,
              summary="Firewall rules in order (interface= filters by name or id) and aliases, from the newest backup")

@@ -320,6 +320,56 @@ def parse_alias_entries(text: str) -> tuple[list[str], list[str]]:
     return values, notes
 
 
+def parse_endpoint(text: str, port: str = "") -> dict[str, Any]:
+    text = text.strip()
+    ep: dict[str, Any] = {}
+    if text.startswith("!"):
+        ep["not"] = True
+        text = text[1:].strip()
+    words = text.lower().split()
+    if not text or text.lower() == "any":
+        ep["any"] = True
+    elif text.lower() == "this firewall":
+        ep["network"] = "(self)"
+    elif len(words) == 2 and words[1] == "net":
+        ep["network"] = words[0]
+    elif len(words) == 2 and words[1] == "address":
+        ep["network"] = words[0] + "ip"
+    else:
+        ep["address"] = text
+    if port.strip():
+        ep["port"] = port.strip()
+    return ep
+
+
+def port_forward_rule(fields: dict[str, Any]) -> dict[str, Any]:
+    """One port forward from typed fields, as the firewall's Configuration page and the API take them
+    (raises PolicyError): interface, protocol, src, srcport, dst ("wan address" if empty), dstport, target,
+    localport (the external port's first one if empty, as on pfSense's own page), descr, disabled."""
+    def text(name: str, default: str = "") -> str:
+        value = fields.get(name)
+        return str(value if value is not None else default).strip()
+
+    dstport = text("dstport")
+    first_port = re.split(r"[:-]", dstport)[0] if re.fullmatch(r"[0-9]+[:-][0-9]+", dstport) else dstport
+    rule: dict[str, Any] = {
+        "interface": text("interface", "wan").lower() or "wan",
+        "protocol": text("protocol", "tcp") or "tcp",
+        "source": parse_endpoint(text("src"), text("srcport")),
+        "destination": parse_endpoint(text("dst") or "wan address", dstport),
+        "target": text("target"),
+        "local_port": text("localport") or first_port,
+        "descr": text("descr")[:200],
+    }
+    if fields.get("disabled") in (True, "true"):
+        rule["disabled"] = True
+    try:
+        validate_port_forward_rule(rule)
+    except PolicyError as exc:
+        raise PolicyError(str(exc).replace("rules[0].", "")) from exc
+    return rule
+
+
 def validate_alias(alias: dict[str, Any]) -> None:
     """One alias, as added or changed from a firewall's page."""
     try:

@@ -37,6 +37,7 @@ from ..security import hash_secret
 from .agentpkg import agent_outdated, latest_package
 from .alerts import category_of
 from .configview import config_summary, current_backup, is_system_alias
+from .policies import PolicyError, port_forward_rule
 from .tasks import TaskError, queue_task
 
 KEY_PREFIX = "csfm_api_"
@@ -243,7 +244,8 @@ def get_nat_rules(db: Session, settings: Settings, firewall_id: str) -> dict[str
     device, backup, summary, names = _config(db, settings, firewall_id)
     keys = ("protocol", "source", "destination", "port", "target", "local_port", "descr", "disabled", "nordr",
             "filter_rule", "managed")
-    forwards = [{"interface": _named(names, r["interface"]), **{k: r[k] for k in keys}} for r in summary["nat"]]
+    forwards = [{"id": r["fingerprint"], "interface": _named(names, r["interface"]), **{k: r[k] for k in keys}}
+                for r in summary["nat"]]
     outbound = summary.get("outbound_nat") or {"mode": "", "rules": []}
     return {
         "firewall_id": device.id, "firewall": device.name, "backup_id": backup.id, "backup_taken": _iso(backup.created_at),
@@ -252,6 +254,86 @@ def get_nat_rules(db: Session, settings: Settings, firewall_id: str) -> dict[str
                          "rules": [{**r, "interface": _named(names, r["interface"])} for r in outbound["rules"]]},
         "one_to_one": [{**r, "interface": _named(names, r["interface"])} for r in summary.get("one_to_one") or []],
     }
+
+
+# The API's names for a port forward's fields -> the names port_forward_rule() takes.
+NAT_FIELDS = {"interface": "interface", "protocol": "protocol", "source": "src", "source_port": "srcport",
+              "destination": "dst", "port": "dstport", "target": "target", "local_port": "localport",
+              "description": "descr", "disabled": "disabled"}
+
+
+def _nat_fields(given: dict[str, Any], names: dict[str, str]) -> dict[str, Any]:
+    fields = {NAT_FIELDS[k]: v for k, v in given.items() if k in NAT_FIELDS and v is not None}
+    if fields.get("interface"):  # by name (VERIZON) or id (wan, opt1)
+        wanted = str(fields["interface"]).strip().lower()
+        fields["interface"] = next((i for i, n in names.items() if n.lower() == wanted), wanted)
+    return fields
+
+
+def _queue_nat(db: Session, settings: Settings, who: Principal, device: Device, ttype: TaskType,
+               payload: dict[str, Any], what: str, ip: str) -> dict[str, Any]:
+    try:
+        task = queue_task(db, device, ttype, payload, actor=who.actor, changes_enabled=settings.enable_firewall_changes)
+    except TaskError as exc:
+        raise ApiError(409, str(exc)) from exc
+    db.flush()
+    audit(db, who.actor, f"task.{ttype.value}", target=device.id, detail=f"via API: {what}"[:1000], ip=ip)
+    db.commit()
+    return _task(task)
+
+
+def _existing_forward(summary: dict[str, Any], forward_id: str) -> dict[str, Any]:
+    if not re.fullmatch(r"[0-9a-f]{16}", forward_id or ""):
+        raise ApiError(400, "Invalid port forward id (see get_nat_rules)")
+    rule = next((r for r in summary["nat"] if r["fingerprint"] == forward_id), None)
+    if rule is None:
+        raise ApiError(404, "No port forward with that id in the firewall's current configuration (see get_nat_rules)")
+    if rule["managed"]:
+        raise ApiError(409, "This port forward comes from a ComSense configuration; change it in Configurations")
+    return rule
+
+
+def add_port_forward(db: Session, settings: Settings, who: Principal, firewall_id: str, fields: dict[str, Any],
+                     ip: str = "") -> dict[str, Any]:
+    """Add one port forward (operator). The firewall applies it under probation, as from the console."""
+    who.require(Role.operator)
+    device, _, _, names = _config(db, settings, firewall_id)
+    try:
+        rule = port_forward_rule(_nat_fields(fields, names))
+    except PolicyError as exc:
+        raise ApiError(400, str(exc)) from exc
+    return _queue_nat(db, settings, who, device, TaskType.nat_add, {"rule": rule},
+                      f"add port forward {rule['destination'].get('port')} -> {rule['target']}:{rule['local_port']}", ip)
+
+
+def edit_port_forward(db: Session, settings: Settings, who: Principal, firewall_id: str, forward_id: str,
+                      fields: dict[str, Any], ip: str = "") -> dict[str, Any]:
+    """Change one port forward (operator); fields not given keep their current values."""
+    who.require(Role.operator)
+    device, _, summary, names = _config(db, settings, firewall_id)
+    current = _existing_forward(summary, forward_id)
+    merged = {"interface": current["interface"], "protocol": current["protocol"], "src": current["src"],
+              "srcport": current["src_port"], "dst": current["destination"], "dstport": current["port"],
+              "target": current["target"], "localport": current["local_port"], "descr": current["descr"],
+              "disabled": current["disabled"]}
+    merged.update(_nat_fields(fields, names))
+    try:
+        rule = port_forward_rule(merged)
+    except PolicyError as exc:
+        raise ApiError(400, str(exc)) from exc
+    return _queue_nat(db, settings, who, device, TaskType.nat_edit, {"fingerprint": forward_id, "rule": rule},
+                      f"change port forward {current['descr'] or forward_id}", ip)
+
+
+def remove_port_forward(db: Session, settings: Settings, who: Principal, firewall_id: str, forward_id: str,
+                        ip: str = "") -> dict[str, Any]:
+    """Remove one port forward (operator), with its associated filter rule."""
+    who.require(Role.operator)
+    device, _, summary, _ = _config(db, settings, firewall_id)
+    current = _existing_forward(summary, forward_id)
+    return _queue_nat(db, settings, who, device, TaskType.nat_remove,
+                      {"fingerprint": forward_id, "descr": current["descr"][:200]},
+                      f"remove port forward {current['descr'] or forward_id}", ip)
 
 
 def get_firewall_rules(db: Session, settings: Settings, firewall_id: str, interface: str = "") -> dict[str, Any]:

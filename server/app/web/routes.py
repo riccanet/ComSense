@@ -67,8 +67,8 @@ from ..services.policies import (
     desired_policies,
     parse_alias_entries,
     policy_hash,
+    port_forward_rule,
     validate_alias,
-    validate_port_forward_rule,
 )
 from ..services.tasks import (
     COMING_SOON,
@@ -822,27 +822,8 @@ def _queue_change(request: Request, db: Session, settings: Settings, device: Dev
 
 def _port_forward_from_form(form) -> dict[str, Any]:
     """One port forward from the add or edit form on the firewall's page (raises PolicyError)."""
-    from .config_routes import parse_endpoint
-
-    dstport = str(form.get("dstport", "")).strip()
-    # For a range (8000-8100) the internal port is where it starts, as on pfSense's own page.
-    first_port = re.split(r"[:-]", dstport)[0] if re.fullmatch(r"[0-9]+[:-][0-9]+", dstport) else dstport
-    rule = {
-        "interface": str(form.get("interface", "wan")).strip().lower() or "wan",
-        "protocol": str(form.get("protocol", "tcp")),
-        "source": parse_endpoint(str(form.get("src", "")), str(form.get("srcport", ""))),
-        "destination": parse_endpoint(str(form.get("dst", "")) or "wan address", dstport),
-        "target": str(form.get("target", "")).strip(),
-        "local_port": str(form.get("localport", "")).strip() or first_port,
-        "descr": str(form.get("descr", "")).strip()[:200],
-    }
-    if form.get("disabled") == "true":
-        rule["disabled"] = True
-    try:
-        validate_port_forward_rule(rule)
-    except PolicyError as exc:
-        raise PolicyError(str(exc).replace("rules[0].", "")) from exc
-    return rule
+    return port_forward_rule({k: form.get(k) for k in ("interface", "protocol", "src", "srcport", "dst", "dstport",
+                                                       "target", "localport", "descr", "disabled")})
 
 
 def _nat_form_values(form) -> dict[str, Any]:

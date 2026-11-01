@@ -37,6 +37,9 @@ while.
 | PUT | `/firewalls/{id}/customer` | `{"customer_id": 3}` or `{"customer_id": null}` (operator) |
 | GET | `/firewalls/{id}/backups` | Stored configuration backups (metadata) |
 | GET | `/firewalls/{id}/nat` | Port forwards, outbound NAT (mode and rules) and 1:1 NAT, from the newest backup |
+| POST | `/firewalls/{id}/nat` | Add a port forward (operator): `port`, `target`, optional `interface`, `protocol`, `local_port`, `source`, `source_port`, `destination`, `description`, `disabled` |
+| PATCH | `/firewalls/{id}/nat/{forward_id}` | Change a port forward (operator); only the fields given change |
+| DELETE | `/firewalls/{id}/nat/{forward_id}` | Remove a port forward and its linked rule (operator) |
 | GET | `/firewalls/{id}/rules?interface=` | Firewall rules in order, optionally one interface, and aliases |
 | GET | `/firewalls/{id}/network?q=` | ARP entries, DHCP leases and static mappings, optionally filtered |
 | GET | `/devices/search?q=` | Find a device by MAC (any notation), IP or hostname on every firewall |

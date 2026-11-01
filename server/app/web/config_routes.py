@@ -30,6 +30,7 @@ from ..services.policies import (
     desired_policies,
     endpoint_text,
     parse_alias_entries,
+    parse_endpoint,
     policy_hash,
     validate_policy,
 )
@@ -66,28 +67,6 @@ def _render(request: Request, template: str, section: str, settings: Settings, *
 
 
 # ------------------------------------------------------------ endpoints
-
-def parse_endpoint(text: str, port: str = "") -> dict[str, Any]:
-    text = text.strip()
-    ep: dict[str, Any] = {}
-    if text.startswith("!"):
-        ep["not"] = True
-        text = text[1:].strip()
-    words = text.lower().split()
-    if not text or text.lower() == "any":
-        ep["any"] = True
-    elif text.lower() == "this firewall":
-        ep["network"] = "(self)"
-    elif len(words) == 2 and words[1] == "net":
-        ep["network"] = words[0]
-    elif len(words) == 2 and words[1] == "address":
-        ep["network"] = words[0] + "ip"
-    else:
-        ep["address"] = text
-    if port.strip():
-        ep["port"] = port.strip()
-    return ep
-
 
 # ------------------------------------------------------------ form <-> content
 

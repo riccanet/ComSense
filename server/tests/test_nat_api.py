@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import gzip
 
+import pytest
 from conftest import auth, enroll, make_key
+from sqlalchemy import select
 from test_config_view import CONFIG
 
-from app.models import Role
+from app.models import Role, Task, TaskType
 from app.services import apiops
 from app.services.configview import one_to_one_nat_from_xml, outbound_nat_from_xml
 
@@ -60,3 +62,56 @@ def test_nat_and_rules_through_the_api(client, db, agent):
     assert guest["rules"] and all(r["interface"] == "Guest" for r in guest["rules"])
     assert rules["aliases"] and all(isinstance(a["entries"], list) and {"value", "note"} <= set(a["entries"][0])
                                     for a in rules["aliases"] if a["entries"])
+
+
+@pytest.mark.changes
+def test_port_forwards_added_changed_and_removed_through_the_api(client, db, agent):
+    creds = enroll(agent, make_key(db))
+    did = creds["device_id"]
+    agent.post("/api/agent/v1/backups", content=gzip.compress(CONFIG), headers=auth(creds["token"]))
+    keys = {}
+    for role in (Role.viewer, Role.operator):
+        keys[role] = {"Authorization": f"Bearer {apiops.create_key(db, role.value, role, 'admin', None)[1]}"}
+    db.commit()
+    forwards = client.get(f"/api/v1/firewalls/{did}/nat", headers=keys[Role.viewer]).json()["port_forwards"]
+    web = next(r for r in forwards if not r["managed"])
+    managed = next(r for r in forwards if r["managed"])
+
+    body = {"port": "8443", "target": "192.168.1.30", "interface": "WAN", "description": "Camera"}
+    assert client.post(f"/api/v1/firewalls/{did}/nat", json=body, headers=keys[Role.viewer]).status_code == 403
+    r = client.post(f"/api/v1/firewalls/{did}/nat", json=body, headers=keys[Role.operator])
+    assert r.status_code == 201 and r.json()["type"] == "nat_add", r.text
+    add = db.scalar(select(Task).where(Task.type == TaskType.nat_add))
+    assert add.payload["rule"] == {"interface": "wan", "protocol": "tcp", "source": {"any": True},
+                                   "destination": {"network": "wanip", "port": "8443"}, "target": "192.168.1.30",
+                                   "local_port": "8443", "descr": "Camera"}
+    bad = client.post(f"/api/v1/firewalls/{did}/nat", json={"port": "80", "target": "not an ip!"},
+                      headers=keys[Role.operator])
+    assert bad.status_code == 400 and "target" in bad.json()["detail"]
+
+    # A change keeps what is not given.
+    r = client.patch(f"/api/v1/firewalls/{did}/nat/{web['id']}", json={"target": "192.168.1.99"},
+                     headers=keys[Role.operator])
+    assert r.status_code == 200, r.text
+    edit = db.scalar(select(Task).where(Task.type == TaskType.nat_edit))
+    assert edit.payload["fingerprint"] == web["id"] and edit.payload["rule"]["target"] == "192.168.1.99"
+    assert edit.payload["rule"]["destination"]["port"] == web["port"] and edit.payload["rule"]["descr"] == web["descr"]
+
+    assert client.patch(f"/api/v1/firewalls/{did}/nat/{managed['id']}", json={"disabled": True},
+                        headers=keys[Role.operator]).status_code == 409  # from Configurations
+    assert client.delete(f"/api/v1/firewalls/{did}/nat/0123456789abcdef", headers=keys[Role.operator]).status_code == 404
+    assert client.delete(f"/api/v1/firewalls/{did}/nat/nope", headers=keys[Role.operator]).status_code == 400
+    r = client.delete(f"/api/v1/firewalls/{did}/nat/{web['id']}", headers=keys[Role.operator])
+    assert r.status_code == 200 and r.json()["type"] == "nat_remove"
+    assert db.scalar(select(Task).where(Task.type == TaskType.nat_remove)).payload == {"fingerprint": web["id"],
+                                                                                      "descr": web["descr"]}
+
+
+def test_nat_changes_need_firewall_changes_on(client, db, agent):
+    creds = enroll(agent, make_key(db))
+    agent.post("/api/agent/v1/backups", content=gzip.compress(CONFIG), headers=auth(creds["token"]))
+    headers = {"Authorization": f"Bearer {apiops.create_key(db, 'op', Role.operator, 'admin', None)[1]}"}
+    db.commit()
+    r = client.post(f"/api/v1/firewalls/{creds['device_id']}/nat", json={"port": "8443", "target": "192.168.1.30"},
+                    headers=headers)
+    assert r.status_code == 409 and "Coming soon" in r.json()["detail"]
