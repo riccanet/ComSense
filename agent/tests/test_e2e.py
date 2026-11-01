@@ -770,6 +770,18 @@ def test_full_lifecycle(env):
     ended = task(tid)
     assert ended.status == TaskStatus.failed and "Not upgraded: pfSense found no newer version" in ended.output, ended.output
 
+    # 11c2b. One that stops part way through installing (killed for lack of memory on a 1100) says where; the
+    #        repository lines that say "up to date" do not make it "nothing to install".
+    tid = queue(TaskType.upgrade_system, {})
+    agent(env, "run")
+    (env["fw"] / "upgrade.log").write_text(
+        "Updating pfSense-core repository catalogue...\npfSense-core repository is up to date.\n"
+        "[41/243] Upgrading libuv from 1.49.1 to 1.51.0...\n[42/243] Upgrading boost-libs from 1.85.0 to 1.88.0_2...\n"
+        "[42/243] Extracting boost-libs-1.88.0_2: .....>>> Unlocking package pkg...done.\n")
+    agent(env, "run")
+    stopped = task(tid)
+    assert stopped.status == TaskStatus.failed and "at package 42 of 243 (boost-libs" in stopped.output, stopped.output
+
     # 11c3. NetBird's wt0 is unassigned for the upgrade (pfSense removes the package, and the new version's first
     #       boot would stop at the interface mismatch prompt), and assigned again, as it was, once wt0 exists.
     netbird = {"if": "wt0", "descr": "NETBIRD", "enable": "", "ipaddr": "none"}

@@ -503,7 +503,15 @@ function csfm_finish_inflight_upgrade($client) {
 	$now = csfm_product_version();
 	if ($now !== $up['from_version']) {
 		csfm_report_result($client, $up['task_id'], 'success', "Upgraded {$up['from_version']} -> {$now}\n" . csfm_truncate($log, 8000));
-	} elseif (stripos($log, 'up to date') !== false) {
+	} elseif (preg_match_all('/\[(\d+)\/(\d+)\] (?:Upgrading|Installing|Reinstalling|Deinstalling|Extracting|Deleting) (\S+)/',
+	    $log, $steps, PREG_SET_ORDER)) {
+		/* It was installing the new version (into a new boot environment) and stopped part way. */
+		$last = end($steps);
+		csfm_report_result($client, $up['task_id'], 'failed', "Not upgraded: the upgrade stopped while installing the "
+		    . "new version, at package {$last[1]} of {$last[2]} ({$last[3]}); the firewall still runs {$now}. "
+		    . "A process killed for lack of memory is the usual cause on small units (see System > Logs).\n"
+		    . csfm_truncate($log, 8000));
+	} elseif (preg_match('/Your (system|packages) (is|are) up to date/i', $log)) {
 		/* Not a success: the upgrade was queued because a newer version was reported, and none was installed. */
 		csfm_report_result($client, $up['task_id'], 'failed', "Not upgraded: pfSense found no newer version to install "
 		    . "(still {$now}). Run Check for updates and check the update branch.\n" . csfm_truncate($log, 8000));
