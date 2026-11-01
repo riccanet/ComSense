@@ -183,23 +183,22 @@ Reinstall the package: ComSense assigns each interface again, with its settings 
     <a class="button small" href="/devices/{{ device.id }}/network" title="ARP table, all leases and static mappings">Network</a>
   </div>
   <form method="get" action="/devices/{{ device.id }}#leases" class="toolbar">
-    <input name="find" value="{{ find }}" placeholder="Find by MAC address (any notation), IP address or hostname" aria-label="Find a device">
-    <button>Find</button>{% if find %} <a class="button" href="/devices/{{ device.id }}#leases">Clear</a>{% endif %}
+    <input name="find" value="{{ find }}" placeholder="Search by MAC address (any notation), IP address or hostname" aria-label="Search leases" data-paged-search="#lease-table" autocomplete="off">
+    <button title="Also search the ARP table and static mappings">Find everywhere</button>{% if find %} <a class="button" href="/devices/{{ device.id }}#leases">Clear</a>{% endif %}
   </form>
   {% if not device.neighbors_at %}
   <p class="muted">Not reported yet: the firewall sends its leases every five minutes (agent 0.2.25 and later).</p>
   {% else %}
-  <table class="list">
+  <table class="list" id="lease-table" data-paged="10" data-paged-noun="leases">
     <thead><tr><th>IP address</th><th>MAC address</th><th>Hostname</th><th class="hide-sm">Lease ends (UTC)</th></tr></thead>
     <tbody>
-    {% for e in leases[:100] %}
+    {% for e in leases %}
       <tr><td class="mono">{{ e.ip }}</td><td class="mono">{{ e.mac }}</td><td>{{ e.hostname or "—" }}</td><td class="hide-sm small">{{ e.ends }}</td></tr>
     {% else %}
-      <tr><td colspan="4" class="muted">{% if find %}No lease matches “{{ find }}”.{% else %}No active leases.{% endif %}</td></tr>
+      <tr data-empty><td colspan="4" class="muted">{% if find %}No lease matches “{{ find }}”.{% else %}No active leases.{% endif %}</td></tr>
     {% endfor %}
     </tbody>
   </table>
-  {% if leases|length > 100 %}<p class="small muted">The first 100 are shown; use Find, or the <a href="/devices/{{ device.id }}/network">Network page</a>.</p>{% endif %}
   {% if find %}
   {% if find_arp %}
   <h3>Also in the ARP table</h3>
@@ -248,9 +247,9 @@ Reinstall the package: ComSense assigns each interface again, with its settings 
   {% endif %}
 </section>
 
-<section class="card" id="backups">
-  <h2>Configuration backups</h2>
-  <table>
+<details class="card collapsible" id="backups" data-remember="device-backups">
+  <summary><h2>Configuration backups <span class="muted small">{{ backups|length }}{% if backups %} · newest {{ backups[0].created_at|ago }}{% endif %}</span></h2></summary>
+  <table id="backup-table" data-paged="10" data-paged-noun="backups">
     <thead><tr><th>Taken</th><th>Reason</th><th>Config change</th><th>Version</th><th>Size</th><th>SHA-256</th><th></th></tr></thead>
     <tbody>
     {% for b in backups %}
@@ -285,10 +284,10 @@ Reinstall the package: ComSense assigns each interface again, with its settings 
           {% endif %}
         </td>
       </tr>
-    {% else %}<tr><td colspan="7" class="muted">No backups yet.</td></tr>{% endfor %}
+    {% else %}<tr data-empty><td colspan="7" class="muted">No backups yet.</td></tr>{% endfor %}
     </tbody>
   </table>
-</section>
+</details>
 
 {% if terminal_sessions %}
 <section class="card">
@@ -312,8 +311,11 @@ Reinstall the package: ComSense assigns each interface again, with its settings 
 
 <div class="grid2">
 <section class="card">
-  <h2>Tasks</h2>
-  <table>
+  <div class="heading">
+    <h2>Tasks</h2>
+    <input type="search" class="table-search" data-paged-search="#task-table" placeholder="Search tasks" aria-label="Search tasks" autocomplete="off">
+  </div>
+  <table id="task-table" data-paged="10" data-paged-noun="tasks">
     <thead><tr><th>#</th><th>Task</th><th>Status</th><th>By</th><th>Created</th><th></th></tr></thead>
     <tbody>
     {% for t in tasks %}
@@ -325,14 +327,17 @@ Reinstall the package: ComSense assigns each interface again, with its settings 
         <td>{{ t.created_at|ago }}</td>
         <td>{% if can_operate and t.status.value == "pending" %}{{ post_button("/tasks/" ~ t.id ~ "/cancel", "Cancel", "small") }}{% endif %}</td>
       </tr>
-    {% else %}<tr><td colspan="6" class="muted">No tasks yet.</td></tr>{% endfor %}
+    {% else %}<tr data-empty><td colspan="6" class="muted">No tasks yet.</td></tr>{% endfor %}
     </tbody>
   </table>
 </section>
 
 <section class="card">
-  <h2>Alerts</h2>
-  <table>
+  <div class="heading">
+    <h2>Alerts</h2>
+    <input type="search" class="table-search" data-paged-search="#alert-table" placeholder="Search alerts" aria-label="Search alerts" autocomplete="off">
+  </div>
+  <table id="alert-table" data-paged="10" data-paged-noun="alerts">
     <thead><tr><th>Severity</th><th>Alert</th><th>Opened</th><th>Resolved</th></tr></thead>
     <tbody>
     {% for a in alerts %}
@@ -342,7 +347,7 @@ Reinstall the package: ComSense assigns each interface again, with its settings 
         <td>{{ a.opened_at|dt }}</td>
         <td>{{ a.resolved_at|dt if a.resolved_at else "open" }}</td>
       </tr>
-    {% else %}<tr><td colspan="4" class="muted">No alerts.</td></tr>{% endfor %}
+    {% else %}<tr data-empty><td colspan="4" class="muted">No alerts.</td></tr>{% endfor %}
     </tbody>
   </table>
 </section>

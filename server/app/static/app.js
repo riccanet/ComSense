@@ -308,6 +308,79 @@
     window.setInterval(refresh, 5000);
   }
   // Logs: narrow the rows already shown to those containing the typed text (no new fetch).
+  // Tables with data-paged="10": that many rows a page, a pager under the table, and a search box
+  // (data-paged-search="#table-id") that narrows the rows as you type. MAC addresses match in any notation.
+  // The page and search are kept for the session, since a firewall's page reloads itself when it changes.
+  function squash(text) { return text.toLowerCase().replace(/[\s:.\-]/g, ""); }
+  function remember(key, value) {
+    try {
+      if (value === undefined) return JSON.parse(window.sessionStorage.getItem(key) || "null");
+      window.sessionStorage.setItem(key, JSON.stringify(value));
+    } catch (e) { return null; }
+  }
+  document.querySelectorAll("table[data-paged]").forEach(function (table) {
+    var body = table.tBodies[0];
+    if (!body) return;
+    var size = parseInt(table.getAttribute("data-paged"), 10) || 10;
+    var noun = table.getAttribute("data-paged-noun") || "items";
+    var rows = Array.prototype.slice.call(body.rows).filter(function (r) { return !r.hasAttribute("data-empty"); });
+    var texts = rows.map(function (r) { var t = r.textContent.toLowerCase(); return { text: t, squashed: squash(t) }; });
+    var search = table.id ? document.querySelector('[data-paged-search="#' + table.id + '"]') : null;
+    var key = "paged:" + location.pathname + ":" + (table.id || "");
+    var saved = remember(key) || {};
+    var page = saved.page || 0;
+    if (search && saved.q !== undefined && saved.q !== null && !search.value) search.value = saved.q;
+    var none = document.createElement("tr");
+    none.innerHTML = '<td class="muted" colspan="' + ((rows[0] && rows[0].cells.length) || 1) + '">Nothing matches.</td>';
+    none.hidden = true;
+    body.appendChild(none);
+    var pager = document.createElement("nav");
+    pager.className = "pager";
+    pager.setAttribute("aria-label", "Pages");
+    table.parentNode.insertBefore(pager, table.nextSibling);
+    function render() {
+      var q = search ? search.value.trim().toLowerCase() : "";
+      var sq = squash(q);
+      var shown = [];
+      rows.forEach(function (r, i) {
+        var hit = !q || texts[i].text.indexOf(q) !== -1 || (sq.length > 1 && texts[i].squashed.indexOf(sq) !== -1);
+        if (hit) shown.push(r);
+        r.hidden = true;
+      });
+      var pages = Math.max(1, Math.ceil(shown.length / size));
+      page = Math.min(Math.max(page, 0), pages - 1);
+      shown.slice(page * size, page * size + size).forEach(function (r) { r.hidden = false; });
+      none.hidden = !(q && rows.length && !shown.length);
+      remember(key, { page: page, q: search ? search.value : null });
+      if (shown.length <= size) {
+        pager.innerHTML = rows.length > size || q ? '<span class="muted small">' + shown.length + " of " + rows.length + " " + noun + "</span>" : "";
+        return;
+      }
+      pager.innerHTML = '<button type="button" class="small" data-go="-1"' + (page ? "" : " disabled") + '>‹ Previous</button>'
+        + '<span class="small">Page ' + (page + 1) + " of " + pages + ' <span class="muted">· ' + shown.length
+        + (shown.length !== rows.length ? " of " + rows.length : "") + " " + noun + "</span></span>"
+        + '<button type="button" class="small" data-go="1"' + (page < pages - 1 ? "" : " disabled") + ">Next ›</button>";
+    }
+    pager.addEventListener("click", function (ev) {
+      var go = ev.target.getAttribute && ev.target.getAttribute("data-go");
+      if (go) { page += parseInt(go, 10); render(); }
+    });
+    if (search) search.addEventListener("input", function () { page = 0; render(); });
+    render();
+  });
+  // Collapsible cards (<details data-remember="name">): open or closed as last left in this browser;
+  // opened anyway when the address points into them (#backups).
+  document.querySelectorAll("details[data-remember]").forEach(function (box) {
+    var key = "open:" + box.getAttribute("data-remember");
+    try {
+      var saved = window.localStorage.getItem(key);
+      if (saved !== null) box.open = saved === "1";
+    } catch (e) { /* storage blocked: keep the default */ }
+    if (location.hash && box.id && location.hash === "#" + box.id) box.open = true;
+    box.addEventListener("toggle", function () {
+      try { window.localStorage.setItem(key, box.open ? "1" : "0"); } catch (e) { /* ignore */ }
+    });
+  });
   document.querySelectorAll("[data-filter-rows]").forEach(function (input) {
     var body = document.querySelector(input.getAttribute("data-filter-rows"));
     if (!body) return;

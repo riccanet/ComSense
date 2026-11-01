@@ -5,55 +5,89 @@
 {% block content %}
 <p class="small"><a href="/devices">Firewalls</a> / <a href="/devices/{{ device.id }}">{{ device.name }}</a> /</p>
 <div class="heading" data-poll="/devices/{{ device.id }}/poll" data-poll-token="{{ page_token }}">
-  <h1>Logs {{ status_badge(device.status.value) }}</h1>
+  <h1>Status / System Logs / {{ tab }}{% if subtab %} / {{ subtab }}{% endif %} {{ status_badge(device.status.value) }}</h1>
 </div>
 
-<section class="card">
-  <form method="post" action="/devices/{{ device.id }}/logs" class="log-query">
-    {{ csrf() }}
-    <label>Log <select name="log">{% for key, label in logs.items() %}<option value="{{ key }}"{% if params.log == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
-    <label>Lines <select name="lines">{% for n in line_choices %}<option{% if params.lines == n %} selected{% endif %}>{{ n }}</option>{% endfor %}</select></label>
-    <label class="grow">Search on the firewall <input name="search" value="{{ params.search or "" }}" maxlength="200" placeholder="text to find, e.g. an IP address, user or service"></label>
-    <div><button class="primary">Fetch</button></div>
-  </form>
-  <p class="small muted">The search covers the whole current log file on the firewall; the newest matching lines are shown.</p>
+{#- Tabs as on pfSense's Status > System Logs; each fetches that log from the firewall. -#}
+{% macro log_tab(key, label, active) -%}
+<form method="post" action="/devices/{{ device.id }}/logs" class="tab">
+  {{ csrf() }}<input type="hidden" name="log" value="{{ key }}"><input type="hidden" name="lines" value="{{ params.lines }}">
+  <button{% if active %} class="active" aria-current="page"{% endif %}>{{ label }}</button>
+</form>
+{%- endmacro %}
+<nav class="tabs" aria-label="Logs">
+  {% for name, subs in tabs %}{{ log_tab(subs[0][0], name, name == tab) }}{% endfor %}
+</nav>
+{% if subtabs %}
+<nav class="tabs sub" aria-label="{{ tab }} logs">
+  {% for key, label in subtabs %}{{ log_tab(key, label, key == params.log) }}{% endfor %}
+</nav>
+{% endif %}
+
+<section class="card log-panel">
+  <div class="panel-heading"><h2>Advanced log filter</h2></div>
+  <div class="panel-body">
+    <details class="log-advanced"{% if params.search %} open{% endif %}>
+      <summary>Search the whole log on the firewall{% if params.search %}: “{{ params.search }}”{% endif %}</summary>
+      <form method="post" action="/devices/{{ device.id }}/logs" class="log-query">
+        {{ csrf() }}
+        <input type="hidden" name="log" value="{{ params.log }}">
+        <label class="grow">Message contains <input name="search" value="{{ params.search or "" }}" maxlength="200" placeholder="text to find, e.g. an IP address, user or service"></label>
+        <label>Number of entries <select name="lines">{% for n in line_choices %}<option{% if params.lines == n %} selected{% endif %}>{{ n }}</option>{% endfor %}</select></label>
+        <div><button class="primary">Apply filter</button></div>
+      </form>
+      <p class="small muted">The search runs on the firewall over the whole current log file; the newest matching entries are shown.</p>
+    </details>
+  </div>
 </section>
 
-{% if fetched %}
-<section class="card">
-  {% if fetched.status.value in ("pending", "sent", "running") %}
+<section class="card log-panel">
+  <div class="panel-heading">
+    <h2>Last {{ params.lines }} {{ tab }} Log Entries{% if subtab %} ({{ subtab }}){% endif %}{% if params.search %} matching “{{ params.search }}”{% endif %}</h2>
+    {% if fetched and fetched.status.value == "success" %}
+    <span class="small muted">{{ fetched.finished_at|dt }} · {{ fetched.output }}</span>
+    {% endif %}
+  </div>
+  <div class="panel-body">
+  {% if not fetched %}
+  <p class="muted">Choose a log above to read it from the firewall.</p>
+  {% elif fetched.status.value in ("pending", "sent", "running") %}
   <p>Fetching the {{ logs.get(params.log, params.log) }} log from the firewall… this page updates by itself.</p>
   {% elif fetched.status.value != "success" %}
   <p class="flash error">Could not read the log: {{ fetched.output or fetched.status.value }}</p>
   {% if "does not support task type" in (fetched.output or "") %}<p class="small">Update the ComSense agent on this firewall to read its logs.</p>{% endif %}
   {% else %}
-  <div class="log-head">
-    <h2>{{ logs.get(params.log, params.log) }} <span class="muted small">· {{ fetched.finished_at|dt }} · {{ fetched.output }}</span></h2>
-    <label class="log-filter">Filter these lines <input type="search" data-filter-rows="#log-rows" placeholder="type to narrow down"></label>
-  </div>
+  <div class="toolbar"><input type="search" data-filter-rows="#log-rows" placeholder="Filter these entries" aria-label="Filter these entries" class="table-search"></div>
   <div class="table-scroll">
   <table class="log-table">
     {% if params.log == "firewall" %}
-    <thead><tr><th>Time</th><th>Action</th><th>Interface</th><th>Protocol</th><th>Source</th><th>Destination</th></tr></thead>
+    <thead><tr><th>Action</th><th>Time</th><th>Interface</th><th>Rule</th><th>Source</th><th>Destination</th><th>Protocol</th></tr></thead>
     <tbody id="log-rows">
     {% for r in rows %}
-      <tr>{% if r.message is defined %}<td class="nowrap mono">{{ r.time }}</td><td colspan="5" class="mono">{{ r.message }}</td>{% else %}
+      {% if r.message is defined %}
+      <tr><td></td><td class="nowrap mono">{{ r.time }}</td><td colspan="5" class="mono">{{ r.message }}</td></tr>
+      {% else %}
+      <tr class="row-{{ r.action }}">
+        <td class="act act-{{ r.action }}" title="{{ r.action }} ({{ r.direction }})"><span aria-hidden="true">{{ "✓" if r.action == "pass" else "✕" }}</span><span class="visually-hidden">{{ r.action }}</span></td>
         <td class="nowrap mono">{{ r.time }}</td>
-        <td><span class="badge rule-{{ r.action }}">{{ r.action }}</span> <span class="muted small">{{ r.direction }}</span></td>
-        <td>{{ r.interface }}</td><td>{{ r.protocol }}</td><td class="mono">{{ r.source }}</td><td class="mono">{{ r.destination }}</td>{% endif %}</tr>
-    {% else %}<tr><td colspan="6" class="muted">No lines{% if params.search %} containing "{{ params.search }}"{% endif %}.</td></tr>{% endfor %}
+        <td>{{ r.interface }}</td>
+        <td class="small">{% if r.rule_name %}{{ r.rule_name }}{% else %}<span class="muted">{{ r.rule or "—" }}</span>{% endif %}</td>
+        <td class="mono">{{ r.source }}</td><td class="mono">{{ r.destination }}</td><td>{{ r.protocol|upper }}</td>
+      </tr>
+      {% endif %}
+    {% else %}<tr><td colspan="7" class="muted">No entries{% if params.search %} containing "{{ params.search }}"{% endif %}.</td></tr>{% endfor %}
     </tbody>
     {% else %}
-    <thead><tr><th>Time</th><th>Program</th><th>Message</th></tr></thead>
+    <thead><tr><th>Time</th><th>Process</th><th>PID</th><th>Message</th></tr></thead>
     <tbody id="log-rows">
     {% for r in rows %}
-      <tr><td class="nowrap mono">{{ r.time }}</td><td class="nowrap">{{ r.program }}</td><td class="mono log-msg">{{ r.message }}</td></tr>
-    {% else %}<tr><td colspan="3" class="muted">No lines{% if params.search %} containing "{{ params.search }}"{% endif %}.</td></tr>{% endfor %}
+      <tr><td class="nowrap mono">{{ r.time }}</td><td class="nowrap">{{ r.program }}</td><td class="mono small">{{ r.pid }}</td><td class="mono log-msg">{{ r.message }}</td></tr>
+    {% else %}<tr><td colspan="4" class="muted">No entries{% if params.search %} containing "{{ params.search }}"{% endif %}.</td></tr>{% endfor %}
     </tbody>
     {% endif %}
   </table>
   </div>
   {% endif %}
+  </div>
 </section>
-{% endif %}
 {% endblock %}

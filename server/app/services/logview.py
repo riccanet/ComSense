@@ -18,6 +18,27 @@ LOGS = {
     "routing": "Routing",
 }
 LINE_CHOICES = (100, 250, 500, 1000, 2000)
+# The tabs across the top of the logs page, as pfSense arranges them: (tab, [(log, sub-tab label), ...]).
+TABS = (
+    ("System", (("system", "General"), ("gateways", "Gateways"), ("routing", "Routing"), ("resolver", "DNS Resolver"))),
+    ("Firewall", (("firewall", ""),)),
+    ("DHCP", (("dhcp", ""),)),
+    ("Authentication", (("auth", ""),)),
+    ("IPsec", (("ipsec", ""),)),
+    ("OpenVPN", (("openvpn", ""),)),
+    ("NTP", (("ntp", ""),)),
+)
+# pfSense's own rules, which have no description in config.xml (filter.inc).
+BUILTIN_RULES = {"1000000103": "Default deny rule IPv4", "1000000104": "Default deny rule IPv6"}
+
+
+def tab_of(log: str) -> tuple[str, list[tuple[str, str]], str]:
+    """(tab, its sub-tabs, this log's sub-tab label) for a log."""
+    for tab, subs in TABS:
+        for key, label in subs:
+            if key == log:
+                return tab, [s for s in subs if s[1]], label
+    return LOGS.get(log, log), [], ""
 
 # "<134>1 2026-10-21T03:05:09.123456+00:00 host prog 123 - - msg" (RFC 5424, pfSense's default)
 _RFC5424 = re.compile(r"^(?:<\d+>)?1 (?P<time>\S+) \S+ (?P<prog>\S+) (?P<pid>\S+) \S+ \S+ ?(?P<msg>.*)$")
@@ -26,14 +47,15 @@ _RFC3164 = re.compile(r"^(?:<\d+>)?(?P<time>[A-Z][a-z]{2} [ \d]\d \d\d:\d\d:\d\d
 
 
 def parse_line(line: str) -> dict[str, str]:
-    """{time, program, message} of a syslog line; the whole line as the message when it does not parse."""
+    """{time, program, pid, message} of a syslog line; the whole line as the message when it does not parse."""
     m = _RFC5424.match(line) or _RFC3164.match(line)
     if not m:
-        return {"time": "", "program": "", "message": line}
+        return {"time": "", "program": "", "pid": "", "message": line}
     time = m.group("time")
     if "T" in time:  # 2026-10-21T03:05:09.123456+00:00 -> 2026-10-21 03:05:09
         time = time.replace("T", " ")[:19]
-    return {"time": time, "program": m.group("prog"), "message": m.group("msg")}
+    pid = m.group("pid") or ""
+    return {"time": time, "program": m.group("prog"), "pid": "" if pid == "-" else pid, "message": m.group("msg")}
 
 
 def parse_filter_line(line: str) -> dict[str, Any]:

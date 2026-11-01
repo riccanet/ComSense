@@ -58,7 +58,8 @@ from ..services.appsettings import agent_tls_names, effective_agent_url, format_
 from ..services import neighbors as neighbors_svc
 from ..services.bulk import BULK_ACTIONS, available_actions, check_now, run_bulk, target_devices, update_agent
 from ..services.backups import BackupError, delete_backup_file, load_backup
-from ..services.logview import LINE_CHOICES, LOGS, parse_filter_line, parse_line
+from ..services import configedit
+from ..services.logview import BUILTIN_RULES, LINE_CHOICES, LOGS, TABS, parse_filter_line, parse_line, tab_of
 from ..services.configview import config_summary, current_backup, is_system_alias, redact
 from ..services.policies import (
     ALIAS_FORM_TYPES,
@@ -495,13 +496,13 @@ def device_detail(
         select(Metric).where(Metric.device_id == device.id, Metric.ts >= since).order_by(Metric.ts)
     ).all()
     tasks = db.scalars(
-        select(Task).where(Task.device_id == device.id).order_by(Task.id.desc()).limit(50)
+        select(Task).where(Task.device_id == device.id).order_by(Task.id.desc()).limit(500)
     ).all()
     backups = db.scalars(
         select(Backup).where(Backup.device_id == device.id).order_by(Backup.created_at.desc()).limit(100)
     ).all()
     alerts = db.scalars(
-        select(Alert).where(Alert.device_id == device.id).order_by(Alert.opened_at.desc()).limit(50)
+        select(Alert).where(Alert.device_id == device.id).order_by(Alert.opened_at.desc()).limit(500)
     ).all()
     desired = desired_policies(db, device)
     policy_state = [
@@ -787,6 +788,9 @@ def device_logs(device_id: str, request: Request, task: int = 0, user: User = De
     result = fetched.result if fetched is not None and fetched.status == TaskStatus.success else {}
     iface_names = {i.get("if"): (i.get("descr") or i.get("name")) for i in (device.inventory or {}).get("interfaces", [])
                    if isinstance(i, dict) and i.get("if")}
+    rule_names = dict(BUILTIN_RULES)
+    if params.get("log") == "firewall" and result.get("lines"):
+        rule_names.update(_rule_descriptions(request.app.state.settings, db, device))
     rows: list[dict[str, Any]] = []
     for line in reversed(result.get("lines") or []):  # newest first, as pfSense shows logs
         if not isinstance(line, str):
@@ -794,11 +798,27 @@ def device_logs(device_id: str, request: Request, task: int = 0, user: User = De
         if params.get("log") == "firewall":
             row = parse_filter_line(line)
             row["interface"] = iface_names.get(row["interface"], row["interface"])
+            row["rule_name"] = rule_names.get(row["rule"], "")
         else:
             row = parse_line(line)
         rows.append(row)
+    tab, subtabs, subtab = tab_of(params.get("log", "system"))
     return render(request, "device_logs.html", device=device, page_token=_device_page_token(db, device),
-                  logs=LOGS, line_choices=LINE_CHOICES, params=params, fetched=fetched, result=result, rows=rows)
+                  logs=LOGS, line_choices=LINE_CHOICES, params=params, fetched=fetched, result=result, rows=rows,
+                  tabs=TABS, tab=tab, subtabs=subtabs, subtab=subtab)
+
+
+def _rule_descriptions(settings: Settings, db: Session, device: Device) -> dict[str, str]:
+    """{tracker: description} of the firewall's rules, from its current backup, for the firewall log's Rule column."""
+    backup = current_backup(db, device)
+    if backup is None:
+        return {}
+    try:
+        rules = (configedit.config_tree(settings, backup).get("filter") or {}).get("rule") or []
+    except Exception:  # an unreadable backup only costs the descriptions
+        return {}
+    return {str(r.get("tracker")): str(r.get("descr") or "") for r in rules
+            if isinstance(r, dict) and r.get("tracker") and r.get("descr")}
 
 
 @router.post("/devices/{device_id}/logs")

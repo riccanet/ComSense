@@ -41,12 +41,17 @@ def test_logs_are_fetched_searched_and_shown(client, db, agent):
     assert "php-fpm" in page and "Successful login for user" in page and "2026-10-21 03:05:09" in page
     assert page.index("Accepted publickey") < page.index("Successful login")  # newest first
     assert 'value="admin"' in page and "data-filter-rows" in page
+    assert "Last 250 System Log Entries (General)" in page and "<th>PID</th>" in page
+    assert '<button class="active" aria-current="page">General</button>' in page  # System's sub-tabs
 
     _, wire = _fetch(client, agent, creds, csrf, log="firewall", lines="100", search="")
     agent.post(f"/api/agent/v1/tasks/{wire['id']}/result", headers=auth(creds["token"]), json={
         "status": "success", "output": "filter.log: 1 line(s)", "result": {"log": "firewall", "lines": FIREWALL}})
     page = client.get(f"/devices/{did}/logs?task={wire['id']}").text
-    assert "rule-block" in page and "203.0.113.5:51234" in page and "71.162.238.18:22" in page
+    assert "act-block" in page and "203.0.113.5:51234" in page and "71.162.238.18:22" in page
+    # Laid out like pfSense's Status > System Logs: the tab, the panel title, the rule by its description.
+    assert '<button class="active" aria-current="page">Firewall</button>' in page
+    assert "Last 100 Firewall Log Entries" in page and "Default deny rule IPv4" in page
     assert "<td>WAN</td>" in page  # the interface's name, not its device
 
     assert client.post(f"/devices/{did}/logs", data={"csrf_token": csrf, "log": "../etc", "lines": "100"}).status_code == 400
