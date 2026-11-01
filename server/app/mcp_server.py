@@ -173,8 +173,8 @@ def build_server(settings: Settings) -> MCPServer:
           {"op": "append", "path": "dhcpd/lan/staticmap", "value": {"mac": "...", "ipaddr": "...", "descr": "..."}}
           {"op": "insert", "path": "filter/rule/0", "value": {...}}           add before an item (0: first)
         Operations apply in order, each seeing the ones before it (an insert moves later list items down); if
-        any fails, none is applied. Add "expect": {"descr": "..."} to an operation on a list item so it is refused if that index now holds
-        something else. Values use pfSense's own field names (read a similar existing item first). Never edited:
+        any fails, none is applied. Add "expect": {"tracker": "..."} (fields of the item at path, or of the item holding a single field like
+        filter/rule/19/descr) so the operation is refused if that index now holds something else. Values use pfSense's own field names (read a similar existing item first). Never edited:
         package settings (installedpackages), user accounts, groups, authentication servers, certificates, cron
         and shell commands. Secrets read as "[hidden]" must not be sent back. The firewall applies the edit
         within seconds, reloads what it affects (rules, interfaces, DHCP, DNS, VPNs...), and undoes it

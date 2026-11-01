@@ -830,6 +830,8 @@ def test_full_lifecycle(env):
         {"op": "insert", "path": "filter/rule/0", "value": {"descr": "new top", "type": "pass"}},
         {"op": "delete", "path": "filter/rule/2", "expect": {"descr": "second"}},  # "second" moved down one
         {"op": "set", "path": "dhcpd/lan/enable", "value": False},
+        # One field of a rule, pinned by the rule's own fields.
+        {"op": "set", "path": "filter/rule/1/type", "value": "block", "expect": {"descr": "first"}},
     ])
     tid = queue(TaskType.config_edit, {"ops": ops, "summary": "e2e edit"})
     agent(env, "run")
@@ -839,6 +841,7 @@ def test_full_lifecycle(env):
     assert cfg["system"]["timezone"] == "America/New_York"
     assert [m["ipaddr"] for m in cfg["dhcpd"]["lan"]["staticmap"]] == ["192.168.1.10", "192.168.1.11"]
     assert [r["descr"] for r in cfg["filter"]["rule"]] == ["new top", "first"] and "enable" not in cfg["dhcpd"]["lan"]
+    assert cfg["filter"]["rule"][1]["type"] == "block"
     actions = (env["fw"] / "actions.log").read_text()
     assert "services_dhcpd_configure" in actions and "write_config: ComSense: e2e edit" in actions
     # A list item that moved since it was read is refused, and nothing is written.

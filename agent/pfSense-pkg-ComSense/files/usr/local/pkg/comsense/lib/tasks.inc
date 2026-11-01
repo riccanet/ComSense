@@ -539,8 +539,9 @@ function csfm_finish_inflight_upgrade($client) {
  *   delete  path                remove it (a list item: the items after it move up)
  *   append  path, value         add an item to the end of the list at path
  *   insert  path, value         add an item before the list item at path ("filter/rule/0": first)
- * An operation may carry "expect": fields the item at path must have now, so an index that moved since the
- * caller read the configuration is refused instead of changing the wrong item. Package settings, accounts,
+ * An operation may carry "expect": fields the item at path (for a single field, the item holding it) must have
+ * now, so an index that moved since the caller read the configuration is refused instead of changing the
+ * wrong item. Package settings, accounts,
  * certificates and what runs commands as root are refused, here and on the server. All operations are
  * checked first and written in one write_config; the affected parts are then reloaded. The change runs under
  * the change guard, like every other change, so it is undone if the firewall loses the server.
@@ -652,13 +653,19 @@ function csfm_edit_check($n, $op) {
 		throw new Exception("Operation {$n}: nothing at '{$path}'");
 	}
 	if (!empty($op['expect']) && is_array($op['expect'])) {
+		/* The item at path; for a single field (filter/rule/19/descr), the item that holds it. */
 		$current = csfm_cfg_get($path);
+		$where = $path;
+		if (!is_array($current) && strpos($path, '/') !== false) {
+			$where = substr($path, 0, strrpos($path, '/'));
+			$current = csfm_cfg_get($where);
+		}
 		foreach ($op['expect'] as $field => $want) {
 			$have = is_array($current) ? ($current[$field] ?? null) : null;
 			$have = is_array($have) ? json_encode($have) : (string)$have;
 			$want = is_array($want) ? json_encode($want) : (string)$want;
 			if ($have !== $want) {
-				throw new Exception("Operation {$n}: '{$path}' has changed since it was read ({$field} is not "
+				throw new Exception("Operation {$n}: '{$where}' has changed since it was read ({$field} is not "
 				    . "'{$want}'); read the configuration again");
 			}
 		}
