@@ -130,38 +130,117 @@
     }
   });
 
+  // Firewall page: CPU and memory over 24 hours, one small chart each (5-minute averages from the server),
+  // with a faint grid, time labels, a gap where the firewall did not report, and a crosshair readout.
+  var chartHover = {};
   function drawMetrics() {
-    var canvas = document.getElementById("metrics-chart");
     var dataEl = document.getElementById("metrics-data");
-    if (!canvas || !dataEl) return;
+    if (!dataEl) return;
     var points = JSON.parse(dataEl.textContent);
-    var ctx = canvas.getContext("2d");
-    var w = canvas.width, h = canvas.height, pad = 4;
     var style = getComputedStyle(document.documentElement);
-    ctx.clearRect(0, 0, w, h);
-    ctx.strokeStyle = style.getPropertyValue("--line");
-    ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
-    if (points.length < 2) {
-      ctx.fillStyle = style.getPropertyValue("--muted");
-      ctx.fillText("Not enough data yet", 10, h / 2);
+    document.querySelectorAll("[data-chart]").forEach(function (fig) {
+      drawChart(fig, points, fig.getAttribute("data-chart"), style);
+    });
+  }
+  function timeLabel(t, withMinutes) {
+    var d = new Date(t);
+    return d.toLocaleTimeString([], withMinutes ? { hour: "numeric", minute: "2-digit" } : { hour: "numeric" });
+  }
+  function drawChart(fig, points, key, style) {
+    var canvas = fig.querySelector("canvas");
+    var readout = fig.querySelector(".spark-readout");
+    var dpr = window.devicePixelRatio || 1;
+    var cssW = canvas.clientWidth || 420, cssH = canvas.clientHeight || 96;
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    var ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+    var color = style.getPropertyValue("--chart-" + key).trim();
+    var grid = style.getPropertyValue("--line").trim();
+    var muted = style.getPropertyValue("--muted").trim();
+    var left = 30, right = 4, top = 6, bottom = 16;
+    var w = cssW - left - right, h = cssH - top - bottom;
+    ctx.font = "10px system-ui, sans-serif";
+    // Grid: 0, 50 and 100%, labelled; recessive.
+    ctx.lineWidth = 1;
+    [0, 50, 100].forEach(function (v) {
+      var y = Math.round(top + h - (v / 100) * h) + 0.5;
+      ctx.strokeStyle = grid;
+      ctx.globalAlpha = v === 0 ? 1 : 0.6;
+      ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(left + w, y); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = muted;
+      ctx.textAlign = "right"; ctx.textBaseline = "middle";
+      ctx.fillText(v + "%", left - 5, y);
+    });
+    var data = points.filter(function (p) { return p[key] !== null && p[key] !== undefined; });
+    if (data.length < 2) {
+      ctx.fillStyle = muted; ctx.textAlign = "left";
+      ctx.fillText("Not enough data yet", left + 8, top + h / 2);
+      if (readout) readout.textContent = "";
       return;
     }
-    function line(key, color) {
-      ctx.beginPath();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.5;
-      var started = false;
-      points.forEach(function (p, i) {
-        if (p[key] === null || p[key] === undefined) return;
-        var x = pad + (i / (points.length - 1)) * (w - 2 * pad);
-        var y = h - pad - (Math.min(100, p[key]) / 100) * (h - 2 * pad);
-        if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
-      });
-      ctx.stroke();
+    var t0 = data[0].t, t1 = data[data.length - 1].t, span = Math.max(1, t1 - t0);
+    var xOf = function (t) { return left + ((t - t0) / span) * w; };
+    var yOf = function (v) { return top + h - (Math.min(100, Math.max(0, v)) / 100) * h; };
+    // Time labels every 6 hours, on the hour.
+    ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.fillStyle = muted;
+    var tick = new Date(t0); tick.setMinutes(0, 0, 0);
+    while (tick.getHours() % 6 !== 0 || tick.getTime() < t0) { tick = new Date(tick.getTime() + 3600000); }
+    for (; tick.getTime() <= t1; tick = new Date(tick.getTime() + 6 * 3600000)) {
+      var tx = xOf(tick.getTime());
+      if (tx > left + 12 && tx < left + w - 12) ctx.fillText(timeLabel(tick.getTime(), false), tx, top + h + 4);
     }
-    line("cpu", style.getPropertyValue("--chart-cpu"));
-    line("mem", style.getPropertyValue("--chart-mem"));
+    // Runs of readings, split where the firewall was silent for more than 15 minutes.
+    var runs = [], run = [];
+    data.forEach(function (p, i) {
+      if (i && p.t - data[i - 1].t > 15 * 60000) { runs.push(run); run = []; }
+      run.push(p);
+    });
+    runs.push(run);
+    runs.forEach(function (r) {
+      if (r.length < 2) return;
+      ctx.beginPath();
+      ctx.moveTo(xOf(r[0].t), yOf(0));
+      r.forEach(function (p) { ctx.lineTo(xOf(p.t), yOf(p[key])); });
+      ctx.lineTo(xOf(r[r.length - 1].t), yOf(0));
+      ctx.closePath();
+      ctx.fillStyle = color; ctx.globalAlpha = 0.12; ctx.fill(); ctx.globalAlpha = 1;
+      ctx.beginPath();
+      r.forEach(function (p, i) { i ? ctx.lineTo(xOf(p.t), yOf(p[key])) : ctx.moveTo(xOf(p.t), yOf(p[key])); });
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.stroke();
+    });
+    // Hover: a crosshair at the nearest step and its average and peak in the caption.
+    var hover = chartHover[key];
+    var shown = data[data.length - 1];
+    if (hover !== undefined && hover !== null) {
+      var t = t0 + ((hover - left) / w) * span;
+      shown = data.reduce(function (best, p) { return Math.abs(p.t - t) < Math.abs(best.t - t) ? p : best; }, data[0]);
+      var hx = Math.round(xOf(shown.t)) + 0.5;
+      ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.globalAlpha = 0.6;
+      ctx.beginPath(); ctx.moveTo(hx, top); ctx.lineTo(hx, top + h); ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.beginPath(); ctx.arc(hx, yOf(shown[key]), 4, 0, 2 * Math.PI);
+      ctx.fillStyle = color; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = style.getPropertyValue("--panel").trim() || "#fff"; ctx.stroke();
+    }
+    if (readout) {
+      var peak = shown[key + "_max"];
+      readout.textContent = (hover !== undefined && hover !== null ? timeLabel(shown.t, true) : "Latest") + ": "
+        + Math.round(shown[key]) + "%" + (peak !== null && peak !== undefined && peak > shown[key] + 0.5
+          ? " (peak " + Math.round(peak) + "%)" : "");
+    }
+    if (!canvas.hasAttribute("data-hover")) {
+      canvas.setAttribute("data-hover", "1");
+      canvas.addEventListener("mousemove", function (ev) {
+        var rect = canvas.getBoundingClientRect();
+        chartHover[key] = ev.clientX - rect.left;
+        drawMetrics();
+      });
+      canvas.addEventListener("mouseleave", function () { chartHover[key] = null; drawMetrics(); });
+    }
   }
+  window.addEventListener("resize", function () { drawMetrics(); });
   document.addEventListener("DOMContentLoaded", drawMetrics);
   // Pages that follow the firewall (the device page) reload when the server says something changed,
   // e.g. a task finished after "Check now". Not while the user is in the middle of a form.

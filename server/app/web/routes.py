@@ -456,6 +456,33 @@ def pending_banner(request: Request, page: str = "/", user: User = Depends(viewe
         "banner_page": local_path(page, "/")})
 
 
+CHART_BUCKET = timedelta(minutes=5)
+
+
+def _metric_buckets(metrics: list[Metric]) -> list[dict[str, Any]]:
+    """The last 24 hours for the firewall's charts in 5-minute steps: average and peak CPU and memory
+    (minute-by-minute readings are mostly noise at this size); a step without readings is left out."""
+    buckets: dict[int, list[Metric]] = {}
+    step = int(CHART_BUCKET.total_seconds())
+    for m in metrics:
+        buckets.setdefault(int(aware(m.ts).timestamp()) // step, []).append(m)
+    out = []
+    for key in sorted(buckets):
+        ms = buckets[key]
+
+        def avg(attr: str) -> float | None:
+            vals = [getattr(m, attr) for m in ms if getattr(m, attr) is not None]
+            return round(sum(vals) / len(vals), 1) if vals else None
+
+        def peak(attr: str) -> float | None:
+            vals = [getattr(m, attr) for m in ms if getattr(m, attr) is not None]
+            return round(max(vals), 1) if vals else None
+
+        out.append({"t": key * step * 1000, "cpu": avg("cpu_pct"), "cpu_max": peak("cpu_pct"),
+                    "mem": avg("mem_pct"), "mem_max": peak("mem_pct")})
+    return out
+
+
 @router.get("/devices/{device_id}", response_class=HTMLResponse)
 def device_detail(
     device_id: str, request: Request, find: str = "", user: User = Depends(viewer), db: Session = Depends(get_db),
@@ -490,15 +517,7 @@ def device_detail(
         request,
         "device.html",
         device=device,
-        metrics=[
-            {
-                "ts": aware(m.ts).isoformat(),
-                "cpu": m.cpu_pct,
-                "mem": m.mem_pct,
-                "states": m.states,
-            }
-            for m in metrics
-        ],
+        metrics=_metric_buckets(metrics),
         tasks=tasks,
         backups=backups,
         alerts=alerts,

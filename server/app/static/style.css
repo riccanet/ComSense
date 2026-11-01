@@ -222,6 +222,12 @@ label.check { flex-direction: row !important; align-items: center; gap: .4rem; }
 pre { background: var(--neutral-bg); padding: .75rem; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; }
 .nowrap { white-space: nowrap; }
 canvas { width: 100%; max-width: 420px; height: auto; margin-top: .75rem; }
+/* The firewall page's CPU and memory charts (static/app.js drawCharts). */
+.spark { margin: .9rem 0 0; }
+.spark figcaption { display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap; }
+.spark-title { font-weight: 600; }
+.spark-readout { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.spark canvas { display: block; width: 100%; max-width: none; height: 96px; margin-top: .3rem; cursor: crosshair; }
 .key { display: inline-block; width: 10px; height: 3px; margin: 0 .3rem 2px .5rem; }
 .key.cpu { background: var(--chart-cpu); }
 .key.mem { background: var(--chart-mem); }

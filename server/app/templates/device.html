@@ -96,9 +96,14 @@ Reinstall the package: ComSense assigns each interface again, with its settings 
       <dt>States</dt><dd>{{ m.states }} / {{ m.states_max }}</dd>
       <dt>Config</dt><dd class="mono small">{{ device.config_sha256[:16] }}</dd>
     </dl>
-    <canvas id="metrics-chart" width="420" height="140" aria-label="CPU and memory over 24 hours"></canvas>
     <script type="application/json" id="metrics-data">{{ metrics|tojson }}</script>
-    <p class="small muted"><span class="key cpu"></span>CPU % <span class="key mem"></span>Memory %, last 24 hours</p>
+    {% for key, label in (("cpu", "CPU"), ("mem", "Memory")) %}
+    <figure class="spark" data-chart="{{ key }}">
+      <figcaption><span class="spark-title">{{ label }}</span> <span class="muted small">last 24 hours, 5-minute averages</span>
+        <span class="spark-readout small" aria-live="polite"></span></figcaption>
+      <canvas role="img" aria-label="{{ label }} use over the last 24 hours"></canvas>
+    </figure>
+    {% endfor %}
   </section>
 
   <section class="card">
