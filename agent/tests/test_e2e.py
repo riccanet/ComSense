@@ -880,6 +880,10 @@ def test_full_lifecycle(env):
     agent(env, "run")
     fixed = task(tid)
     assert fixed.status == TaskStatus.success and "failed to load before this edit and load again now" in fixed.output
+    # "Reload firewall rules": the rules from the saved configuration, loaded now and checked.
+    tid = queue(TaskType.reload_filter, {})
+    agent(env, "run")
+    assert task(tid).status == TaskStatus.success and "reloaded and loaded" in task(tid).output, task(tid).output
     (env["fw"] / "states.txt").write_text("25\n")
     agent(env, "run")
     with env["db"]() as db:

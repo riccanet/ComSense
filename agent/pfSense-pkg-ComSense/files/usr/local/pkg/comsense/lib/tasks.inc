@@ -52,6 +52,7 @@ $csfm_task_capability = array(
 	'be_destroy' => 'upgrade',
 	'notifications' => 'policy',
 	'config_edit' => 'policy',
+	'reload_filter' => 'policy',
 );
 
 /* Tasks that change the configuration and run under the change guard (guard.inc). */
@@ -635,6 +636,16 @@ function csfm_edit_reload($what) {
 	$rest[] = 'filter';
 	csfm_reload($rest, true);
 	return array_merge($done, $rest);
+}
+
+/* Reload the firewall rules from the saved configuration now, and check they loaded. */
+function csfm_task_reload_filter($client, $id, $payload) {
+	csfm_filter_reload(true);
+	$error = csfm_rules_error();
+	if ($error !== '') {
+		throw new Exception("The firewall rules failed to load, so the firewall is running without them. pf said: {$error}");
+	}
+	return array('output' => 'The firewall rules were reloaded and loaded.');
 }
 
 function csfm_edit_check($n, $op) {

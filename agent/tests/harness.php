@@ -63,6 +63,15 @@ if (!file_exists(CSFM_ARP_BIN)) {
 }
 /* pfctl: -si reports $dir/states.txt as the current state count; -nf fails on a ruleset naming BADTABLE. */
 define('CSFM_RULES_DEBUG', $dir . '/rules.debug');
+/* /etc/rc.filter_configure_sync: "generates" the ruleset from the saved configuration (its aliases), so pfctl
+   below rejects it while any alias is named BADTABLE. */
+define('CSFM_FILTER_SYNC_BIN', $dir . '/rc.filter_configure_sync');
+if (!file_exists(CSFM_FILTER_SYNC_BIN)) {
+	file_put_contents(CSFM_FILTER_SYNC_BIN, "#!/bin/sh\nphp -r " . escapeshellarg('$c = json_decode(file_get_contents($argv[1]), true); '
+	    . 'file_put_contents($argv[2], json_encode($c["aliases"] ?? array()));') . ' ' . escapeshellarg(CSFM_CFG_JSON) . ' '
+	    . escapeshellarg($dir . '/rules.debug') . "\necho filter_configure_sync >> " . escapeshellarg($dir . '/actions.log') . "\n");
+	chmod(CSFM_FILTER_SYNC_BIN, 0755);
+}
 define('CSFM_PFCTL', $dir . '/pfctl');
 if (!file_exists(CSFM_PFCTL)) {
 	$states = escapeshellarg($dir . '/states.txt');
@@ -189,12 +198,8 @@ function g_get($key) {
 }
 
 function filter_configure() { csfm_test_action('filter_configure'); }
-/* Generates the "ruleset" from the configuration: pfctl (below) rejects it while any alias is named BADTABLE. */
-function filter_configure_sync() {
-	global $config;
-	file_put_contents(CSFM_RULES_DEBUG, json_encode($config['aliases'] ?? array()));
-	csfm_test_action('filter_configure_sync');
-}
+/* Like pfSense's: needs functions (filter_generate_dummynet_rules...) the agent does not load; the agent must not call it. */
+function filter_configure_sync() { throw new Error('Call to undefined function filter_generate_dummynet_rules()'); }
 function services_dhcpd_configure() { csfm_test_action('services_dhcpd_configure'); }
 function system_resolvconf_generate() { csfm_test_action('system_resolvconf_generate'); }
 function system_timezone_configure() { csfm_test_action('system_timezone_configure'); }

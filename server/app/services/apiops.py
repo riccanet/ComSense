@@ -55,6 +55,7 @@ RUNNABLE = {
     "install_package": (TaskType.install_package, "Install a package (needs package)"),
     "remove_package": (TaskType.remove_package, "Remove a package (needs package)"),
     "free_disk_space": (TaskType.free_disk_space, "Clear the package cache and old logs"),
+    "reload_filter": (TaskType.reload_filter, "Reload the firewall rules from the saved configuration and check they load"),
     "remove_boot_environment": (TaskType.be_destroy, "Remove an old ZFS boot environment (needs boot_environment; admin)"),
 }
 BE_NAME = re.compile(r"[A-Za-z0-9._:+-]{1,128}")

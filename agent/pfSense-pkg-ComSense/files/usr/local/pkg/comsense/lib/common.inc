@@ -7,7 +7,7 @@
  */
 
 if (!defined('CSFM_AGENT_VERSION')) {
-	define('CSFM_AGENT_VERSION', '0.2.36');
+	define('CSFM_AGENT_VERSION', '0.2.37');
 }
 if (!defined('CSFM_DB_DIR')) {
 	/* Overridable so the agent can be exercised outside a firewall. */
@@ -29,6 +29,10 @@ if (!defined('CSFM_PFCTL')) {
 if (!defined('CSFM_RULES_DEBUG')) {
 	/* The ruleset pfSense generates from config.xml and loads into pf (filter.inc). */
 	define('CSFM_RULES_DEBUG', '/tmp/rules.debug');
+}
+if (!defined('CSFM_FILTER_SYNC_BIN')) {
+	/* pfSense's own "reload the rules now" script; it loads everything filter.inc needs (shaper.inc...). */
+	define('CSFM_FILTER_SYNC_BIN', '/etc/rc.filter_configure_sync');
 }
 if (!defined('CSFM_UPGRADE_BIN')) {
 	/* pfSense's own update tool (System > Update uses it too). */

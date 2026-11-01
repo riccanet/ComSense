@@ -21,6 +21,7 @@ TASK_CAPABILITY: dict[TaskType, str | None] = {
     TaskType.refresh_inventory: None,
     TaskType.read_logs: None,  # read only
     TaskType.free_disk_space: "upgrade",
+    TaskType.reload_filter: "policy",
     TaskType.be_destroy: "upgrade",
     TaskType.upgrade_system: "upgrade",
     TaskType.upgrade_packages: "upgrade",
@@ -97,6 +98,7 @@ TASK_TITLES = {
     TaskType.refresh_inventory: "Checking in",
     TaskType.read_logs: "Reading logs",
     TaskType.free_disk_space: "Freeing disk space",
+    TaskType.reload_filter: "Reloading the firewall rules",
     TaskType.be_destroy: "Removing a boot environment",
     TaskType.update_agent: "Updating the ComSense agent",
     TaskType.open_terminal: "Opening a terminal",

@@ -86,6 +86,7 @@ class TaskType(str, enum.Enum):
     update_branch = "update_branch"
     notifications = "notifications"
     config_edit = "config_edit"  # any part of the configuration (services/configedit.py)
+    reload_filter = "reload_filter"  # reload the firewall rules from the saved configuration, and check them
 
 
 class PolicyType(str, enum.Enum):

@@ -155,8 +155,14 @@ function csfm_reload($what, $sync = false) {
 
 /* Reload the rules: queued for pfSense's reload daemon, or, with $sync, now, so the result can be checked. */
 function csfm_filter_reload($sync = false) {
-	if ($sync && function_exists('filter_configure_sync')) {
-		filter_configure_sync();
+	/* Synchronously in pfSense's own script, not filter_configure_sync() here: filter.inc needs functions from
+	   files the agent does not load (shaper.inc), and a missing one ends the agent mid-reload. */
+	if ($sync && is_executable(CSFM_FILTER_SYNC_BIN)) {
+		$out = array();
+		exec(escapeshellarg(CSFM_FILTER_SYNC_BIN) . ' 2>&1', $out, $rc);
+		if ($rc !== 0) {
+			csfm_log('Rules reload exited with ' . $rc . ': ' . csfm_truncate(implode(' ', $out), 300), LOG_WARNING);
+		}
 	} elseif (function_exists('filter_configure')) {
 		filter_configure();
 	}
