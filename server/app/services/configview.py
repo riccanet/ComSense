@@ -187,6 +187,46 @@ def interfaces_from_xml(xml: bytes) -> list[dict[str, str]]:
     return out
 
 
+def outbound_nat_from_xml(xml: bytes) -> dict[str, Any]:
+    """Firewall > NAT > Outbound: the mode (automatic, hybrid, advanced/manual, disabled) and its rules."""
+    root = _parse(xml)
+    mode = (root.findtext("./nat/outbound/mode") or "automatic").strip() or "automatic"
+    rules = []
+    for rule in root.findall("./nat/outbound/rule"):
+        def text(tag: str) -> str:
+            return (rule.findtext(tag) or "").strip()
+
+        dst, dst_port = _endpoint(rule.find("destination"))
+        rules.append({
+            "interface": text("interface") or "wan",
+            "protocol": text("protocol") or "any",
+            "source": text("source/network") or ("any" if rule.find("source/any") is not None else ""),
+            "source_port": text("sourceport"),
+            "destination": dst,
+            "destination_port": dst_port or text("dstport"),
+            "translation": "none (no NAT)" if rule.find("nonat") is not None else (text("target") or "interface address"),
+            "translation_port": text("natport"),
+            "static_port": rule.find("staticnatport") is not None,
+            "disabled": rule.find("disabled") is not None,
+            "descr": text("descr"),
+        })
+    return {"mode": mode, "rules": rules}
+
+
+def one_to_one_nat_from_xml(xml: bytes) -> list[dict[str, Any]]:
+    """Firewall > NAT > 1:1 mappings."""
+    out = []
+    for rule in _parse(xml).findall("./nat/onetoone"):
+        def text(tag: str) -> str:
+            return (rule.findtext(tag) or "").strip()
+
+        src, _ = _endpoint(rule.find("source"))
+        dst, _ = _endpoint(rule.find("destination"))
+        out.append({"interface": text("interface") or "wan", "external": text("external"), "internal": src,
+                    "destination": dst, "disabled": rule.find("disabled") is not None, "descr": text("descr")})
+    return out
+
+
 def firewall_rules_from_xml(xml: bytes) -> list[dict[str, Any]]:
     """Firewall > Rules, in the firewall's order. Floating rules have interface "floating" and list theirs."""
     out = []
@@ -244,7 +284,8 @@ def config_summary(settings: Settings, backup: Backup) -> dict[str, Any]:
     rules = {"nat": port_forwards_from_xml(xml), "aliases": aliases_from_xml(xml),
              "smtp": smtp_notifications_from_xml(xml), "rules": filter_rules,
              "rule_tabs": rule_tabs(interfaces, filter_rules), "interfaces": interfaces,
-             "ddns": ddns_from_xml(xml)}
+             "ddns": ddns_from_xml(xml), "outbound_nat": outbound_nat_from_xml(xml),
+             "one_to_one": one_to_one_nat_from_xml(xml)}
     _nat_cache[key] = rules
     while len(_nat_cache) > _NAT_CACHE_SIZE:
         _nat_cache.popitem(last=False)

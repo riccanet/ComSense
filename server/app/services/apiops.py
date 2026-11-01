@@ -36,6 +36,7 @@ from ..models import (
 from ..security import hash_secret
 from .agentpkg import agent_outdated, latest_package
 from .alerts import category_of
+from .configview import config_summary, current_backup, is_system_alias
 from .tasks import TaskError, queue_task
 
 KEY_PREFIX = "csfm_api_"
@@ -220,6 +221,54 @@ def find_device(db: Session, query: str) -> list[dict[str, Any]]:
     if len(query.strip()) < 2:
         raise ApiError(400, "query must be at least 2 characters")
     return neighbors.as_api(neighbors.search(db, query))
+
+
+def _config(db: Session, settings: Settings, firewall_id: str) -> tuple[Device, Any, dict[str, Any], dict[str, str]]:
+    """The firewall, the backup of its current configuration, what ComSense reads from it, and interface names."""
+    device = _device(db, firewall_id)
+    backup = current_backup(db, device)
+    if backup is None:
+        raise ApiError(404, "No configuration backup of this firewall yet")
+    summary = config_summary(settings, backup)
+    names = {i["id"]: i["name"] for i in summary.get("interfaces") or []}
+    return device, backup, summary, names
+
+
+def _named(names: dict[str, str], iface: str) -> str:
+    return ", ".join(names.get(i, i) for i in iface.split(",") if i) or iface
+
+
+def get_nat_rules(db: Session, settings: Settings, firewall_id: str) -> dict[str, Any]:
+    """Port forwards, outbound NAT and 1:1 NAT, as in the firewall's newest configuration backup."""
+    device, backup, summary, names = _config(db, settings, firewall_id)
+    keys = ("protocol", "source", "destination", "port", "target", "local_port", "descr", "disabled", "nordr",
+            "filter_rule", "managed")
+    forwards = [{"interface": _named(names, r["interface"]), **{k: r[k] for k in keys}} for r in summary["nat"]]
+    outbound = summary.get("outbound_nat") or {"mode": "", "rules": []}
+    return {
+        "firewall_id": device.id, "firewall": device.name, "backup_id": backup.id, "backup_taken": _iso(backup.created_at),
+        "port_forwards": forwards,
+        "outbound_nat": {"mode": outbound["mode"],
+                         "rules": [{**r, "interface": _named(names, r["interface"])} for r in outbound["rules"]]},
+        "one_to_one": [{**r, "interface": _named(names, r["interface"])} for r in summary.get("one_to_one") or []],
+    }
+
+
+def get_firewall_rules(db: Session, settings: Settings, firewall_id: str, interface: str = "") -> dict[str, Any]:
+    """Firewall rules in the firewall's order (optionally one interface, by name or id) and the aliases they use."""
+    device, backup, summary, names = _config(db, settings, firewall_id)
+    want = interface.strip().lower()
+    rules = []
+    for r in summary["rules"]:
+        tab_name = "Floating" if r["tab"] == "floating" else names.get(r["tab"], r["tab"])
+        if want and want not in (r["tab"].lower(), tab_name.lower()):
+            continue
+        rules.append({"interface": tab_name, **{k: v for k, v in r.items() if k not in ("tab",)},
+                      "interfaces": [names.get(i, i) for i in r["interfaces"]]})
+    aliases = [{"name": a.get("name"), "type": a.get("type"), "descr": a.get("descr"),
+                "entries": a.get("entry_list") or []} for a in summary.get("aliases") or [] if not is_system_alias(a)]
+    return {"firewall_id": device.id, "firewall": device.name, "backup_id": backup.id,
+            "backup_taken": _iso(backup.created_at), "rules": rules, "aliases": aliases}
 
 
 def list_customers(db: Session) -> list[dict[str, Any]]:

@@ -105,6 +105,23 @@ def build_server(settings: Settings) -> MCPServer:
         return await _call(apiops.acknowledge_alert, who, alert_id, _client_ip.get())
 
     @server.tool(annotations=READ)
+    async def get_nat_rules(firewall_id: str) -> dict[str, Any]:
+        """A firewall's NAT: port forwards (interface, protocol, source, destination and port, internal target and
+        port, description, disabled, associated filter rule), outbound NAT (mode: automatic, hybrid, advanced or
+        disabled, and its rules) and 1:1 mappings. Read from the firewall's newest configuration backup, which
+        the firewall uploads whenever its configuration changes."""
+        _who()
+        return await _call(apiops.get_nat_rules, settings, firewall_id)
+
+    @server.tool(annotations=READ)
+    async def get_firewall_rules(firewall_id: str, interface: str = "") -> dict[str, Any]:
+        """A firewall's rules (Firewall > Rules) in its order, optionally for one interface by name (WAN, LAN,
+        GUEST, Floating, OpenVPN...), with the aliases they can use and their entries. From the newest
+        configuration backup."""
+        _who()
+        return await _call(apiops.get_firewall_rules, settings, firewall_id, interface)
+
+    @server.tool(annotations=READ)
     async def find_device(query: str) -> list[dict[str, Any]]:
         """Find a device on every firewall's network by MAC address (any notation, or part of one), IP address
         or hostname: ARP entries, DHCP leases and DHCP static mappings, with the firewall and interface. Firewalls

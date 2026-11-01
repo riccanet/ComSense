@@ -36,6 +36,8 @@ while.
 | POST | `/firewalls/{id}/tasks` | Queue a task: `{"task": "backup"}` (operator) |
 | PUT | `/firewalls/{id}/customer` | `{"customer_id": 3}` or `{"customer_id": null}` (operator) |
 | GET | `/firewalls/{id}/backups` | Stored configuration backups (metadata) |
+| GET | `/firewalls/{id}/nat` | Port forwards, outbound NAT (mode and rules) and 1:1 NAT, from the newest backup |
+| GET | `/firewalls/{id}/rules?interface=` | Firewall rules in order, optionally one interface, and aliases |
 | GET | `/firewalls/{id}/network?q=` | ARP entries, DHCP leases and static mappings, optionally filtered |
 | GET | `/devices/search?q=` | Find a device by MAC (any notation), IP or hostname on every firewall |
 | GET | `/tasks/{id}` | One task with its status and output |

@@ -91,6 +91,16 @@ def create_rest_app(settings: Settings) -> FastAPI:
     def device_search(q: str = Query(..., min_length=2), db: Session = Depends(get_db)) -> list[dict[str, Any]]:
         return apiops.find_device(db, q)
 
+    @app.get("/firewalls/{firewall_id}/nat", dependencies=read,
+             summary="NAT: port forwards, outbound NAT (mode and rules) and 1:1 mappings, from the newest backup")
+    def firewall_nat(firewall_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+        return apiops.get_nat_rules(db, settings, firewall_id)
+
+    @app.get("/firewalls/{firewall_id}/rules", dependencies=read,
+             summary="Firewall rules in order (interface= filters by name or id) and aliases, from the newest backup")
+    def firewall_rules(firewall_id: str, interface: str = "", db: Session = Depends(get_db)) -> dict[str, Any]:
+        return apiops.get_firewall_rules(db, settings, firewall_id, interface)
+
     @app.get("/firewalls/{firewall_id}/tasks", dependencies=read, summary="A firewall's recent tasks")
     def firewall_tasks(firewall_id: str, limit: int = 50, db: Session = Depends(get_db)) -> list[dict[str, Any]]:
         return apiops.list_tasks(db, firewall_id, limit)
