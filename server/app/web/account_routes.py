@@ -405,7 +405,7 @@ def forgot_submit(
             background.add_task(_send_reset_in_background, settings, target.id, token, False)
     # Same answer whether or not the account exists.
     flash(request, "If that account exists and has an email address, a reset link is on its way. It expires in 1 hour.", "success")
-    return redirect("/login")
+    return redirect("/admin")
 
 
 @router.get("/reset/{token}", response_class=HTMLResponse)
@@ -443,7 +443,7 @@ def reset_submit(
     db.commit()
     request.session.clear()
     flash(request, "Password changed. Sign in with your new password.", "success")
-    return redirect("/login")
+    return redirect("/admin")
 
 
 # ------------------------------------------------------------ user email

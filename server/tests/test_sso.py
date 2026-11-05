@@ -248,3 +248,22 @@ def test_signature_wrapping_cannot_change_the_user(client, db, provider):
     finish(client, provider.id, base64.b64encode(tampered.encode()).decode())
     page = client.get("/account").text if signed_in(client) else ""
     assert "boss" not in page
+
+
+def test_single_sign_on_is_the_default_and_local_accounts_sign_in_at_admin(client, db, provider):
+    page = client.get("/login").text
+    assert f'href="/sso/{provider.id}/login"' in page and "Sign in with Entra" in page
+    assert 'name="password"' not in page  # no password form while a provider is set up
+    local = client.get("/admin").text
+    assert 'name="password"' in local and 'href="/login"' in local  # and a way back to single sign-on
+    login(client)  # the local admin account, through /admin
+    assert signed_in(client)
+    # A wrong password comes back to the password form, not the single sign-on page.
+    client.post("/logout", data={"csrf_token": csrf_from(client.get("/").text)})
+    r = client.post("/login", data={"username": "admin", "password": "wrong-password-123",
+                                    "csrf_token": csrf_from(client.get("/admin").text)})
+    assert r.status_code == 401 and 'name="password"' in r.text
+
+
+def test_without_a_provider_login_shows_the_password_form(client, db):
+    assert 'name="password"' in client.get("/login").text

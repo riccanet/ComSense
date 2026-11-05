@@ -145,7 +145,7 @@ def csrf_from(html: str) -> str:
 
 
 def login(client, username="admin", password=ADMIN_PASSWORD) -> str:
-    token = csrf_from(client.get("/login").text)
+    token = csrf_from(client.get("/admin").text)
     resp = client.post(
         "/login",
         data={"username": username, "password": password, "csrf_token": token},

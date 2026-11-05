@@ -61,7 +61,8 @@ Cisco Duo or any other. ComSense is the service provider:
 * The provider applies its own MFA (Entra Conditional Access, Duo, Google 2-Step Verification), so an
   SSO sign-in counts as two-factor for "require two-factor sign-in". Remote terminal sessions still
   need an authenticator app in ComSense.
-* Sign-ins and failures are in the audit log. Passwords keep working alongside SSO.
+* Sign-ins and failures are in the audit log. Once a provider is enabled, the sign-in page (`/login`) offers
+  only single sign-on; local accounts (such as the first admin) sign in with their password at `/admin`.
 
 ### Remote terminal
 

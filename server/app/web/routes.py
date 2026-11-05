@@ -258,10 +258,22 @@ def _get_device(db: Session, device_id: str) -> Device:
 # --------------------------------------------------------------------------- auth
 
 
+def _login_page(request: Request, db: Session, local: bool, status_code: int = 200):
+    providers = db.scalars(select(SsoProvider).where(SsoProvider.enabled.is_(True)).order_by(SsoProvider.name)).all()
+    return render(request, "login.html", status_code=status_code, email_ready=get_email_settings(db).configured,
+                  sso_providers=providers, local=local or not providers)
+
+
 @router.get("/login", response_class=HTMLResponse)
 def login_form(request: Request, db: Session = Depends(get_db)):
-    providers = db.scalars(select(SsoProvider).where(SsoProvider.enabled.is_(True)).order_by(SsoProvider.name)).all()
-    return render(request, "login.html", email_ready=get_email_settings(db).configured, sso_providers=providers)
+    """Single sign-on when a provider is set up (Settings > Single sign-on); the password form otherwise."""
+    return _login_page(request, db, local=False)
+
+
+@router.get("/admin", response_class=HTMLResponse)
+def login_form_local(request: Request, db: Session = Depends(get_db)):
+    """Sign in with a local account (username and password), e.g. the admin account when single sign-on is down."""
+    return _login_page(request, db, local=True)
 
 
 @router.post("/login")
@@ -274,20 +286,20 @@ def login(
     ip = _ip(request)
     if not login_limiter.allow(ip):
         flash(request, "Too many login attempts. Wait a few minutes and try again.", "error")
-        return render(request, "login.html", status_code=429)
+        return _login_page(request, db, local=True, status_code=429)
     account = username.strip().lower()[:64]
     if failed_login_limiter.blocked(account):
         audit(db, username[:64], "login.locked", detail="too many failed passwords", ip=ip)
         db.commit()
         flash(request, "Too many failed sign-ins for this account. Wait 15 minutes and try again.", "error")
-        return render(request, "login.html", status_code=429)
+        return _login_page(request, db, local=True, status_code=429)
     user = db.scalar(select(User).where(User.username == username.strip()))
     if not _password_matches(user, password) or not user.active:
         failed_login_limiter.allow(account)
         audit(db, username[:64], "login.failed", ip=ip)
         db.commit()
         flash(request, "Invalid username or password.", "error")
-        return render(request, "login.html", status_code=401)
+        return _login_page(request, db, local=True, status_code=401)
     request.session.clear()
     from .mfa_routes import begin_second_factor  # noqa: PLC0415 - avoids an import cycle
 
