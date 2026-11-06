@@ -30,6 +30,8 @@ SECRET_TAGS = (
     "ddnsdomainkey", "keydata", "accountkey", "sshkey", "pkcs11pin", "secret_key", "privkey",
     # pfBlockerNG: the MaxMind license key, the ASN token and its XMLRPC sync password.
     "maxmind_key", "asn_token", "varsyncpassword",
+    # Snort / Suricata rule subscription codes.
+    "oinkmastercode", "etpro_code", "etprocode", "snort_oinkcode",
 )
 _SECRET_RE = re.compile(r"<(" + "|".join(re.escape(t) for t in SECRET_TAGS) + r")(\s[^>]*)?>(.*?)</\1>", re.S | re.I)
 
