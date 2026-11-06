@@ -1008,7 +1008,9 @@ def test_full_lifecycle(env):
         db.add(PolicyAssignment(policy_id=geo.id, device_id=creds["device_id"]))
         db.commit()
         geo_id = geo.id
+    started = time.monotonic()
     agent(env, "run")
+    assert time.monotonic() - started < 20, "the agent waited for a service pfBlockerNG left running"
     cfg = fw_config(env)
     pkgs = cfg["installedpackages"]
     assert pkgs["pfblockerngnorthamerica"]["config"][0]["action"] == "Alias_Permit"

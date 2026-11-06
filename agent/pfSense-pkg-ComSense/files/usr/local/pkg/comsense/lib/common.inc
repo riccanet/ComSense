@@ -7,7 +7,7 @@
  */
 
 if (!defined('CSFM_AGENT_VERSION')) {
-	define('CSFM_AGENT_VERSION', '0.2.41');
+	define('CSFM_AGENT_VERSION', '0.2.42');
 }
 if (!defined('CSFM_DB_DIR')) {
 	/* Overridable so the agent can be exercised outside a firewall. */
@@ -320,7 +320,10 @@ if (!defined('CSFM_HEARTBEAT_EVERY')) {
  * ("<step>, N min"), which also tells the server the firewall is alive.
  */
 function csfm_exec_watched($cmd, $timeout, $step) {
-	$full = csfm_env_prefix() . '/usr/bin/timeout ' . (int)$timeout . ' ' . $cmd . ' 2>&1';
+	/* Done when the command itself exits, not when everything it started has: pfBlockerNG starts its services
+	   (filterlog, DNSBL) on the way out, and they live on. So no /usr/bin/timeout wrapper, which waited for
+	   them; the shell is replaced by the command ("exec"), and the time limit is kept here. */
+	$full = 'exec ' . csfm_env_prefix() . $cmd . ' 2>&1';
 	$proc = proc_open($full, array(1 => array('pipe', 'w')), $pipes);
 	if (!is_resource($proc)) {
 		return csfm_exec($cmd, $timeout);
@@ -344,13 +347,19 @@ function csfm_exec_watched($cmd, $timeout, $step) {
 			$out .= (string)stream_get_contents($pipes[1]);
 			break;
 		}
+		if (time() - $started > (int)$timeout) {
+			proc_terminate($proc, 9);
+			$out .= "\n[stopped by the agent after {$timeout} seconds]";
+			$rc = 124;
+			break;
+		}
 		if (time() - $last >= CSFM_HEARTBEAT_EVERY) {
 			$last = time();
 			csfm_task_heartbeat($step, $last - $started);
 		}
 		usleep(500000);
 	}
-	fclose($pipes[1]);
+	fclose($pipes[1]);  /* without waiting for services the command left running, which may hold the pipe */
 	$close = proc_close($proc);
 	if ($rc === null || $rc === -1) {
 		$rc = $close;

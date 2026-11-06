@@ -94,6 +94,9 @@ $dir = __DIR__;
 file_put_contents("$dir/actions.log", "pfblockerng {$argv[1]}\n", FILE_APPEND);
 if (($argv[1] ?? '') !== 'updateip') { exit(0); }
 sleep(3);  /* long enough for the agent to report progress (every second in tests) */
+/* Like pfBlockerNG restarting its filterlog service on the way out: something that outlives this run and keeps
+   its output open. The agent must take the run as finished when this process exits. */
+exec('sleep 25 1>&2 &');
 $xmlf = "$dir/conf/config.xml";
 $xml = file_get_contents($xmlf);
 preg_match('/<!-- (\S+) -->/', $xml, $m);
