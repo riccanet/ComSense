@@ -1015,6 +1015,8 @@ def test_full_lifecycle(env):
     assert pkgs["pfblockerngnorthamerica"]["config"][0]["countries4"] == "US,US_rep"
     assert pkgs["pfblockerngeurope"]["config"][0]["action"] == "Disabled"
     assert pkgs["pfblockerngeurope"]["config"][0]["countries4"] == ""  # no country selected, so no alias kept
+    assert pkgs["pfblockerngeurope"]["config"][0]["aliaslog"] == "disabled"
+    assert pkgs["pfblockerngnorthamerica"]["config"][0]["aliaslog"] == "enabled"
     assert pkgs["pfblockerngtopspammers"]["config"][0]["action"] == "Disabled"
     assert pkgs["pfblockernglistsv4"]["config"][0]["action"] == "Deny_Both"  # feed lists untouched
     assert pkgs["pfblockerngipsettings"]["config"][0]["maxmind_key"] == "AbC123_test_key"

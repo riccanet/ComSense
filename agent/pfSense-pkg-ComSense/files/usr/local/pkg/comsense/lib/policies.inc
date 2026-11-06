@@ -1213,10 +1213,12 @@ function csfm_apply_geoip($pid, $content, $prev) {
 			$cur['countries4'] = $countries4;
 			$cur['countries6'] = $countries6;
 		} else {
-			/* Off, with no countries selected: pfBlockerNG keeps an alias for any region with countries. */
+			/* Off, with no countries selected (pfBlockerNG keeps an alias for any region with countries) and
+			   no logging. */
 			$cur['action'] = 'Disabled';
 			$cur['countries4'] = '';
 			$cur['countries6'] = '';
+			$cur['aliaslog'] = 'disabled';
 		}
 		csfm_cfg_set("installedpackages/pfblockerng{$s}/config", array($cur));
 	}

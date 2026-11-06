@@ -151,7 +151,7 @@ under Configurations > pfBlocker GeoIP, which can copy the settings from a firew
 The agent installs pfBlockerNG when it is missing (refused when the firewall's package repository is for a
 newer pfSense: upgrade pfSense first), writes the GeoIP sections, runs pfBlockerNG's MaxMind download and
 "Force Reload IP", and checks the alias exists and the rules load; otherwise it puts the GeoIP settings back.
-Regions not permitted are turned off with their countries cleared, so pfBlockerNG keeps no alias for them. The MaxMind download runs only when pfBlockerNG has no GeoIP database yet. pfBlockerNG's IP feed lists and DNSBL are not touched. Removing the configuration puts back the previous GeoIP
+Regions not permitted are turned off with their countries cleared (so pfBlockerNG keeps no alias for them) and their logging off. The MaxMind download runs only when pfBlockerNG has no GeoIP database yet. pfBlockerNG's IP feed lists and DNSBL are not touched. Removing the configuration puts back the previous GeoIP
 settings, unless port forwards or rules still use the alias (then nothing changes, and the result says so).
 
 ## system
