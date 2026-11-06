@@ -7,7 +7,7 @@
  */
 
 if (!defined('CSFM_AGENT_VERSION')) {
-	define('CSFM_AGENT_VERSION', '0.2.42');
+	define('CSFM_AGENT_VERSION', '0.2.43');
 }
 if (!defined('CSFM_DB_DIR')) {
 	/* Overridable so the agent can be exercised outside a firewall. */
@@ -388,6 +388,20 @@ function csfm_task_heartbeat($step, $elapsed) {
 		    'result' => array('progress' => array('step' => $text, 'percent' => null))));
 	} catch (Exception $e) {
 		csfm_log('Could not report progress of task ' . $ctx['id'] . ': ' . $e->getMessage(), LOG_WARNING);
+	}
+}
+
+/*
+ * Read config.xml again after another program (pkg, pfBlockerNG) or a rollback changed it on disk, so the
+ * agent's next save keeps those changes. pfSense 2.7 and later (Plus 23.x and later) read it with
+ * config_read_file(); older versions with parse_config(). Without this, the agent works on a stale copy.
+ */
+function csfm_config_reread() {
+	@unlink('/tmp/config.cache');
+	if (function_exists('config_read_file')) {
+		config_read_file(false, true);
+	} elseif (function_exists('parse_config')) {
+		$GLOBALS['config'] = parse_config(true);
 	}
 }
 

@@ -195,10 +195,7 @@ function csfm_guard_rollback($reason) {
 		csfm_log("Rolling back configuration ({$reason}): {$labels}", LOG_ERR);
 
 		copy(CSFM_GUARD_CONFIG, csfm_config_file());
-		@unlink('/tmp/config.cache');
-		if (function_exists('parse_config')) {
-			$GLOBALS['config'] = parse_config(true);
-		}
+		csfm_config_reread();
 		$known = @json_decode((string)@file_get_contents(CSFM_GUARD_STATE), true);
 		$state = csfm_state();
 		if (is_array($known)) {

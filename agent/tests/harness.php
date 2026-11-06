@@ -223,12 +223,20 @@ function write_config($desc = '') {
 }
 
 /* Reads the config back from config.xml (where the rendered copy embeds it), like pfSense does. */
-function parse_config($parse = false) {
+/* Not parse_config(): current pfSense (2.7 and later) no longer has it, and the agent must not depend on it. */
+function csfm_test_read_config_xml() {
 	$xml = (string)@file_get_contents(g_get('conf_path') . '/config.xml');
 	if (preg_match('/<!-- (\S+) -->/', $xml, $m)) {
 		return json_decode(base64_decode($m[1]), true) ?: array();
 	}
 	return array();
+}
+
+/* pfSense 2.7 and later: config.xml read again into the global configuration (what the agent must use). */
+function config_read_file($parse = false, $force = false) {
+	global $config;
+	$config = csfm_test_read_config_xml();
+	return $config;
 }
 
 function g_get($key) {

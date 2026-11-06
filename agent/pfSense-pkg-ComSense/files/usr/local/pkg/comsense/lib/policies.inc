@@ -1129,9 +1129,7 @@ $csfm_geoip_other = array('proxyandsatellite', 'topspammers');
 
 function csfm_reload_config_from_disk() {
 	/* After another program (pkg, pfBlockerNG) wrote config.xml: read it again, so a later save keeps its changes. */
-	if (function_exists('parse_config')) {
-		$GLOBALS['config'] = parse_config(true);
-	}
+	csfm_config_reread();
 }
 
 function csfm_pfblocker_installed() {
