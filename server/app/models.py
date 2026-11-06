@@ -98,6 +98,7 @@ class PolicyType(str, enum.Enum):
     port_forward = "port_forward"  # inbound NAT (fits the existing 14-character column)
     notifications = "notifications"  # pfSense email notifications on/off
     ssh = "ssh"  # System > Advanced > Admin Access > Secure Shell
+    geoip = "geoip"  # pfBlockerNG GeoIP: permit one region's countries (an alias), every other region off
 
 
 class User(Base):

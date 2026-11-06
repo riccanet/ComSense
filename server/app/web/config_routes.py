@@ -11,6 +11,7 @@ changes are enabled (CSFM_ENABLE_FIREWALL_CHANGES) and the firewall allows polic
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -23,6 +24,8 @@ from ..audit import audit
 from ..config import Settings, get_settings
 from ..db import get_db
 from ..models import Device, DeviceGroup, Organization, Policy, PolicyAssignment, PolicyType, Role, User, utcnow
+from ..services import apiops, geoip, opennat
+from ..services.configview import current_backup
 from ..services.policies import (
     ALIAS_FORM_TYPES,
     TYPE_LABELS,
@@ -49,12 +52,13 @@ SECTIONS = [
     ("nat", "NAT (inbound)", (PolicyType.port_forward,)),
     ("notifications", "Notifications", (PolicyType.notifications,)),
     ("ssh", "SSH", (PolicyType.ssh,)),
+    ("geoip", "pfBlocker GeoIP", (PolicyType.geoip,)),
     ("groups", "Firewall groups", ()),
     ("advanced", "Advanced", (PolicyType.system, PolicyType.packages, PolicyType.config_set)),
 ]
 SECTION_OF = {t: path for path, _, types in SECTIONS for t in types}
 FORM_TYPES = (PolicyType.aliases, PolicyType.firewall_rules, PolicyType.port_forward, PolicyType.notifications,
-              PolicyType.ssh)
+              PolicyType.ssh, PolicyType.geoip)
 RULE_PROTOCOLS = ("any", "tcp", "udp", "tcp/udp", "icmp")
 NAT_PROTOCOLS = ("tcp", "udp", "tcp/udp")
 
@@ -155,6 +159,14 @@ def content_from_form(ptype: PolicyType, form) -> dict[str, Any]:
         return {"enabled": form.get("enabled") == "on", "port": port, "auth": str(form.get("auth", "password_or_key")),
                 "agent_forwarding": form.get("agent_forwarding") == "on", "admin_keys": keys}
 
+    if ptype == PolicyType.geoip:
+        def codes(name: str) -> list[str]:
+            return [c for c in re.split(r"[\s,]+", str(form.get(name, "")).strip()) if c]
+
+        return {"permit": str(form.get("permit", "")), "countries4": codes("countries4"),
+                "countries6": codes("countries6"), "maxmind_account": str(form.get("maxmind_account", "")).strip(),
+                "maxmind_key": str(form.get("maxmind_key", "")).strip()}
+
     raw = str(form.get("content", ""))
     try:
         return json.loads(raw)
@@ -225,6 +237,11 @@ def _editor(request: Request, settings: Settings, db: Session, policy: Policy | 
         alias_types=ALIAS_FORM_TYPES, rule_protocols=RULE_PROTOCOLS, nat_protocols=NAT_PROTOCOLS,
         advanced_types=[t for t in PolicyType if t not in FORM_TYPES],
     )
+    if ptype == PolicyType.geoip:
+        ctx.update(geoip_regions={k: v[0] for k, v in geoip.REGIONS.items()},
+                   geoip_alias=geoip.alias_name(content.get("permit")) if content.get("permit") in geoip.REGIONS else "",
+                   geoip_sources=[d for d in db.scalars(select(Device).order_by(Device.name))
+                                  if any("pfBlocker" in str(p.get("name", "")) for p in (d.inventory or {}).get("packages", []))])
     if policy is not None:
         ctx.update(
             targets=_targets(db, policy),
@@ -336,13 +353,28 @@ def group_delete(group_id: int, request: Request, user: User = Depends(operator)
 
 
 @router.get("/configurations/new", response_class=HTMLResponse)
-def configuration_new(request: Request, type: str = "aliases", settings: Settings = Depends(get_settings),
-                      user: User = Depends(operator), db: Session = Depends(get_db)):
+def configuration_new(request: Request, type: str = "aliases", source: str = "",
+                      settings: Settings = Depends(get_settings), user: User = Depends(operator),
+                      db: Session = Depends(get_db)):
     ptype = PolicyType(type) if type in PolicyType.__members__ else PolicyType.aliases
     content = {"position": "top", "rules": []} if ptype in (PolicyType.firewall_rules, PolicyType.port_forward) \
         else {"aliases": []} if ptype == PolicyType.aliases else {"smtp": False} if ptype == PolicyType.notifications \
         else dict(EXAMPLES[ptype])
-    return _editor(request, settings, db, None, ptype, content)
+    extra: dict[str, Any] = {}
+    if ptype == PolicyType.geoip and source:
+        # "Copy from a firewall": its pfBlockerNG GeoIP settings, from its newest backup.
+        device = db.get(Device, source)
+        backup = current_backup(db, device) if device is not None else None
+        try:
+            if backup is None:
+                raise PolicyError("That firewall has no configuration backup yet")
+            content = geoip.capture(settings, backup)
+            extra["name"] = f"pfBlocker GeoIP from {device.name}"
+            flash(request, f"Copied from {device.name}'s pfBlockerNG settings (backup of {backup.created_at:%Y-%m-%d}). "
+                           "Check them, then save.", "success")
+        except PolicyError as exc:
+            flash(request, str(exc), "error")
+    return _editor(request, settings, db, None, ptype, content, **extra)
 
 
 # Raw config.xml writes reach far into the firewall, so only admins write them.
@@ -370,6 +402,8 @@ async def configuration_create(request: Request, settings: Settings = Depends(ge
         if not name:
             raise PolicyError("Give the configuration a name.")
         content = content_from_form(ptype, form)
+        if ptype == PolicyType.geoip:
+            content = geoip.protect_key(content, None, settings.secret_key)
         validate_policy(ptype, content)
     except PolicyError as exc:
         flash(request, str(exc), "error")
@@ -404,6 +438,8 @@ async def configuration_update(policy_id: int, request: Request, settings: Setti
     form = await request.form()
     try:
         content = content_from_form(policy.type, form)
+        if policy.type == PolicyType.geoip:
+            content = geoip.protect_key(content, policy.content, settings.secret_key)
         validate_policy(policy.type, content)
     except PolicyError as exc:
         flash(request, str(exc), "error")
@@ -484,6 +520,58 @@ def assignment_delete(assignment_id: int, request: Request, user: User = Depends
     return redirect(f"/configurations/{policy_id}")
 
 
+# ------------------------------------------------------------ open port forwards
+
+class _ConsoleUser(apiops.Principal):
+    """A console user making the same change the API makes; recorded under their own name."""
+
+    @property
+    def actor(self) -> str:
+        return self.name[:64]
+
+
+@router.get("/configurations/nat/open", response_class=HTMLResponse)
+def open_port_forwards_page(request: Request, settings: Settings = Depends(get_settings), user: User = Depends(viewer),
+                            db: Session = Depends(get_db)):
+    """Port forwards open to anyone, fleet-wide, to limit to the pfBlocker GeoIP alias."""
+    rows = opennat.open_port_forwards(db, settings)
+    return _render(request, "config_open_nat.html", "nat", settings, rows=rows, alias=opennat.DEFAULT_ALIAS)
+
+
+@router.post("/configurations/nat/open")
+async def open_port_forwards_restrict(request: Request, settings: Settings = Depends(get_settings),
+                                      user: User = Depends(operator), db: Session = Depends(get_db)):
+    """Limit the chosen port forwards' source to the alias (each firewall must already have it)."""
+    form = await request.form()
+    chosen = [str(v) for v in form.getlist("forward")]
+    alias = opennat.DEFAULT_ALIAS
+    ready = {(r["device"].id, r["id"]): r for r in opennat.open_port_forwards(db, settings) if r["alias_ready"]}
+    who = _ConsoleUser(0, user.username, user.role)
+    queued, skipped = [], []
+    for value in chosen:
+        device_id, _, forward_id = value.partition(":")
+        row = ready.get((device_id, forward_id))
+        if row is None:
+            skipped.append(value)
+            continue
+        try:
+            apiops.edit_port_forward(db, settings, who, device_id, forward_id, {"source": alias}, _ip(request))
+        except apiops.ApiError as exc:
+            skipped.append(f"{row['device'].name} {row['descr'] or row['port']}: {exc.message}")
+            continue
+        queued.append(f"{row['device'].name}: {row['descr'] or row['port']}")
+    db.commit()
+    if queued:
+        flash(request, f"Limiting {len(queued)} port forward(s) to {alias}: " + "; ".join(queued[:10])
+              + (" ..." if len(queued) > 10 else "") + ". Each firewall applies it under probation.", "success")
+    if skipped:
+        flash(request, f"Not changed ({len(skipped)}): the firewall has no {alias} yet (assign a pfBlocker GeoIP "
+                       "configuration first), or the port forward changed since its last backup.", "error")
+    if not chosen:
+        flash(request, "Choose the port forwards to limit.", "error")
+    return redirect("/configurations/nat/open")
+
+
 # Last: "/configurations/<section>" would otherwise match the numeric and fixed paths above.
 @router.get("/configurations/{section}", response_class=HTMLResponse)
 def configurations_section(section: str, request: Request, settings: Settings = Depends(get_settings),
@@ -493,4 +581,5 @@ def configurations_section(section: str, request: Request, settings: Settings = 
         raise HTTPException(404, "Not found")
     _, label, types = found[0]
     policies = db.scalars(select(Policy).where(Policy.type.in_(types)).order_by(Policy.name)).all()
-    return _render(request, "configurations.html", section, settings, label=label, types=types, policies=policies)
+    return _render(request, "configurations.html", section, settings, label=label, types=types, policies=policies,
+                   geoip_summary=geoip.summary)

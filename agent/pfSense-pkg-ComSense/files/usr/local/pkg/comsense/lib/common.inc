@@ -7,7 +7,7 @@
  */
 
 if (!defined('CSFM_AGENT_VERSION')) {
-	define('CSFM_AGENT_VERSION', '0.2.37');
+	define('CSFM_AGENT_VERSION', '0.2.39');
 }
 if (!defined('CSFM_DB_DIR')) {
 	/* Overridable so the agent can be exercised outside a firewall. */
@@ -33,6 +33,13 @@ if (!defined('CSFM_RULES_DEBUG')) {
 if (!defined('CSFM_FILTER_SYNC_BIN')) {
 	/* pfSense's own "reload the rules now" script; it loads everything filter.inc needs (shaper.inc...). */
 	define('CSFM_FILTER_SYNC_BIN', '/etc/rc.filter_configure_sync');
+}
+if (!defined('CSFM_PHP_BIN')) {
+	define('CSFM_PHP_BIN', '/usr/local/bin/php');
+}
+if (!defined('CSFM_PFB_SCRIPT')) {
+	/* pfBlockerNG's command line: "dc" downloads the MaxMind GeoIP database, "updateip" is Force Reload IP. */
+	define('CSFM_PFB_SCRIPT', '/usr/local/www/pfblockerng/pfblockerng.php');
 }
 if (!defined('CSFM_UPGRADE_BIN')) {
 	/* pfSense's own update tool (System > Update uses it too). */

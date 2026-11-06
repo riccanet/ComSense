@@ -10,7 +10,8 @@ from app.services.policies import PolicyError, validate_policy
 from app.services.policy_examples import EXAMPLES
 
 
-@pytest.mark.parametrize("ptype", list(PolicyType))
+# pfBlocker GeoIP's starting point leaves the MaxMind account and key to fill in (tests/test_geoip.py).
+@pytest.mark.parametrize("ptype", [t for t in PolicyType if t != PolicyType.geoip])
 def test_examples_are_valid(ptype):
     validate_policy(ptype, EXAMPLES[ptype])
 

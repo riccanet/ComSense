@@ -1,0 +1,36 @@
+{% extends "config_layout.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}Open port forwards · Configurations{% endblock %}
+{% block config %}
+{% set can_edit = user.role.value != "viewer" %}
+<p class="small"><a href="/configurations/nat">&larr; NAT (inbound)</a></p>
+<h2>Open port forwards <span class="muted small">{{ rows|length }}</span></h2>
+<p class="muted">Port forwards on every firewall whose source is <strong>any</strong>: anyone on the internet can reach
+them. Limit them to <span class="mono">{{ alias }}</span>, the alias a <a href="/configurations/geoip">pfBlocker GeoIP</a>
+configuration builds, so only the permitted countries can. The port forward and its linked firewall rule change
+together, under probation. A firewall without the alias yet needs the GeoIP configuration assigned first. Check that
+nothing legitimate connects from abroad (a cloud service, a phone or VoIP provider, a vendor's support) before limiting
+a port forward.</p>
+<form method="post" action="/configurations/nat/open">
+  {{ csrf() }}
+  <div class="toolbar">
+    <input type="search" class="table-search" data-paged-search="#open-nat" placeholder="Search" aria-label="Search port forwards" autocomplete="off">
+    {% if can_edit %}<button class="primary" data-confirm="Limit the selected port forwards to {{ alias }}?">Limit selected to {{ alias }}</button>{% endif %}
+  </div>
+  <table class="list" id="open-nat" data-paged="25" data-paged-noun="port forwards">
+    <thead><tr><th></th><th>Firewall</th><th>Interface</th><th>Protocol</th><th>Destination</th><th>Port</th><th>Forwards to</th><th>Description</th><th>Alias</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{% if can_edit and r.alias_ready %}<input type="checkbox" name="forward" value="{{ r.device.id }}:{{ r.id }}" aria-label="Select">{% endif %}</td>
+        <td><a href="/devices/{{ r.device.id }}/configuration#nat">{{ r.device.name }}</a>{% if r.device.organization %}<div class="small muted">{{ r.device.organization.name }}</div>{% endif %}</td>
+        <td>{{ r.interface }}</td><td>{{ r.protocol }}</td><td class="mono small">{{ r.destination }}</td>
+        <td class="mono">{{ r.port }}</td><td class="mono small">{{ r.target }}{% if r.local_port and r.local_port != r.port %}:{{ r.local_port }}{% endif %}</td>
+        <td class="small">{{ r.descr or "—" }}</td>
+        <td>{% if r.alias_ready %}<span class="badge s-online">ready</span>{% else %}<span class="small muted">not yet</span>{% endif %}</td>
+      </tr>
+    {% else %}<tr data-empty><td colspan="9" class="muted">No port forward is open to any source.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</form>
+{% endblock %}

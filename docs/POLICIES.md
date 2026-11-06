@@ -129,6 +129,31 @@ The agent restarts sshd and reloads the filter (the anti-lockout rule follows th
 configuration puts back each firewall's previous SSH settings. SSH is reachable where the firewall's rules
 allow it (the LAN by default).
 
+## geoip
+
+pfBlockerNG GeoIP (Firewall > pfBlockerNG > IP > GeoIP): one region set to **Alias Permit** with the given
+countries, every other GeoIP region (and Top Spammers, Proxy and Satellite) off. Alias Permit builds the aliases
+`pfB_<Region>_v4` / `_v6` (`pfB_NAmerica_v4` for North America) and no rules; use the IPv4 one as the source of
+port forwards (Configurations > NAT > open port forwards limits the fleet's open ones to it). Edited in a form
+under Configurations > pfBlocker GeoIP, which can copy the settings from a firewall.
+
+```json
+{"permit": "northamerica", "countries4": ["US", "US_rep"], "countries6": ["US"],
+ "maxmind_account": "282790", "maxmind_key": "enc:..."}
+```
+
+* `permit`: `africa`, `antarctica`, `asia`, `europe`, `northamerica`, `oceania` or `southamerica`.
+* `countries4` / `countries6`: country codes as pfBlockerNG lists them (`US`, and `US_rep` for addresses MaxMind
+  registers to the country).
+* `maxmind_account` / `maxmind_key`: GeoIP needs a (free) MaxMind account. The key is stored encrypted with the
+  server's secret key, shown hidden, and sent in clear only to the firewall.
+
+The agent installs pfBlockerNG when it is missing (refused when the firewall's package repository is for a
+newer pfSense: upgrade pfSense first), writes the GeoIP sections, runs pfBlockerNG's MaxMind download and
+"Force Reload IP", and checks the alias exists and the rules load; otherwise it puts the GeoIP settings back.
+pfBlockerNG's IP feed lists and DNSBL are not touched. Removing the configuration puts back the previous GeoIP
+settings, unless port forwards or rules still use the alias (then nothing changes, and the result says so).
+
 ## system
 
 ```json

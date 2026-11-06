@@ -85,6 +85,7 @@ TYPE_LABELS = {
     PolicyType.config_set: "Config values",
     PolicyType.notifications: "Email notifications",
     PolicyType.ssh: "SSH access",
+    PolicyType.geoip: "pfBlocker GeoIP",
 }
 
 
@@ -453,7 +454,14 @@ _VALIDATORS = {
     PolicyType.port_forward: _validate_port_forwards,
     PolicyType.notifications: _validate_notifications,
     PolicyType.ssh: _validate_ssh,
+    PolicyType.geoip: lambda content: _validate_geoip(content),
 }
+
+
+def _validate_geoip(content: Any) -> None:
+    from . import geoip  # noqa: PLC0415 - geoip imports configview, which imports this module
+
+    geoip.validate(content)
 
 
 def validate_policy(ptype: PolicyType, content: Any) -> None:

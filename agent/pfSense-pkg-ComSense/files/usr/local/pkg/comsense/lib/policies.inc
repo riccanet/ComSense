@@ -63,6 +63,9 @@ function csfm_apply_policy($policy) {
 		case 'ssh':
 			$record = csfm_apply_ssh($pid, $content, $prev);
 			break;
+		case 'geoip':
+			$record = csfm_apply_geoip($pid, $content, $prev);
+			break;
 		default:
 			throw new CsfmPolicyError("Unsupported policy type '{$type}'");
 	}
@@ -101,6 +104,9 @@ function csfm_remove_policy($pid) {
 			break;
 		case 'ssh':
 			$summary = csfm_remove_ssh($pid, $prev);
+			break;
+		case 'geoip':
+			$summary = csfm_remove_geoip($pid, $prev);
 			break;
 		default:
 			/* Packages stay installed; removing the policy only stops enforcing it. */
@@ -1108,4 +1114,147 @@ function csfm_apply_packages($pid, $content, $prev) {
 		}
 	}
 	return array('items' => array(), 'summary' => $log ? implode("\n", $log) : 'All packages already in the desired state');
+}
+
+/* ------------------------------------------------------------ pfBlocker GeoIP */
+
+/*
+ * pfBlockerNG GeoIP (server: services/geoip.py): one region set to Alias Permit with the given countries, which
+ * builds the aliases pfB_<Region>_v4/_v6 and no rules, and every other GeoIP region off. pfBlockerNG is installed
+ * when missing. Its IP feed lists and DNSBL are not touched. The previous GeoIP settings are kept, for removal.
+ */
+$csfm_geoip_regions = array('africa' => 'Africa', 'antarctica' => 'Antarctica', 'asia' => 'Asia', 'europe' => 'Europe',
+	'northamerica' => 'NAmerica', 'oceania' => 'Oceania', 'southamerica' => 'SAmerica');
+$csfm_geoip_other = array('proxyandsatellite', 'topspammers');
+
+function csfm_reload_config_from_disk() {
+	/* After another program (pkg, pfBlockerNG) wrote config.xml: read it again, so a later save keeps its changes. */
+	if (function_exists('parse_config')) {
+		$GLOBALS['config'] = parse_config(true);
+	}
+}
+
+function csfm_pfblocker_installed() {
+	return csfm_pkg_installed('pfSense-pkg-pfBlockerNG-devel') || csfm_pkg_installed('pfSense-pkg-pfBlockerNG');
+}
+
+/* Runs pfBlockerNG's own update ("dc", "updateip"), which saves config.xml itself. */
+function csfm_pfblocker_run($arg) {
+	if (function_exists('csfm_guard_hold')) {
+		csfm_guard_hold(1200);
+	}
+	list($rc, $out) = csfm_exec(escapeshellarg(CSFM_PHP_BIN) . ' ' . escapeshellarg(CSFM_PFB_SCRIPT) . ' ' . $arg, 1200);
+	csfm_reload_config_from_disk();
+	return array($rc, $out);
+}
+
+function csfm_apply_geoip($pid, $content, $prev) {
+	global $csfm_geoip_regions, $csfm_geoip_other;
+	$region = (string)($content['permit'] ?? '');
+	if (!isset($csfm_geoip_regions[$region])) {
+		throw new CsfmPolicyError("geoip.permit '{$region}' is not a GeoIP region");
+	}
+	$codes = function ($list, $field) {
+		$list = (array)$list;
+		foreach ($list as $c) {
+			if (!preg_match('/^([A-Z0-9]{2}|[0-9]{5,8})(_rep)?$/', (string)$c)) {
+				throw new CsfmPolicyError("geoip.{$field}: '{$c}' is not a country code");
+			}
+		}
+		return implode(',', $list);
+	};
+	$countries4 = $codes($content['countries4'] ?? array(), 'countries4');
+	$countries6 = $codes($content['countries6'] ?? array(), 'countries6');
+	$account = (string)($content['maxmind_account'] ?? '');
+	$key = (string)($content['maxmind_key'] ?? '');
+	if ($countries4 === '' || !preg_match('/^[0-9]{1,12}$/', $account) || !preg_match('/^[A-Za-z0-9_]{6,64}$/', $key)) {
+		throw new CsfmPolicyError('geoip needs countries and a MaxMind account and license key');
+	}
+	$log = array();
+	if (!csfm_pfblocker_installed()) {
+		$abi = function_exists('csfm_pkg_abi_mismatch') ? csfm_pkg_abi_mismatch() : null;
+		if ($abi !== null) {
+			throw new CsfmPolicyError("pfBlockerNG is not installed, and cannot be on this pfSense version: its "
+			    . "package repository is for FreeBSD {$abi[0]}, the firewall runs FreeBSD {$abi[1]}. Upgrade pfSense first.");
+		}
+		if (function_exists('csfm_guard_hold')) {
+			csfm_guard_hold(1500);
+		}
+		list($rc, $out) = csfm_exec(escapeshellarg(CSFM_UPGRADE_BIN) . ' -y -i pfSense-pkg-pfBlockerNG-devel', 1500);
+		if ($rc !== 0) {
+			throw new CsfmPolicyError("Installing pfBlockerNG failed:\n" . csfm_truncate($out, 3000));
+		}
+		csfm_reload_config_from_disk();
+		$log[] = 'Installed pfBlockerNG.';
+	}
+
+	$saved = $prev['saved'] ?? array();
+	$sections = array_merge(array_keys($csfm_geoip_regions), $csfm_geoip_other);
+	foreach ($sections as $s) {
+		csfm_remember($saved, "installedpackages/pfblockerng{$s}");
+	}
+	foreach (array('pfblockerng/config/0/enable_cb', 'pfblockerngipsettings/config/0/maxmind_key',
+	    'pfblockerngipsettings/config/0/maxmind_account') as $p) {
+		csfm_remember($saved, "installedpackages/{$p}");
+	}
+	csfm_cfg_set('installedpackages/pfblockerng/config/0/enable_cb', 'on');
+	csfm_cfg_set('installedpackages/pfblockerngipsettings/config/0/maxmind_account', $account);
+	csfm_cfg_set('installedpackages/pfblockerngipsettings/config/0/maxmind_key', $key);
+	$defaults = array('aliaslog' => 'enabled', 'autoproto_in' => 'any', 'agateway_in' => 'default',
+	    'autoproto_out' => 'any', 'agateway_out' => 'default');
+	foreach ($sections as $s) {
+		$cur = csfm_cfg_get("installedpackages/pfblockerng{$s}/config/0", array());
+		$cur = array_merge($defaults, is_array($cur) ? $cur : array());
+		if ($s === $region) {
+			$cur['action'] = 'Alias_Permit';
+			$cur['countries4'] = $countries4;
+			$cur['countries6'] = $countries6;
+		} else {
+			$cur['action'] = 'Disabled';
+		}
+		csfm_cfg_set("installedpackages/pfblockerng{$s}/config", array($cur));
+	}
+	write_config("ComSense: pfBlocker GeoIP policy {$pid}");
+
+	$alias = 'pfB_' . $csfm_geoip_regions[$region] . '_v4';
+	try {
+		list($rc, $out) = csfm_pfblocker_run('dc');
+		$log[] = "MaxMind database: rc={$rc}";
+		list($rc, $out) = csfm_pfblocker_run('updateip');
+		$log[] = "Reload IP: rc={$rc}";
+		$found = false;
+		foreach ((array)csfm_cfg_get('aliases/alias', array()) as $a) {
+			$found = $found || (($a['name'] ?? '') === $alias);
+		}
+		if (!$found) {
+			throw new CsfmPolicyError("pfBlockerNG did not create {$alias}. Its output:\n" . csfm_truncate($out, 3000));
+		}
+		$err = function_exists('csfm_rules_error') ? csfm_rules_error() : '';
+		if ($err !== '') {
+			throw new CsfmPolicyError("The firewall rules failed to load after pfBlockerNG's update. pf said: {$err}");
+		}
+	} catch (CsfmPolicyError $e) {
+		/* Put the GeoIP settings back as they were; pfBlockerNG stays installed. */
+		csfm_restore_saved_values(array('saved' => $saved), "ComSense: undid pfBlocker GeoIP policy {$pid}");
+		csfm_pfblocker_run('updateip');
+		throw $e;
+	}
+	$log[] = "{$alias} built: " . str_replace(',', ', ', $countries4) . ' permitted; every other GeoIP region off.';
+	return array('items' => array($alias), 'saved' => $saved, 'summary' => implode("\n", $log));
+}
+
+function csfm_remove_geoip($pid, $prev) {
+	/* A port forward or rule still using the alias would stop the rules loading if pfBlockerNG dropped it. */
+	$used = array_values(array_filter((array)($prev['items'] ?? array()), function ($alias) {
+		return csfm_alias_in_use($alias) || csfm_alias_in_use(preg_replace('/_v4$/', '_v6', $alias));
+	}));
+	if ($used) {
+		return 'GeoIP settings left as they are: ' . implode(', ', $used) . ' is still used by port forwards or rules '
+		    . '(change those first, then remove this configuration again)';
+	}
+	$summary = csfm_restore_saved_values($prev, "ComSense: removed pfBlocker GeoIP policy {$pid}");
+	if (csfm_pfblocker_installed()) {
+		csfm_pfblocker_run('updateip');
+	}
+	return $summary . '; pfBlockerNG reloaded (it stays installed)';
 }

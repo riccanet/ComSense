@@ -59,6 +59,8 @@ EXAMPLES = {
         ],
     },
     PolicyType.notifications: {"smtp": False},
+    PolicyType.geoip: {"permit": "northamerica", "countries4": ["US", "US_rep"], "countries6": ["US"],
+                       "maxmind_account": "", "maxmind_key": ""},
     PolicyType.ssh: {"enabled": True, "port": 22, "auth": "password_or_key", "agent_forwarding": False, "admin_keys": []},
     PolicyType.system: {
         "timezone": "America/New_York",

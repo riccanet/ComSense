@@ -56,6 +56,8 @@ TASK_TIMEOUT: dict[TaskType, timedelta] = {
     TaskType.reboot: timedelta(minutes=30),
     TaskType.update_agent: timedelta(minutes=30),
     TaskType.open_terminal: timedelta(minutes=5),
+    # A configuration may install a package and download data first (pfBlocker GeoIP: pfBlockerNG, MaxMind).
+    TaskType.apply_policy: timedelta(minutes=45),
 }
 DEFAULT_TASK_TIMEOUT = timedelta(minutes=15)
 # Tasks that are not picked up within this window expire, so a box that was offline
@@ -295,8 +297,15 @@ def take_pending_tasks(db: Session, device: Device, limit: int = 10) -> list[Tas
     return out
 
 
-def task_to_wire(task: Task) -> dict[str, Any]:
-    return {"id": task.id, "type": task.type.value, "payload": task.payload}
+def task_to_wire(task: Task, secret_key: str = "") -> dict[str, Any]:
+    payload = task.payload
+    policy = (payload or {}).get("policy") if task.type == TaskType.apply_policy else None
+    if isinstance(policy, dict) and policy.get("type") == "geoip":
+        # The MaxMind key is stored encrypted, and so is the task; only what goes to the firewall has it in clear.
+        from .geoip import for_firewall  # noqa: PLC0415 - geoip imports configview, which imports this module
+
+        payload = {**payload, "policy": {**policy, "content": for_firewall(policy.get("content") or {}, secret_key)}}
+    return {"id": task.id, "type": task.type.value, "payload": payload}
 
 
 def expire_stale_tasks(db: Session, now: datetime | None = None) -> int:

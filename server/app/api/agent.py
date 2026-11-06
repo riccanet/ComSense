@@ -283,7 +283,7 @@ async def checkin(
 
     reconcile_device_policies(db, device, changes_enabled=settings.enable_firewall_changes)
     db.flush()
-    response["tasks"] = [task_to_wire(t) for t in take_pending_tasks(db, device)]
+    response["tasks"] = [task_to_wire(t, settings.secret_key) for t in take_pending_tasks(db, device)]
     if utcnow() - aware(device.token_rotated_at) > TOKEN_MAX_AGE:
         response["rotate_token"] = True
     db.commit()

@@ -989,6 +989,63 @@ def test_full_lifecycle(env):
     agent(env, "run")
     assert fw_config(env)["system"]["ssh"] == {"port": "2222"} and admin_keys() == [hand_key]
 
+    # 11f. A pfBlocker GeoIP configuration: North America permitted (US), every other region off; pfBlockerNG's own
+    #      update builds pfB_NAmerica_v4. The MaxMind key is stored encrypted and only sent to the firewall in clear.
+    from app.services import geoip as geoip_svc
+
+    (env["fw"] / "installed-pfSense-pkg-pfBlockerNG-devel").write_text("")
+    cfg = fw_config(env)
+    cfg["installedpackages"]["pfblockerngeurope"] = {"config": [{"action": "Deny_Inbound", "countries4": "RU"}]}
+    cfg["installedpackages"]["pfblockernglistsv4"] = {"config": [{"aliasname": "PRI1", "action": "Deny_Both"}]}
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
+    with env["db"]() as db:
+        content = geoip_svc.protect_key({"permit": "northamerica", "countries4": ["US", "US_rep"], "countries6": ["US"],
+                                         "maxmind_account": "282790", "maxmind_key": "AbC123_test_key"}, None, "s" * 48)
+        assert content["maxmind_key"].startswith("enc:") and "AbC123" not in content["maxmind_key"]
+        geo = Policy(name="geoip", type=PolicyType.geoip, content=content)
+        db.add(geo)
+        db.flush()
+        db.add(PolicyAssignment(policy_id=geo.id, device_id=creds["device_id"]))
+        db.commit()
+        geo_id = geo.id
+    agent(env, "run")
+    cfg = fw_config(env)
+    pkgs = cfg["installedpackages"]
+    assert pkgs["pfblockerngnorthamerica"]["config"][0]["action"] == "Alias_Permit"
+    assert pkgs["pfblockerngnorthamerica"]["config"][0]["countries4"] == "US,US_rep"
+    assert pkgs["pfblockerngeurope"]["config"][0]["action"] == "Disabled"
+    assert pkgs["pfblockerngtopspammers"]["config"][0]["action"] == "Disabled"
+    assert pkgs["pfblockernglistsv4"]["config"][0]["action"] == "Deny_Both"  # feed lists untouched
+    assert pkgs["pfblockerngipsettings"]["config"][0]["maxmind_key"] == "AbC123_test_key"
+    assert {a["name"] for a in cfg["aliases"]["alias"]} >= {"pfB_NAmerica_v4", "pfB_NAmerica_v6"}
+    actions = (env["fw"] / "actions.log").read_text()
+    assert "pfblockerng dc" in actions and "pfblockerng updateip" in actions
+    with env["db"]() as db:
+        dev = db.get(Device, creds["device_id"])
+        assert str(geo_id) in (dev.applied_policies or {})
+        stored = db.scalar(select(Task).where(Task.type == TaskType.apply_policy).order_by(Task.id.desc()))
+        assert "AbC123" not in json.dumps(stored.payload)  # the task keeps the key encrypted
+    # A port forward using the alias keeps the GeoIP settings when the configuration is unassigned.
+    cfg = fw_config(env)
+    cfg.setdefault("nat", {})["rule"] = [{"source": {"address": "pfB_NAmerica_v4"}, "destination": {"network": "wanip", "port": "443"},
+                                          "protocol": "tcp", "target": "192.168.1.10", "local-port": "443", "interface": "wan", "descr": "RDG"}]
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
+    with env["db"]() as db:
+        for a in db.scalars(select(PolicyAssignment).where(PolicyAssignment.policy_id == geo_id)):
+            db.delete(a)
+        db.commit()
+    agent(env, "run")
+    assert fw_config(env)["installedpackages"]["pfblockerngnorthamerica"]["config"][0]["action"] == "Alias_Permit"
+    with env["db"]() as db:
+        removal = db.scalar(select(Task).where(Task.type == TaskType.remove_policy).order_by(Task.id.desc()))
+        assert "still used by port forwards" in removal.output, removal.output
+    cfg = fw_config(env)
+    del cfg["nat"], cfg["aliases"]
+    for s in list(cfg["installedpackages"]):
+        if s.startswith("pfblockerng"):
+            del cfg["installedpackages"][s]
+    (env["fw"] / "config.json").write_text(json.dumps(cfg))
+
     # 12. A disabled device is locked out.
     with env["db"]() as db:
         from app.models import DeviceStatus

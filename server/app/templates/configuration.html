@@ -1,10 +1,10 @@
 {% extends "config_layout.html" %}
 {% from "macros.html" import csrf, post_button, status_badge with context %}
-{% block title %}{{ policy.name if policy else "New " ~ type_labels[ptype]|lower }} · Configurations{% endblock %}
+{% block title %}{{ policy.name if policy else "New " ~ (type_labels[ptype][:1]|lower) ~ type_labels[ptype][1:] }} · Configurations{% endblock %}
 {% block config %}
 {% set can_edit = user.role.value != "viewer" %}
 <p class="small"><a href="/configurations/{{ section }}">&larr; {{ type_labels[ptype] }}</a></p>
-<h2>{{ policy.name if policy else "New " ~ type_labels[ptype]|lower }}</h2>
+<h2>{{ policy.name if policy else "New " ~ (type_labels[ptype][:1]|lower) ~ type_labels[ptype][1:] }}</h2>
 
 {% macro endpoint_hint() %}any, an address or network, an alias, "lan net", "wan address", "this firewall"; "!" to negate{% endmacro %}
 
@@ -132,6 +132,31 @@
     admin user's authorized keys, next to any it already has. SSH is reachable where the firewall's rules allow it
     (LAN by default); do not open it on WAN. Unassigning puts back each firewall's previous SSH settings and removes
     only the keys this configuration added.</p>
+  </section>
+  {% elif ptype.value == "geoip" %}
+  <section class="card">
+    <h2>pfBlockerNG GeoIP (Firewall &gt; pfBlockerNG &gt; IP &gt; GeoIP)</h2>
+    <div class="grid-form">
+      <label>Permit this region
+        <select name="permit">{% for key, label in geoip_regions.items() %}<option value="{{ key }}"{% if content.get("permit") == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+      <label>Countries (IPv4) <input name="countries4" value="{{ (content.get("countries4") or [])|join(", ") }}" placeholder="US, US_rep" class="mono"></label>
+      <label>Countries (IPv6) <input name="countries6" value="{{ (content.get("countries6") or [])|join(", ") }}" placeholder="US" class="mono"></label>
+      <label>MaxMind account ID <input name="maxmind_account" value="{{ content.get("maxmind_account", "") }}" inputmode="numeric" autocomplete="off"></label>
+      <label>MaxMind license key
+        <input name="maxmind_key" type="password" value="" autocomplete="new-password"
+               placeholder="{{ "saved; leave empty to keep it" if content.get("maxmind_key") else "license key" }}"></label>
+    </div>
+    <p class="small muted">On each assigned firewall: pfBlockerNG is installed if it is missing, the chosen region is set
+    to <strong>Alias Permit</strong> with these countries, and every other GeoIP region (and Top Spammers, Proxy and
+    Satellite) is turned off. That builds the aliases {% if geoip_alias %}<span class="mono">{{ geoip_alias }}</span> and
+    <span class="mono">{{ geoip_alias[:-1] }}6</span>{% else %}for the region{% endif %} and no firewall rules; use the
+    IPv4 one as the source of port forwards (NAT &gt; Open port forwards). pfBlockerNG's IP feed lists and DNSBL are left
+    as they are. "_rep" entries are addresses MaxMind registers to the country. Unassigning puts back the firewall's
+    previous GeoIP settings.</p>
+    {% if not policy and geoip_sources %}
+    <p class="small">Copy these settings from a firewall:
+      {% for d in geoip_sources %}<a href="/configurations/new?type=geoip&amp;source={{ d.id }}">{{ d.name }}</a>{{ ", " if not loop.last }}{% endfor %}</p>
+    {% endif %}
   </section>
   {% else %}
   <section class="card">

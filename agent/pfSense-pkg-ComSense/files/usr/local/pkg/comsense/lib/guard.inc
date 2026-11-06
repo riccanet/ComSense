@@ -107,6 +107,18 @@ function csfm_guard_begin($taskId, $label, $mode = 'reload') {
 	});
 }
 
+/* Keep the change on probation for at least $seconds more (a long step: a package install, a download). */
+function csfm_guard_hold($seconds) {
+	return csfm_guard_locked(function () use ($seconds) {
+		$guard = csfm_guard();
+		if ($guard !== null) {
+			$guard['deadline'] = max((int)($guard['deadline'] ?? 0), time() + (int)$seconds);
+			csfm_guard_save($guard);
+		}
+		return $guard;
+	});
+}
+
 function csfm_guard_clear() {
 	@unlink(CSFM_GUARD_FILE);
 	@unlink(CSFM_GUARD_CONFIG);

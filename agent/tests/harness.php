@@ -51,7 +51,9 @@ define('CSFM_PKG', $dir . '/pkg-static');
 if (!file_exists(CSFM_PKG)) {
 	$abi = escapeshellarg($dir . '/pkg-abi');
 	$log = escapeshellarg($dir . '/actions.log');
+	$installed = escapeshellarg($dir . '/installed-');
 	file_put_contents(CSFM_PKG, "#!/bin/sh\nif [ \"\$1 \$2\" = \"config abi\" ] && [ -f {$abi} ]; then cat {$abi}; exit 0; fi\n"
+	    . "if [ \"\$1 \$2\" = \"info -e\" ] && [ -f {$installed}\"\$3\" ]; then exit 0; fi\n"
 	    . "echo \"pkg-static \$*\" >> {$log}\nexit 1\n");
 	chmod(CSFM_PKG, 0755);
 }
@@ -78,6 +80,36 @@ if (!file_exists(CSFM_PFCTL)) {
 	file_put_contents(CSFM_PFCTL, "#!/bin/sh\nif [ \"\$1\" = -si ]; then echo \"  current entries \$(cat {$states} 2>/dev/null || echo 5)\"; exit 0; fi\n"
 	    . "if [ \"\$1\" = -nf ] && grep -q BADTABLE \"\$2\"; then echo \"\$2:107: cannot load \\\"/var/db/aliastables/BADTABLE.txt\\\": Invalid argument\"; exit 1; fi\nexit 0\n");
 	chmod(CSFM_PFCTL, 0755);
+}
+/* pfBlockerNG's command line: logs each run; "updateip" builds pfB_<Region>_v4/_v6 for each region set to
+   Alias Permit (and drops other pfB_ aliases), saving config.xml itself as pfBlockerNG does. */
+define('CSFM_PHP_BIN', PHP_BINARY);
+define('CSFM_PFB_SCRIPT', $dir . '/pfblockerng.php');
+if (!file_exists(CSFM_PFB_SCRIPT)) {
+	file_put_contents(CSFM_PFB_SCRIPT, <<<'PHP'
+<?php
+$dir = __DIR__;
+file_put_contents("$dir/actions.log", "pfblockerng {$argv[1]}\n", FILE_APPEND);
+if (($argv[1] ?? '') !== 'updateip') { exit(0); }
+$xmlf = "$dir/conf/config.xml";
+$xml = file_get_contents($xmlf);
+preg_match('/<!-- (\S+) -->/', $xml, $m);
+$c = json_decode(base64_decode($m[1]), true);
+$aliases = array_values(array_filter($c['aliases']['alias'] ?? array(), function ($a) { return strpos($a['name'] ?? '', 'pfB_') !== 0; }));
+$names = array('africa' => 'Africa', 'antarctica' => 'Antarctica', 'asia' => 'Asia', 'europe' => 'Europe',
+	'northamerica' => 'NAmerica', 'oceania' => 'Oceania', 'southamerica' => 'SAmerica');
+foreach ($names as $s => $n) {
+	if (($c['installedpackages']["pfblockerng{$s}"]['config'][0]['action'] ?? '') === 'Alias_Permit') {
+		foreach (array(4, 6) as $v) {
+			$aliases[] = array('name' => "pfB_{$n}_v{$v}", 'type' => 'urltable', 'url' => "https://127.0.0.1:443/pfblockerng/pfblockerng.php?pfb=pfB_{$n}_v{$v}");
+		}
+	}
+}
+if ($aliases) { $c['aliases'] = array('alias' => $aliases); } else { unset($c['aliases']); }
+file_put_contents("$dir/config.json", json_encode($c, JSON_PRETTY_PRINT));
+file_put_contents($xmlf, str_replace($m[1], base64_encode(json_encode($c)), $xml));
+PHP
+	);
 }
 define('CSFM_ISC_LEASES', $dir . '/dhcpd.leases');
 define('CSFM_KEA_LEASES', $dir . '/kea-dhcp4.leases');
