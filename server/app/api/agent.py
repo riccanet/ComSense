@@ -417,9 +417,17 @@ async def task_result(
         if status == TaskStatus.running and isinstance(result.get("progress"), dict):
             # When the upgrade last moved on: alerts.check_stalled_upgrades raises an alert when it stops.
             result["progress_at"] = utcnow().isoformat()
+        elif status != TaskStatus.running and (task.result or {}).get("progress_at"):
+            result = {**result, "progress_at": task.result["progress_at"]}  # it reported progress while it ran
         task.result = result
+    elif status != TaskStatus.running and (task.result or {}).get("progress_at"):
+        task.result = {"progress_at": task.result["progress_at"]}
     if status != TaskStatus.running:
         task.finished_at = utcnow()
+    elif device.status == DeviceStatus.offline:
+        # A long task reporting progress: the firewall is up, only busy (the agent checks in between tasks).
+        device.status = DeviceStatus.online
+        alert_svc.clear_offline(db, device)
     if task.type == TaskType.check_updates and status == TaskStatus.success and isinstance(result, dict):
         device.updates = result
     if (task.type == TaskType.be_destroy and status == TaskStatus.success and isinstance(result, dict)

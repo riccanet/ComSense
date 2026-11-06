@@ -71,3 +71,33 @@ def test_firewalls_page_shows_what_each_firewall_is_doing(client, db, agent):
     assert data[busy["device_id"]] == {"status": "online", "text": "Backing up the configuration", "state": "running",
                                        "percent": 40, "more": 1}
     assert data[idle["device_id"]]["text"] == "" and data[idle["device_id"]]["status"] == "online"
+
+
+def test_a_long_step_keeps_a_busy_firewall_online(client, db, agent):
+    """The agent checks in between tasks; while a long step runs it reports progress instead. That keeps the
+    firewall online (or brings it back, closing the offline alert) and shows the step."""
+    from app.models import Alert
+    from app.services import alerts as alert_svc
+
+    login(client)
+    creds = enroll(agent, make_key(db), capabilities=ALL_CAPS, system={"hostname": "fw-busy", "unique_id": "busy"})
+    did = creds["device_id"]
+    device = db.get(Device, did)
+    queue_task(db, device, TaskType.install_package, {"package": "pfSense-pkg-pfBlockerNG-devel"}, actor="t",
+               changes_enabled=True)
+    db.commit()
+    task = agent.post("/api/agent/v1/checkin", json={}, headers=auth(creds["token"])).json()["tasks"][0]
+    # The scheduler took it for offline while the install ran.
+    device.status = DeviceStatus.offline
+    alert_svc.raise_offline(db, device)
+    db.commit()
+    r = agent.post(f"/api/agent/v1/tasks/{task['id']}/result", headers=auth(creds["token"]), json={
+        "status": "running", "output": "Installing pfSense-pkg-pfBlockerNG-devel, 3 min",
+        "result": {"progress": {"step": "Installing pfSense-pkg-pfBlockerNG-devel, 3 min", "percent": None}}})
+    assert r.status_code == 200
+    db.expire_all()
+    assert db.get(Device, did).status == DeviceStatus.online
+    assert db.scalar(select(Alert).where(Alert.device_id == did, Alert.key == "offline")).resolved_at is not None
+    page = client.get(f"/devices/{did}").text
+    assert "Installing pfSense-pkg-pfBlockerNG-devel, 3 min" in page and "<progress" not in page
+    assert "Installing pfSense-pkg-pfBlockerNG-devel, 3 min" in client.get("/devices").text

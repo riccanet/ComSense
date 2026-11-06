@@ -142,6 +142,12 @@ def evaluate_report(db: Session, device: Device, report: dict[str, Any]) -> None
         offline.resolved_at = now
 
 
+def clear_offline(db: Session, device: Device) -> None:
+    alert = open_alerts(db, device).get(OFFLINE_KEY)
+    if alert is not None:
+        alert.resolved_at = utcnow()
+
+
 def raise_offline(db: Session, device: Device) -> None:
     if not get_alert_category_settings(db).flag("down", "enabled") or OFFLINE_KEY in open_alerts(db, device):
         return

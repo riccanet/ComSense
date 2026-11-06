@@ -5,7 +5,7 @@
   <div class="task-line">
     <span><strong>{{ t.title }}</strong>{% if t.progress %}: {{ t.progress.step }}{% elif t.status == "pending" %}: queued, runs at the firewall's next check-in{% elif t.status == "sent" %}: starting{% else %}: running{% endif %}
       <span class="muted">· since {{ t.since|dt }}</span></span>
-    {% if t.progress %}
+    {% if t.progress and t.progress.percent is not none %}
     <progress class="task-progress" max="100" value="{{ t.progress.percent }}" aria-label="{{ t.title }}">{{ t.progress.percent }}%</progress>
     <strong>{{ t.progress.percent }}%</strong>
     {% endif %}

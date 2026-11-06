@@ -733,7 +733,7 @@ def _task_banner(db: Session, device: Device) -> list[dict[str, Any]]:
         progress = task_progress(t)
         if t.type == TaskType.upgrade_system and t.status == TaskStatus.running and device.status == DeviceStatus.offline:
             # Out of touch mid-upgrade: it is rebooting (or installing at boot).
-            progress = {"percent": max(92, progress["percent"] if progress else 0),
+            progress = {"percent": max(92, (progress or {}).get("percent") or 0),
                         "step": "Rebooting; waiting for the firewall to come back"}
         out.append({"id": t.id, "title": task_title(t), "status": t.status.value, "progress": progress,
                     "since": t.sent_at or t.created_at})
@@ -762,7 +762,9 @@ def _fleet_activity(db: Session, devices: list[Device]) -> dict[str, dict[str, A
             text = task_title(current)
             if current.type == TaskType.upgrade_system and current.status == TaskStatus.running \
                     and device.status == DeviceStatus.offline:
-                text, progress = "Upgrading pfSense: rebooting", {"percent": max(92, (progress or {}).get("percent", 0))}
+                text, progress = "Upgrading pfSense: rebooting", {"percent": max(92, (progress or {}).get("percent") or 0)}
+            elif progress and progress["percent"] is None and progress["step"]:
+                text = f"{text}: {progress['step']}"
             entry.update(text=text if active else f"Queued: {text}", state="running" if active else "queued",
                          percent=progress["percent"] if progress else None, more=len(open_tasks) - 1)
         out[device_id] = entry

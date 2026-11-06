@@ -120,6 +120,7 @@ function csfm_run_task($client, $task) {
 	}
 
 	csfm_log("Running task {$id} ({$type})");
+	csfm_task_context(array('client' => $client, 'id' => $id));
 	try {
 		if ($guarded) {
 			csfm_guard_begin($id, csfm_task_label($type, $payload));
@@ -144,6 +145,8 @@ function csfm_run_task($client, $task) {
 			$msg .= "\nRolled back: the previous configuration was restored.";
 		}
 		csfm_report_result($client, $id, 'failed', $msg);
+	} finally {
+		csfm_task_context(null);
 	}
 }
 
@@ -266,7 +269,7 @@ function csfm_task_install_package($client, $id, $payload) {
 	if (!csfm_valid_pkg($name)) {
 		throw new Exception('Invalid package name');
 	}
-	list($rc, $out) = csfm_exec('/usr/local/sbin/pfSense-upgrade -y -i ' . escapeshellarg($name), 1800);
+	list($rc, $out) = csfm_exec_watched('/usr/local/sbin/pfSense-upgrade -y -i ' . escapeshellarg($name), 1800, "Installing {$name}");
 	if ($rc !== 0) {
 		throw new Exception("pfSense-upgrade exited with {$rc}\n" . csfm_truncate($out));
 	}
@@ -278,7 +281,7 @@ function csfm_task_remove_package($client, $id, $payload) {
 	if (!csfm_valid_pkg($name) || $name === 'pfSense-pkg-ComSense') {
 		throw new Exception('Invalid package name');
 	}
-	list($rc, $out) = csfm_exec('/usr/local/sbin/pfSense-upgrade -y -r ' . escapeshellarg($name), 1800);
+	list($rc, $out) = csfm_exec_watched('/usr/local/sbin/pfSense-upgrade -y -r ' . escapeshellarg($name), 1800, "Removing {$name}");
 	if ($rc !== 0) {
 		throw new Exception("pfSense-upgrade exited with {$rc}\n" . csfm_truncate($out));
 	}
@@ -360,7 +363,7 @@ function csfm_task_upgrade_packages($client, $id, $payload) {
 	$space = csfm_require_free_space(CSFM_PACKAGES_MIN_FREE, 'Package upgrade');
 	$backed_up = trim($space . "\n" . csfm_backup_before_upgrade($client, $id));
 	$names = array_map(function ($p) { return escapeshellarg($p['name']); }, $outdated);
-	list($rc, $out) = csfm_exec(CSFM_PKG . ' upgrade -y ' . implode(' ', $names), 3000);
+	list($rc, $out) = csfm_exec_watched(CSFM_PKG . ' upgrade -y ' . implode(' ', $names), 3000, 'Upgrading packages');
 	csfm_schedule_update_check(true);
 	if ($rc === 124) {
 		throw new Exception("pkg upgrade was stopped after 50 minutes; some packages may be half-upgraded. "

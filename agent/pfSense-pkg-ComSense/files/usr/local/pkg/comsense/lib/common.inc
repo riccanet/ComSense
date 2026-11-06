@@ -308,6 +308,80 @@ function csfm_exec($cmd, $timeout = 600) {
 	return array($rc, implode("\n", $out));
 }
 
+if (!defined('CSFM_HEARTBEAT_EVERY')) {
+	/* While a long command runs inside a task, report progress this often (seconds), so the firewall is not
+	   taken for offline: the agent checks in only between tasks. */
+	define('CSFM_HEARTBEAT_EVERY', 60);
+}
+
+/*
+ * csfm_exec for a long step of the running task (a package install, a pfBlockerNG update): the same command,
+ * environment and time limit, but every CSFM_HEARTBEAT_EVERY seconds the task's progress is reported
+ * ("<step>, N min"), which also tells the server the firewall is alive.
+ */
+function csfm_exec_watched($cmd, $timeout, $step) {
+	$full = csfm_env_prefix() . '/usr/bin/timeout ' . (int)$timeout . ' ' . $cmd . ' 2>&1';
+	$proc = proc_open($full, array(1 => array('pipe', 'w')), $pipes);
+	if (!is_resource($proc)) {
+		return csfm_exec($cmd, $timeout);
+	}
+	stream_set_blocking($pipes[1], false);
+	$out = '';
+	$started = time();
+	$last = $started;
+	$rc = null;
+	while (true) {
+		$chunk = stream_get_contents($pipes[1]);
+		if ($chunk !== false && $chunk !== '') {
+			$out .= $chunk;
+			if (strlen($out) > 200000) {
+				$out = substr($out, -100000);
+			}
+		}
+		$status = proc_get_status($proc);
+		if (!$status['running']) {
+			$rc = $status['exitcode'];
+			$out .= (string)stream_get_contents($pipes[1]);
+			break;
+		}
+		if (time() - $last >= CSFM_HEARTBEAT_EVERY) {
+			$last = time();
+			csfm_task_heartbeat($step, $last - $started);
+		}
+		usleep(500000);
+	}
+	fclose($pipes[1]);
+	$close = proc_close($proc);
+	if ($rc === null || $rc === -1) {
+		$rc = $close;
+	}
+	return array((int)$rc, rtrim($out, "\n"));
+}
+
+/* The task being run now, for csfm_task_heartbeat: set by csfm_run_task. */
+function csfm_task_context($ctx = null) {
+	static $current = null;
+	if (func_num_args() > 0) {
+		$current = $ctx;
+	}
+	return $current;
+}
+
+/* Report the running task's current step; a failed report is not kept (the result that follows matters). */
+function csfm_task_heartbeat($step, $elapsed) {
+	$ctx = csfm_task_context();
+	if (!$ctx) {
+		return;
+	}
+	$text = $step . ($elapsed >= 60 ? sprintf(', %d min', intdiv($elapsed, 60)) : '');
+	try {
+		$ctx['client']->postJson("/tasks/{$ctx['id']}/result", array('status' => 'running', 'output' => $text,
+		    'result' => array('progress' => array('step' => $text, 'percent' => null))));
+	} catch (Exception $e) {
+		csfm_log('Could not report progress of task ' . $ctx['id'] . ': ' . $e->getMessage(), LOG_WARNING);
+	}
+}
+
 function csfm_truncate($text, $limit = 60000) {
 	return strlen($text) > $limit ? substr($text, -$limit) : $text;
 }

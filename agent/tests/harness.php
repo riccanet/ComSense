@@ -85,13 +85,15 @@ if (!file_exists(CSFM_PFCTL)) {
    countries selected (and drops other pfB_ aliases), saving config.xml itself as pfBlockerNG does. */
 define('CSFM_PHP_BIN', PHP_BINARY);
 define('CSFM_PFB_SCRIPT', $dir . '/pfblockerng.php');
-define('CSFM_GEOIP_DB', $dir . '/GeoLite2-Country.mmdb');  /* absent: the first GeoIP apply downloads it */
+define('CSFM_GEOIP_DB', $dir . '/GeoLite2-Country.mmdb');
+define('CSFM_HEARTBEAT_EVERY', 1);  /* long steps report progress every second here (60 on a firewall) */  /* absent: the first GeoIP apply downloads it */
 if (!file_exists(CSFM_PFB_SCRIPT)) {
 	file_put_contents(CSFM_PFB_SCRIPT, <<<'PHP'
 <?php
 $dir = __DIR__;
 file_put_contents("$dir/actions.log", "pfblockerng {$argv[1]}\n", FILE_APPEND);
 if (($argv[1] ?? '') !== 'updateip') { exit(0); }
+sleep(3);  /* long enough for the agent to report progress (every second in tests) */
 $xmlf = "$dir/conf/config.xml";
 $xml = file_get_contents($xmlf);
 preg_match('/<!-- (\S+) -->/', $xml, $m);

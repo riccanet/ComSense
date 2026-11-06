@@ -1094,7 +1094,7 @@ function csfm_apply_packages($pid, $content, $prev) {
 		if (csfm_pkg_installed($name)) {
 			continue;
 		}
-		list($rc, $out) = csfm_exec('/usr/local/sbin/pfSense-upgrade -y -i ' . escapeshellarg($name), 1200);
+		list($rc, $out) = csfm_exec_watched('/usr/local/sbin/pfSense-upgrade -y -i ' . escapeshellarg($name), 1200, "Installing {$name}");
 		$log[] = "install {$name}: rc={$rc}";
 		if ($rc !== 0) {
 			throw new CsfmPolicyError("Installing {$name} failed:\n" . csfm_truncate($out, 4000));
@@ -1107,7 +1107,7 @@ function csfm_apply_packages($pid, $content, $prev) {
 		if (!csfm_pkg_installed($name)) {
 			continue;
 		}
-		list($rc, $out) = csfm_exec('/usr/local/sbin/pfSense-upgrade -y -r ' . escapeshellarg($name), 1200);
+		list($rc, $out) = csfm_exec_watched('/usr/local/sbin/pfSense-upgrade -y -r ' . escapeshellarg($name), 1200, "Removing {$name}");
 		$log[] = "remove {$name}: rc={$rc}";
 		if ($rc !== 0) {
 			throw new CsfmPolicyError("Removing {$name} failed:\n" . csfm_truncate($out, 4000));
@@ -1143,7 +1143,9 @@ function csfm_pfblocker_run($arg) {
 	if (function_exists('csfm_guard_hold')) {
 		csfm_guard_hold(1200);
 	}
-	list($rc, $out) = csfm_exec(escapeshellarg(CSFM_PHP_BIN) . ' ' . escapeshellarg(CSFM_PFB_SCRIPT) . ' ' . $arg, 1200);
+	$steps = array('dc' => 'pfBlockerNG: downloading the MaxMind GeoIP database', 'updateip' => 'pfBlockerNG: Force Reload IP');
+	list($rc, $out) = csfm_exec_watched(escapeshellarg(CSFM_PHP_BIN) . ' ' . escapeshellarg(CSFM_PFB_SCRIPT) . ' ' . $arg, 1200,
+	    $steps[$arg] ?? "pfBlockerNG {$arg}");
 	csfm_reload_config_from_disk();
 	return array($rc, $out);
 }
@@ -1180,7 +1182,8 @@ function csfm_apply_geoip($pid, $content, $prev) {
 		if (function_exists('csfm_guard_hold')) {
 			csfm_guard_hold(1500);
 		}
-		list($rc, $out) = csfm_exec(escapeshellarg(CSFM_UPGRADE_BIN) . ' -y -i pfSense-pkg-pfBlockerNG-devel', 1500);
+		list($rc, $out) = csfm_exec_watched(escapeshellarg(CSFM_UPGRADE_BIN) . ' -y -i pfSense-pkg-pfBlockerNG-devel', 1500,
+		    'Installing pfBlockerNG');
 		if ($rc !== 0) {
 			throw new CsfmPolicyError("Installing pfBlockerNG failed:\n" . csfm_truncate($out, 3000));
 		}

@@ -1023,6 +1023,10 @@ def test_full_lifecycle(env):
     actions = (env["fw"] / "actions.log").read_text()
     assert "pfblockerng dc" in actions and "pfblockerng updateip" in actions
     with env["db"]() as db:
+        # While Force Reload IP ran (3 seconds here), the agent reported its progress, keeping the firewall online.
+        applied = db.scalar(select(Task).where(Task.type == TaskType.apply_policy).order_by(Task.id.desc()))
+        assert applied.status == TaskStatus.success and applied.result.get("progress_at"), applied.result
+    with env["db"]() as db:
         dev = db.get(Device, creds["device_id"])
         assert str(geo_id) in (dev.applied_policies or {})
         stored = db.scalar(select(Task).where(Task.type == TaskType.apply_policy).order_by(Task.id.desc()))

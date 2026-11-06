@@ -130,11 +130,15 @@ def task_title(task: Task) -> str:
 
 
 def task_progress(task: Task) -> dict[str, Any] | None:
-    """{percent, step} the agent reports while a long task (a pfSense upgrade) runs, else None."""
+    """{percent, step} the agent reports while a long task runs, else None. A pfSense upgrade reports a percent;
+    other long steps (a package install, a pfBlockerNG update) only the step, with percent None."""
     progress = (task.result or {}).get("progress") if task.status == TaskStatus.running else None
-    if not isinstance(progress, dict) or not isinstance(progress.get("percent"), (int, float)):
+    if not isinstance(progress, dict):
         return None
-    return {"percent": max(0, min(100, int(progress["percent"]))), "step": str(progress.get("step", ""))[:120]}
+    step = str(progress.get("step", ""))[:120]
+    if isinstance(progress.get("percent"), (int, float)):
+        return {"percent": max(0, min(100, int(progress["percent"]))), "step": step}
+    return {"percent": None, "step": step} if step else None
 
 
 _UNSTABLE = re.compile(r"devel|snapshot|beta|\brc\b|nightly|testing", re.I)
