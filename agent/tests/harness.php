@@ -81,10 +81,11 @@ if (!file_exists(CSFM_PFCTL)) {
 	    . "if [ \"\$1\" = -nf ] && grep -q BADTABLE \"\$2\"; then echo \"\$2:107: cannot load \\\"/var/db/aliastables/BADTABLE.txt\\\": Invalid argument\"; exit 1; fi\nexit 0\n");
 	chmod(CSFM_PFCTL, 0755);
 }
-/* pfBlockerNG's command line: logs each run; "updateip" builds pfB_<Region>_v4/_v6 for each region set to
-   Alias Permit (and drops other pfB_ aliases), saving config.xml itself as pfBlockerNG does. */
+/* pfBlockerNG's command line: logs each run; "updateip" builds pfB_<Region>_v4/_v6 for each region with
+   countries selected (and drops other pfB_ aliases), saving config.xml itself as pfBlockerNG does. */
 define('CSFM_PHP_BIN', PHP_BINARY);
 define('CSFM_PFB_SCRIPT', $dir . '/pfblockerng.php');
+define('CSFM_GEOIP_DB', $dir . '/GeoLite2-Country.mmdb');  /* absent: the first GeoIP apply downloads it */
 if (!file_exists(CSFM_PFB_SCRIPT)) {
 	file_put_contents(CSFM_PFB_SCRIPT, <<<'PHP'
 <?php
@@ -99,7 +100,8 @@ $aliases = array_values(array_filter($c['aliases']['alias'] ?? array(), function
 $names = array('africa' => 'Africa', 'antarctica' => 'Antarctica', 'asia' => 'Asia', 'europe' => 'Europe',
 	'northamerica' => 'NAmerica', 'oceania' => 'Oceania', 'southamerica' => 'SAmerica');
 foreach ($names as $s => $n) {
-	if (($c['installedpackages']["pfblockerng{$s}"]['config'][0]['action'] ?? '') === 'Alias_Permit') {
+	/* As pfBlockerNG does: an alias for every region with countries selected, whatever its action. */
+	if (($c['installedpackages']["pfblockerng{$s}"]['config'][0]['countries4'] ?? '') !== '') {
 		foreach (array(4, 6) as $v) {
 			$aliases[] = array('name' => "pfB_{$n}_v{$v}", 'type' => 'urltable', 'url' => "https://127.0.0.1:443/pfblockerng/pfblockerng.php?pfb=pfB_{$n}_v{$v}");
 		}

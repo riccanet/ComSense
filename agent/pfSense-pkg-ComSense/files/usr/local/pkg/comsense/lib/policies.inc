@@ -1210,7 +1210,10 @@ function csfm_apply_geoip($pid, $content, $prev) {
 			$cur['countries4'] = $countries4;
 			$cur['countries6'] = $countries6;
 		} else {
+			/* Off, with no countries selected: pfBlockerNG keeps an alias for any region with countries. */
 			$cur['action'] = 'Disabled';
+			$cur['countries4'] = '';
+			$cur['countries6'] = '';
 		}
 		csfm_cfg_set("installedpackages/pfblockerng{$s}/config", array($cur));
 	}
@@ -1218,8 +1221,12 @@ function csfm_apply_geoip($pid, $content, $prev) {
 
 	$alias = 'pfB_' . $csfm_geoip_regions[$region] . '_v4';
 	try {
-		list($rc, $out) = csfm_pfblocker_run('dc');
-		$log[] = "MaxMind database: rc={$rc}";
+		/* The MaxMind download is slow (20 minutes and more on some links): only when pfBlockerNG has no GeoIP
+		   database yet; pfBlockerNG's own schedule keeps an existing one up to date. */
+		if (!is_file(CSFM_GEOIP_DB)) {
+			list($rc, $out) = csfm_pfblocker_run('dc');
+			$log[] = "MaxMind database: rc={$rc}";
+		}
 		list($rc, $out) = csfm_pfblocker_run('updateip');
 		$log[] = "Reload IP: rc={$rc}";
 		$found = false;
