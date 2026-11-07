@@ -128,6 +128,8 @@ class _Pending:
     provider_id: int
     nonce: str
     created: float
+    # What the sign-in is for besides signing in, e.g. {"kind": "terminal", "user_id": 3, "device_id": "..."}.
+    purpose: dict[str, Any] | None = None
 
 
 _pending: dict[str, _Pending] = {}
@@ -143,8 +145,11 @@ def _expire() -> None:
         _used_assertions.pop(key, None)
 
 
-def login_redirect(provider: SsoProvider, console_url: str) -> tuple[str, str]:
-    """(URL to send the browser to, nonce to set as the NONCE_COOKIE)."""
+def login_redirect(provider: SsoProvider, console_url: str, force_authn: bool = False,
+                   purpose: dict[str, Any] | None = None) -> tuple[str, str]:
+    """(URL to send the browser to, nonce to set as the NONCE_COOKIE). force_authn asks the provider to sign
+    the user in again (and run its MFA) instead of reusing its own session; purpose comes back with the
+    response (validate_response), e.g. to approve a terminal session."""
     if not provider.idp_sso_url:
         raise SsoError("The provider has no sign-in URL configured")
     request_id = "_" + secrets.token_hex(20)
@@ -152,8 +157,9 @@ def login_redirect(provider: SsoProvider, console_url: str) -> tuple[str, str]:
     xml = (
         f'<samlp:AuthnRequest xmlns:samlp="{NS["samlp"]}" xmlns:saml="{NS["saml"]}" ID="{request_id}" '
         f'Version="2.0" IssueInstant="{_iso(_now())}" Destination="{_xml_attr(provider.idp_sso_url)}" '
-        f'AssertionConsumerServiceURL="{_xml_attr(acs_url(console_url, provider))}" ProtocolBinding="{POST_BINDING}">'
-        f"<saml:Issuer>{_xml_text(sp_entity_id(console_url, provider))}</saml:Issuer>"
+        + ('ForceAuthn="true" ' if force_authn else "")
+        + f'AssertionConsumerServiceURL="{_xml_attr(acs_url(console_url, provider))}" ProtocolBinding="{POST_BINDING}">'
+        + f"<saml:Issuer>{_xml_text(sp_entity_id(console_url, provider))}</saml:Issuer>"
         '<samlp:NameIDPolicy Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified" AllowCreate="true"/>'
         "</samlp:AuthnRequest>"
     )
@@ -161,7 +167,7 @@ def login_redirect(provider: SsoProvider, console_url: str) -> tuple[str, str]:
     encoded = base64.b64encode(deflater.compress(xml.encode()) + deflater.flush()).decode()
     with _lock:
         _expire()
-        _pending[request_id] = _Pending(provider.id, nonce, time.monotonic())
+        _pending[request_id] = _Pending(provider.id, nonce, time.monotonic(), purpose)
     sep = "&" if "?" in provider.idp_sso_url else "?"
     return provider.idp_sso_url + sep + urlencode({"SAMLRequest": encoded}), nonce
 
@@ -181,6 +187,49 @@ class SsoIdentity:
     email: str
     name_id: str
     display_name: str
+    authn_instant: datetime | None = None  # when the provider authenticated the user
+    methods: tuple[str, ...] = ()  # how (Entra: authnmethodsreferences, e.g. .../multipleauthn)
+    purpose: dict[str, Any] | None = None  # from login_redirect
+
+
+# Entra lists how the user authenticated in this claim; "multipleauthn" means MFA was performed.
+METHODS_ATTRIBUTES = ("http://schemas.microsoft.com/claims/authnmethodsreferences", "amr")
+STEP_UP_MAX_AGE = timedelta(minutes=5)
+# Set while a step-up sign-in is under way (path /sso/): which firewall's page to return to if it fails
+# before the response can be matched to its request. Routing only; the approval comes from _pending.
+STEP_UP_COOKIE = "csfm_sso_stepup"
+HANDOFF_TTL = 120  # seconds
+_handoffs: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+def issue_handoff(data: dict[str, Any]) -> str:
+    """A one-time token carrying a step-up result from the provider's cross-site POST (where the console
+    session is not available) to the next same-site request (where it is)."""
+    token = secrets.token_urlsafe(24)
+    with _lock:
+        now = time.monotonic()
+        for key in [k for k, (expires, _) in _handoffs.items() if expires < now]:
+            del _handoffs[key]
+        _handoffs[token] = (now + HANDOFF_TTL, data)
+    return token
+
+
+def take_handoff(token: str) -> dict[str, Any] | None:
+    with _lock:
+        entry = _handoffs.pop(token, None)
+    if entry is None or entry[0] < time.monotonic():
+        return None
+    return entry[1]
+
+
+def step_up_problem(identity: SsoIdentity, provider: SsoProvider) -> str:
+    """Why this sign-in does not count as a fresh, strong re-authentication ("" if it does): it must have
+    happened just now (ForceAuthn), and with Entra it must report MFA."""
+    if identity.authn_instant is None or _now() - identity.authn_instant > STEP_UP_MAX_AGE + CLOCK_SKEW:
+        return "the provider did not sign you in again just now"
+    if provider.kind == "entra" and not any(m.rstrip("/").endswith("multipleauthn") for m in identity.methods):
+        return "Entra did not report multi-factor authentication for this sign-in (check its Conditional Access policy)"
+    return ""
 
 
 def _certs(pem_text: str) -> list[str]:
@@ -291,6 +340,7 @@ def validate_response(
         pending = _pending.pop(request_id or "", None)
         if pending is None or pending.provider_id != provider.id:
             raise SsoError("This sign-in was not started here or has timed out; start again from the sign-in page")
+        purpose = pending.purpose
         if not nonce_cookie or not secrets.compare_digest(pending.nonce, nonce_cookie):
             raise SsoError("This sign-in was started in a different browser; start again from the sign-in page")
         assertion_id = assertion.get("ID") or ""
@@ -300,7 +350,10 @@ def validate_response(
 
     name_id = _text(assertion.find("saml:Subject/saml:NameID", NS))
     attributes: dict[str, str] = {}
+    methods: list[str] = []
     for attr in assertion.findall("saml:AttributeStatement/saml:Attribute", NS):
+        if attr.get("Name") in METHODS_ATTRIBUTES:
+            methods += [_text(v) for v in attr.findall("saml:AttributeValue", NS) if _text(v)]
         value = _text(attr.find("saml:AttributeValue", NS))
         if value:
             attributes[attr.get("Name", "")] = value
@@ -312,7 +365,10 @@ def validate_response(
         raise SsoError("The provider did not send an email address (set the email attribute or NameID to email)")
     display = attributes.get("http://schemas.microsoft.com/identity/claims/displayname") or attributes.get(
         "displayName", "")
-    return SsoIdentity(email=email.strip().lower(), name_id=name_id, display_name=display)
+    authn = assertion.find("saml:AuthnStatement", NS)
+    return SsoIdentity(email=email.strip().lower(), name_id=name_id, display_name=display,
+                       authn_instant=_parse_time(authn.get("AuthnInstant")) if authn is not None else None,
+                       methods=tuple(methods), purpose=purpose)
 
 
 # --------------------------------------------------------------- metadata

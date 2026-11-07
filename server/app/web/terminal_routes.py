@@ -15,9 +15,11 @@ from sqlalchemy.orm import Session
 from ..audit import audit
 from ..config import Settings, get_settings
 from ..db import get_db
-from ..models import Device, DeviceStatus, Role, TaskType, TerminalSession, TerminalStatus, User
+from ..models import Device, DeviceStatus, Role, SsoProvider, TaskType, TerminalSession, TerminalStatus, User
 from ..security import RateLimiter
 from ..services import mfa
+from ..services import sso as sso_svc
+from ..services.appsettings import effective_console_url
 from ..services import terminal as terminal_svc
 from ..services.tasks import TaskError, queue_task
 from .auth import flash, require, verify_csrf
@@ -37,9 +39,22 @@ TERMINAL_CSP = (
 SESSION_KEY = "terminals"  # session ids this browser approved
 
 
-def terminal_blocker(device: Device, user: User) -> str:
+def sso_provider(request: Request, db: Session) -> SsoProvider | None:
+    """The enabled provider this browser signed in with, if it signed in with single sign-on: its users
+    approve terminal sessions by signing in to it again (with its MFA) instead of an authenticator code."""
+    if request.session.get("auth") != "sso":
+        return None
+    if request.session.get("sso_provider"):
+        provider = db.get(SsoProvider, request.session["sso_provider"])
+        return provider if provider is not None and provider.enabled else None
+    # Signed in before the provider was remembered: the only enabled provider, if there is just one.
+    enabled = list(db.scalars(select(SsoProvider).where(SsoProvider.enabled.is_(True)).limit(2)))
+    return enabled[0] if len(enabled) == 1 else None
+
+
+def terminal_blocker(device: Device, user: User, sso: SsoProvider | None = None) -> str:
     """Why this user cannot open a terminal on this firewall right now ("" if they can)."""
-    if not user.totp_enabled:
+    if sso is None and not user.totp_enabled:
         return "totp"
     if "shell" not in (device.capabilities or []):
         return "permission"
@@ -58,7 +73,9 @@ def recent_sessions(db: Session, device_id: str, limit: int = 10) -> list[Termin
 @router.get("/devices/{device_id}/terminal", response_class=HTMLResponse)
 def terminal_approve_page(device_id: str, request: Request, user: User = Depends(operator), db: Session = Depends(get_db)):
     device = _get_device(db, device_id)
-    return render(request, "terminal_approve.html", device=device, blocker=terminal_blocker(device, user))
+    provider = sso_provider(request, db)
+    return render(request, "terminal_approve.html", device=device, sso=provider,
+                  blocker=terminal_blocker(device, user, provider))
 
 
 @router.post("/devices/{device_id}/terminal")
@@ -84,6 +101,12 @@ def terminal_approve(
         db.commit()
         flash(request, "That code is not valid. Enter the current code from your authenticator app.", "error")
         return redirect(back)
+    return _open_session(request, db, device, user, "authenticator code")
+
+
+def _open_session(request: Request, db: Session, device: Device, user: User, approved_with: str):
+    """Queue the terminal on the firewall and hand this browser the approved session."""
+    back = f"/devices/{device.id}/terminal"
     sid = secrets.token_urlsafe(24)
     try:
         queue_task(db, device, TaskType.open_terminal, {"session": sid}, actor=user.username,
@@ -95,10 +118,54 @@ def terminal_approve(
     db.add(TerminalSession(id=sid, device_id=device.id, user_id=user.id, username=user.username,
                            browser_ip=_ip(request), recording=f"{sid}.cast"))
     audit(db, user.username, "terminal.approve", target=device.id,
-          detail=f"session {sid[:8]} approved with authenticator code", ip=_ip(request))
+          detail=f"session {sid[:8]} approved with {approved_with}", ip=_ip(request))
     db.commit()
     request.session[SESSION_KEY] = [*request.session.get(SESSION_KEY, [])[-4:], sid]
     return redirect(f"/terminal/{sid}")
+
+
+@router.post("/devices/{device_id}/terminal/sso")
+def terminal_approve_sso(
+    device_id: str,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    user: User = Depends(operator),
+    db: Session = Depends(get_db),
+):
+    """Approve with the single sign-on provider: sign in to it again (it runs its MFA, e.g. an Entra push)."""
+    from .sso_routes import step_up_redirect  # noqa: PLC0415 - sso_routes imports routes, as this module does
+
+    device = _get_device(db, device_id)
+    back = f"/devices/{device_id}/terminal"
+    provider = sso_provider(request, db)
+    if provider is None or terminal_blocker(device, user, provider):
+        return redirect(back)
+    purpose = {"kind": "terminal", "user_id": user.id, "device_id": device.id}
+    try:
+        return step_up_redirect(provider, effective_console_url(db, settings), settings, purpose, device.id)
+    except sso_svc.SsoError as exc:
+        flash(request, f"{provider.name}: {exc}", "error")
+        return redirect(back)
+
+
+@router.get("/devices/{device_id}/terminal/sso/{token}")
+def terminal_approved_sso(device_id: str, token: str, request: Request, user: User = Depends(operator),
+                          db: Session = Depends(get_db)):
+    """Back from the provider (via sso_acs): open the session if it approved this user for this firewall."""
+    device = _get_device(db, device_id)
+    back = f"/devices/{device_id}/terminal"
+    data = sso_svc.take_handoff(token)
+    if data is None or data.get("device_id") != device.id:
+        flash(request, "That approval has expired or was already used. Approve again.", "error")
+        return redirect(back)
+    if data.get("error"):
+        flash(request, data["error"], "error")
+        return redirect(back)
+    provider = sso_provider(request, db)
+    if data.get("user_id") != user.id or terminal_blocker(device, user, provider):
+        flash(request, "That approval is not for you or this firewall can't open a terminal now.", "error")
+        return redirect(back)
+    return _open_session(request, db, device, user, data.get("approved_by", "single sign-on"))
 
 
 def _session(db: Session, sid: str, user: User) -> TerminalSession:

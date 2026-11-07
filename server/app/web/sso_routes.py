@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import secrets
 from html import escape
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -53,6 +54,20 @@ def sso_login(provider_id: int, request: Request, settings: Settings = Depends(g
     # Sent back with the provider's cross-site POST, which the SameSite=Strict session cookie is not.
     response.set_cookie(sso.NONCE_COOKIE, nonce, max_age=sso.REQUEST_TTL, path="/sso/", httponly=True,
                         secure=settings.secure_cookies, samesite="none" if settings.secure_cookies else "lax")
+    response.delete_cookie(sso.STEP_UP_COOKIE, path="/sso/")
+    return response
+
+
+def step_up_redirect(provider: SsoProvider, console_url: str, settings: Settings, purpose: dict,
+                     device_id: str) -> RedirectResponse:
+    """Send a signed-in user back to the provider to sign in again (ForceAuthn: its MFA runs again) to
+    approve something; the answer arrives at sso_acs with this purpose. Raises sso.SsoError."""
+    url, nonce = sso.login_redirect(provider, console_url, force_authn=True, purpose=purpose)
+    response = RedirectResponse(url, status_code=303)
+    cookie = dict(max_age=sso.REQUEST_TTL, path="/sso/", httponly=True, secure=settings.secure_cookies,
+                  samesite="none" if settings.secure_cookies else "lax")
+    response.set_cookie(sso.NONCE_COOKIE, nonce, **cookie)
+    response.set_cookie(sso.STEP_UP_COOKIE, device_id, **cookie)
     return response
 
 
@@ -77,14 +92,23 @@ def sso_acs(
     db: Session = Depends(get_db),
 ):
     provider = _provider(db, provider_id, enabled_only=True)
+    step_up_device = request.cookies.get(sso.STEP_UP_COOKIE, "")
     try:
         identity = sso.validate_response(SAMLResponse, provider, effective_console_url(db, settings),
                                          request.cookies.get(sso.NONCE_COOKIE))
     except sso.SsoError as exc:
         audit(db, "system", "login.sso_failed", target=provider.name, detail=str(exc)[:500], ip=_ip(request))
         db.commit()
+        if step_up_device:
+            # Approving a terminal: the user is signed in to the console, and touching the (absent) session
+            # here would replace their session cookie. Hand the error to the console page instead.
+            return _step_up_continue(step_up_device, {"error": f"{provider.name}: {exc}"}, request)
         flash(request, f"Sign-in with {provider.name} failed: {exc}", "error")
         return _continue("/login", request)
+
+    purpose = identity.purpose or {}
+    if purpose.get("kind") == "terminal":
+        return _terminal_step_up(db, provider, identity, purpose, request)
 
     user = db.scalar(select(User).where(or_(func.lower(User.email) == identity.email,
                                             func.lower(User.username) == identity.email)))
@@ -112,7 +136,37 @@ def sso_acs(
         user.must_change_password = False  # signs in with the provider, not a password
     destination = complete_login(request, db, user, method=f"sso:{provider.name}").headers["location"]
     request.session["auth"] = "sso"
+    request.session["sso_provider"] = provider.id
     return _continue(destination, request)
+
+
+def _step_up_continue(device_id: str, data: dict, request: Request) -> HTMLResponse:
+    token = sso.issue_handoff({**data, "device_id": device_id})
+    response = _continue(f"/devices/{quote(device_id, safe='')}/terminal/sso/{token}", request)
+    response.delete_cookie(sso.STEP_UP_COOKIE, path="/sso/")
+    return response
+
+
+def _terminal_step_up(db: Session, provider: SsoProvider, identity: sso.SsoIdentity, purpose: dict,
+                      request: Request) -> HTMLResponse:
+    """The provider's answer to "approve this terminal session": the same user, signed in again just now
+    (and with Entra, with MFA). Hands a one-time approval to /devices/{id}/terminal/sso/{token}."""
+    device_id = str(purpose.get("device_id", ""))
+    user = db.get(User, purpose.get("user_id"))
+    known = {(user.email or "").lower(), (user.username or "").lower()} if user else set()
+    problem = ""
+    if user is None or identity.email not in known:
+        problem = f"you signed in to {provider.name} as {identity.email}, not as the console user who asked"
+    else:
+        problem = sso.step_up_problem(identity, provider)
+    if problem:
+        audit(db, user.username if user else "system", "terminal.denied", target=device_id,
+              detail=f"{provider.name}: {problem}"[:500], ip=_ip(request))
+        db.commit()
+        return _step_up_continue(device_id, {"error": f"Not approved: {problem}."}, request)
+    methods = ", ".join(m.rstrip("/").rsplit("/", 1)[-1] for m in identity.methods) or "re-authentication"
+    return _step_up_continue(device_id, {"user_id": user.id, "approved_by": f"{provider.name} ({methods})"},
+                             request)
 
 
 @public.get("/sso/{provider_id:int}/metadata")

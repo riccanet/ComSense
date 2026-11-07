@@ -59,8 +59,8 @@ Cisco Duo or any other. ComSense is the service provider:
 * People are matched to ComSense users by email address. Unless the provider is set to create users
   (with a chosen role), only existing users can sign in. Roles stay managed in ComSense.
 * The provider applies its own MFA (Entra Conditional Access, Duo, Google 2-Step Verification), so an
-  SSO sign-in counts as two-factor for "require two-factor sign-in". Remote terminal sessions still
-  need an authenticator app in ComSense.
+  SSO sign-in counts as two-factor for "require two-factor sign-in". Users who signed in with SSO
+  approve remote terminal sessions with the provider too (see below), not with a ComSense authenticator app.
 * Sign-ins and failures are in the audit log. Once a provider is enabled, the sign-in page (`/login`) offers
   only single sign-on; local accounts (such as the first admin) sign in with their password at `/admin`.
 
@@ -71,9 +71,17 @@ guarded on both sides:
 
 * **Off on every firewall** until someone with access to that firewall ticks *Remote terminal* in
   *Services > ComSense Agent*. The server cannot turn it on.
-* **Operators and admins only (never viewers), and every session is approved with the user's own
-  authenticator app (TOTP).** Users without an authenticator app cannot open terminals at all; emailed codes and recovery codes are not
-  accepted. A code works once, and 5 wrong codes lock terminal approval for 15 minutes.
+* **Operators and admins only (never viewers), and every session is approved by the user again.**
+  * Signed in with a password: a code from the user's own authenticator app (TOTP). Users without one
+    cannot open terminals; emailed codes and recovery codes are not accepted. A code works once, and 5
+    wrong codes lock terminal approval for 15 minutes.
+  * Signed in with single sign-on: the user signs in to the provider again (SAML `ForceAuthn`), so it
+    runs its MFA again, e.g. an Entra push to Microsoft Authenticator. The console accepts the answer only
+    if it is signed, answers that request, is for the same user, and the provider authenticated the user
+    within the last 5 minutes. **With Entra it must also report MFA** (`authnmethodsreferences` contains
+    `multipleauthn`): make sure a Conditional Access policy requires MFA for the ComSense app every time
+    (sign-in frequency "Every time"), or the approval is refused. The answer is handed to the console in
+    a one-time token valid for 2 minutes.
 * The approval is bound to that user's browser session and must be used within 2 minutes; a session
   can be joined once and cannot be reattached after a disconnect.
 * The session starts in pfSense's console menu, as on the console or over SSH: option 8 opens a

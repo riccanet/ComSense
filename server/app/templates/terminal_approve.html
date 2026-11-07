@@ -18,6 +18,30 @@
   {% elif blocker == "offline" %}
   <h2>Firewall not connected</h2>
   <p>{{ device.name }} is {{ device.status.value }}. A terminal can only be opened while the firewall is checking in.</p>
+  {% elif sso %}
+  <h2>Approve with {{ sso.name }}</h2>
+  <p>This opens a root shell on <strong>{{ device.name }}</strong>. You signed in with {{ sso.name }}: approve this
+  session by signing in to it again. {% if sso.kind == "entra" %}Entra asks for your password if needed and runs its
+  multi-factor check (for example a push to Microsoft Authenticator).{% else %}It runs its own sign-in checks again.{% endif %}</p>
+  <form method="post" action="/devices/{{ device.id }}/terminal/sso" class="stack">
+    {{ csrf() }}
+    <div><button class="primary sso-{{ sso.kind }}">Approve with {{ sso.name }}</button></div>
+  </form>
+  <p class="muted small">You come back here and the firewall connects within a few seconds. The approval must be
+  a fresh sign-in{% if sso.kind == "entra" %} that Entra reports as multi-factor (set by its Conditional Access policy){% endif %}.
+  The session is recorded and can be replayed from the firewall's page; it closes after 15 minutes without input
+  and after 2 hours in total.</p>
+  {% if user.totp_enabled %}
+  <details class="small"><summary>Use your authenticator app instead</summary>
+  <form method="post" action="/devices/{{ device.id }}/terminal" class="stack">
+    {{ csrf() }}
+    <label>Authenticator code
+      <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required>
+    </label>
+    <div><button>Approve and connect</button></div>
+  </form>
+  </details>
+  {% endif %}
   {% else %}
   <h2>Approve with your authenticator app</h2>
   <p>This opens a root shell on <strong>{{ device.name }}</strong>. Enter the current code from your

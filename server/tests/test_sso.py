@@ -47,7 +47,7 @@ def _t(dt):
 
 def make_response(provider_id, request_id, email="alice@example.com", *, sign="assertion", key=KEY, cert=CERT,
                   audience=None, recipient=None, issuer=IDP, not_after_min=5, status="Success",
-                  assertion_id=None, attrs=None):
+                  assertion_id=None, attrs=None, authn_minutes_ago=0):
     now = datetime.now(timezone.utc)
     acs = recipient or f"{CONSOLE}/sso/{provider_id}/acs"
     aud = audience or f"{CONSOLE}/sso/{provider_id}/metadata"
@@ -64,7 +64,7 @@ def make_response(provider_id, request_id, email="alice@example.com", *, sign="a
         f'NotOnOrAfter="{_t(now + timedelta(minutes=not_after_min))}"/></saml:SubjectConfirmation></saml:Subject>'
         f'<saml:Conditions NotBefore="{_t(now - timedelta(minutes=1))}" NotOnOrAfter="{_t(now + timedelta(minutes=not_after_min))}">'
         f'<saml:AudienceRestriction><saml:Audience>{aud}</saml:Audience></saml:AudienceRestriction></saml:Conditions>'
-        f'<saml:AuthnStatement AuthnInstant="{_t(now)}"/>'
+        f'<saml:AuthnStatement AuthnInstant="{_t(now - timedelta(minutes=authn_minutes_ago))}"/>'
         + (f"<saml:AttributeStatement>{attr_xml}</saml:AttributeStatement>" if attr_xml else "")
         + "</saml:Assertion>"
     )

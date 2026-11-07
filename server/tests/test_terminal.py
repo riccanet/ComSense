@@ -8,6 +8,7 @@ from conftest import ALL_CAPS, SYSTEM, auth, csrf_from, enroll, login, make_key
 from sqlalchemy import select
 from starlette.websockets import WebSocketDisconnect
 from test_mfa import _enable_totp
+from test_sso import make_response, provider  # noqa: F401 - provider is a fixture
 
 from app.models import AuditLog, Role, Task, TaskType, TerminalSession, TerminalStatus, User, utcnow
 from app.security import hash_password
@@ -192,3 +193,77 @@ def test_firewall_that_never_connects_closes_the_session(client, db, shell_devic
         assert msg["s"] == "closed" and "did not connect" in msg["m"]
     db.expire_all()
     assert db.get(TerminalSession, sid).status == TerminalStatus.closed
+
+
+MFA = {"http://schemas.microsoft.com/claims/authnmethodsreferences": "http://schemas.microsoft.com/claims/multipleauthn"}
+
+
+def _step_up(client, did, provider_id, **response):
+    """Approve with the provider: the console sends the browser there (ForceAuthn), the provider answers at
+    the ACS, which hands over to the console's own page."""
+    import base64, zlib  # noqa: E401, PLC0415
+    from urllib.parse import parse_qs, urlsplit  # noqa: PLC0415
+
+    from lxml import etree  # noqa: PLC0415
+
+    page = client.get(f"/devices/{did}/terminal").text
+    r = client.post(f"/devices/{did}/terminal/sso", data={"csrf_token": csrf_from(page)}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].startswith("https://idp.example.com/sso")
+    q = parse_qs(urlsplit(r.headers["location"]).query)
+    req = etree.fromstring(zlib.decompress(base64.b64decode(q["SAMLRequest"][0]), -15))
+    assert req.get("ForceAuthn") == "true"
+    email = response.pop("email", "op@example.com")
+    r = client.post(f"/sso/{provider_id}/acs", data={"SAMLResponse": make_response(provider_id, req.get("ID"), email,
+                                                                                    **response)},
+                    follow_redirects=False)
+    assert r.status_code == 200
+    target = r.text.split("url=", 1)[1].split('"', 1)[0]
+    assert target.startswith(f"/devices/{did}/terminal/sso/")
+    return client.get(target, follow_redirects=False), target
+
+
+def test_single_sign_on_users_approve_terminals_with_their_provider(client, db, shell_device, provider):
+    from test_sso import finish, start  # noqa: PLC0415
+
+    did = shell_device["device_id"]
+    db.add(User(username="op", email="op@example.com", password_hash=hash_password("operator-password-1"),
+                role=Role.operator))
+    db.add(User(username="alice", email="alice@example.com", password_hash=hash_password("x" * 20),
+                role=Role.operator))
+    db.commit()
+    finish(client, provider.id, make_response(provider.id, start(client, provider.id), "op@example.com"))
+    # No authenticator app needed: the page offers the provider.
+    page = client.get(f"/devices/{did}/terminal").text
+    assert "Approve with Entra" in page and "Authenticator app required" not in page
+
+    def denied(response, message):
+        r, _ = _step_up(client, did, provider.id, **response)
+        assert r.headers["location"] == f"/devices/{did}/terminal"
+        assert message in client.get(f"/devices/{did}/terminal").text
+        db.expire_all()
+        assert not db.scalars(select(TerminalSession)).all()
+
+    denied({}, "multi-factor")  # Entra did not report MFA
+    denied({"attrs": MFA, "authn_minutes_ago": 30}, "sign you in again")  # an old sign-in
+    denied({"attrs": MFA, "email": "alice@example.com"}, "as alice@example.com")  # someone else
+
+    r, target = _step_up(client, did, provider.id, attrs=MFA)
+    assert r.status_code == 303 and r.headers["location"].startswith("/terminal/")
+    sid = r.headers["location"].removeprefix("/terminal/")
+    db.expire_all()
+    ts = db.get(TerminalSession, sid)
+    assert ts.username == "op" and ts.status == TerminalStatus.approved
+    assert "Entra (multipleauthn)" in db.scalar(select(AuditLog).where(AuditLog.action == "terminal.approve")).detail
+    assert client.get(f"/terminal/{sid}").status_code == 200
+    # The hand-over works once.
+    assert client.get(target, follow_redirects=False).headers["location"] == f"/devices/{did}/terminal"
+    assert len(db.scalars(select(TerminalSession)).all()) == 1
+
+
+def test_local_sign_in_still_needs_an_authenticator_app(client, db, shell_device, provider):
+    login(client)
+    did = shell_device["device_id"]
+    page = client.get(f"/devices/{did}/terminal").text
+    assert "Authenticator app required" in page
+    r = client.post(f"/devices/{did}/terminal/sso", data={"csrf_token": csrf_from(page)}, follow_redirects=False)
+    assert r.headers["location"] == f"/devices/{did}/terminal"
