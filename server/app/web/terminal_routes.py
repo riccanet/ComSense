@@ -25,8 +25,9 @@ from .routes import _get_device, _ip, redirect, render
 
 router = APIRouter(dependencies=[Depends(verify_csrf)])
 ws_router = APIRouter()
-admin = require(Role.admin)
-approve_limiter = RateLimiter(limit=5, window_seconds=900)  # wrong codes per admin
+# Operators and admins open terminals (each session approved with the user's authenticator code).
+operator = require(Role.operator)
+approve_limiter = RateLimiter(limit=5, window_seconds=900)  # wrong codes per user
 
 # xterm.js adds <style> elements for its layout and colours; scripts stay 'self' only.
 TERMINAL_CSP = (
@@ -37,7 +38,7 @@ SESSION_KEY = "terminals"  # session ids this browser approved
 
 
 def terminal_blocker(device: Device, user: User) -> str:
-    """Why this admin cannot open a terminal on this firewall right now ("" if they can)."""
+    """Why this user cannot open a terminal on this firewall right now ("" if they can)."""
     if not user.totp_enabled:
         return "totp"
     if "shell" not in (device.capabilities or []):
@@ -55,7 +56,7 @@ def recent_sessions(db: Session, device_id: str, limit: int = 10) -> list[Termin
 
 
 @router.get("/devices/{device_id}/terminal", response_class=HTMLResponse)
-def terminal_approve_page(device_id: str, request: Request, user: User = Depends(admin), db: Session = Depends(get_db)):
+def terminal_approve_page(device_id: str, request: Request, user: User = Depends(operator), db: Session = Depends(get_db)):
     device = _get_device(db, device_id)
     return render(request, "terminal_approve.html", device=device, blocker=terminal_blocker(device, user))
 
@@ -66,7 +67,7 @@ def terminal_approve(
     request: Request,
     code: str = Form(""),
     settings: Settings = Depends(get_settings),
-    user: User = Depends(admin),
+    user: User = Depends(operator),
     db: Session = Depends(get_db),
 ):
     device = _get_device(db, device_id)
@@ -100,16 +101,17 @@ def terminal_approve(
     return redirect(f"/terminal/{sid}")
 
 
-def _session(db: Session, sid: str) -> TerminalSession:
+def _session(db: Session, sid: str, user: User) -> TerminalSession:
+    """A terminal session this user may see: admins any, operators their own."""
     ts = db.get(TerminalSession, sid)
-    if ts is None:
+    if ts is None or (user.role != Role.admin and ts.user_id != user.id):
         raise HTTPException(404, "Terminal session not found")
     return ts
 
 
 @router.get("/terminal/{sid}", response_class=HTMLResponse)
-def terminal_page(sid: str, request: Request, user: User = Depends(admin), db: Session = Depends(get_db)):
-    ts = _session(db, sid)
+def terminal_page(sid: str, request: Request, user: User = Depends(operator), db: Session = Depends(get_db)):
+    ts = _session(db, sid, user)
     live = (
         ts.status == TerminalStatus.approved
         and ts.user_id == user.id
@@ -127,10 +129,10 @@ def terminal_recording(
     sid: str,
     download: int = 0,
     settings: Settings = Depends(get_settings),
-    user: User = Depends(admin),
+    user: User = Depends(operator),
     db: Session = Depends(get_db),
 ):
-    ts = _session(db, sid)
+    ts = _session(db, sid, user)
     path = terminal_svc.recording_dir(settings.data_dir) / ts.recording if ts.recording else None
     if path is None or not path.is_file():
         raise HTTPException(404, "No recording for this session")

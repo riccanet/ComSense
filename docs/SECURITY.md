@@ -71,10 +71,10 @@ guarded on both sides:
 
 * **Off on every firewall** until someone with access to that firewall ticks *Remote terminal* in
   *Services > ComSense Agent*. The server cannot turn it on.
-* **Admins only, and every session is approved with the admin's authenticator app (TOTP).** Admins
-  without an authenticator app cannot open terminals at all; emailed codes and recovery codes are not
+* **Operators and admins only (never viewers), and every session is approved with the user's own
+  authenticator app (TOTP).** Users without an authenticator app cannot open terminals at all; emailed codes and recovery codes are not
   accepted. A code works once, and 5 wrong codes lock terminal approval for 15 minutes.
-* The approval is bound to the admin's browser session and must be used within 2 minutes; a session
+* The approval is bound to that user's browser session and must be used within 2 minutes; a session
   can be joined once and cannot be reattached after a disconnect.
 * The session starts in pfSense's console menu, as on the console or over SSH: option 8 opens a
   root shell, option 0 ends the session.
@@ -83,7 +83,7 @@ guarded on both sides:
 * Sessions end after 15 minutes without input and after 2 hours.
 * Approval, wrong codes, connect and close are in the audit log. The terminal output is recorded on the
   server (`data/terminal/<id>.cast`, asciicast v2, up to 10 MB per session) and can be replayed or
-  downloaded from the firewall's page by any admin. Keystrokes are not recorded separately; what the
+  downloaded from the firewall's page by any admin; operators see and replay only their own sessions. Keystrokes are not recorded separately; what the
   shell echoes is. Recordings are not deleted automatically.
 * The terminal page relaxes the Content Security Policy for styles only (`style-src 'unsafe-inline'`,
   needed by xterm.js); scripts stay restricted to the console's own files.

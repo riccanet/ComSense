@@ -55,13 +55,39 @@ def test_terminal_needs_an_authenticator_app_and_the_firewall_permission(client,
     assert not db.scalars(select(TerminalSession)).all()
 
 
-def test_terminal_is_admin_only(client, db, shell_device):
+def test_operators_open_terminals_viewers_do_not(client, db, shell_device):
+    did = shell_device["device_id"]
+    db.add(User(username="viewer1", password_hash=hash_password("viewer-password-12"), role=Role.viewer))
     db.add(User(username="op", password_hash=hash_password("operator-password-1"), role=Role.operator))
     db.commit()
-    login(client, "op", "operator-password-1")
-    page = client.get(f"/devices/{shell_device['device_id']}").text
-    assert "/terminal" not in page
-    assert client.get(f"/devices/{shell_device['device_id']}/terminal").status_code == 403
+    # Viewers: no button, no page.
+    login(client, "viewer1", "viewer-password-12")
+    assert f'href="/devices/{did}/terminal"' not in client.get(f"/devices/{did}").text
+    assert client.get(f"/devices/{did}/terminal").status_code == 403
+    client.post("/logout", data={"csrf_token": csrf_from(client.get("/").text)})
+
+    # An admin's session on this firewall (to check operators see only their own).
+    admin = db.scalar(select(User).where(User.role == Role.admin))
+    db.add(TerminalSession(id="adminsession0000000000000000000x", device_id=did, user_id=admin.id,
+                           username=admin.username, browser_ip="127.0.0.1", recording="adminsession.cast"))
+    db.commit()
+
+    # Operators: the button, and a session approved with their own authenticator code.
+    csrf = login(client, "op", "operator-password-1")
+    secret, _ = _enable_totp(client, csrf, password="operator-password-1")
+    page = client.get(f"/devices/{did}").text
+    assert f'href="/devices/{did}/terminal"' in page and "adminsession" not in page
+    r = _approve(client, did, secret)
+    assert r.status_code == 303 and r.headers["location"].startswith("/terminal/")
+    sid = r.headers["location"].removeprefix("/terminal/")
+    db.expire_all()
+    ts = db.get(TerminalSession, sid)
+    assert ts.username == "op" and ts.status == TerminalStatus.approved
+    assert client.get(f"/terminal/{sid}").status_code == 200
+    assert terminal_svc.check_browser(sid, ts.user_id, db.get(User, ts.user_id).password_hash[-16:], True)
+    # Not another user's session or recording.
+    assert client.get("/terminal/adminsession0000000000000000000x").status_code == 404
+    assert client.get("/terminal/adminsession0000000000000000000x/recording").status_code == 404
 
 
 def test_terminal_session_end_to_end(client, db, agent, shell_device, settings, monkeypatch):

@@ -549,10 +549,13 @@ def device_detail(
         lease_total=len((device.neighbors or {}).get("leases") or []),
         find_arp=neighbors_svc.by_ip(network["arp"]) if find else [],
         find_static=neighbors_svc.by_ip(network["static"]) if find else [],
+        # Admins see every terminal session on this firewall; operators their own.
         terminal_sessions=db.scalars(
-            select(TerminalSession).where(TerminalSession.device_id == device.id)
+            select(TerminalSession).where(
+                TerminalSession.device_id == device.id,
+                *([] if user.role == Role.admin else [TerminalSession.user_id == user.id]))
             .order_by(TerminalSession.created_at.desc()).limit(10)
-        ).all() if user.role == Role.admin else [],
+        ).all() if user.role in (Role.admin, Role.operator) else [],
         assignable=[
             p for p in db.scalars(select(Policy).order_by(Policy.name)) if p.id not in assigned_ids
         ],

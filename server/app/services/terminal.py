@@ -62,13 +62,13 @@ def _fresh(ts: TerminalSession) -> bool:
 
 
 def check_browser(sid: str, uid: Any, pwv: Any, in_session: bool) -> bool:
-    """May this browser session join terminal `sid`? Only the approving admin, from the browser
-    session that approved it, while the session is fresh and unjoined."""
+    """May this browser session join terminal `sid`? Only the user who approved it (an operator or admin),
+    from the browser session that approved it, while the session is fresh and unjoined."""
     if not in_session:
         return False
     with session_factory()() as db:
         user = db.get(User, uid) if uid else None
-        if user is None or not user.active or user.role != Role.admin or pwv != user.password_hash[-16:]:
+        if user is None or not user.active or user.role not in (Role.admin, Role.operator) or pwv != user.password_hash[-16:]:
             return False
         ts = db.get(TerminalSession, sid)
         return bool(ts and ts.user_id == user.id and ts.status == TerminalStatus.approved and _fresh(ts))
