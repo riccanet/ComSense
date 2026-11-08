@@ -224,7 +224,9 @@ def build_server(settings: Settings) -> MCPServer:
         check_updates, update_agent, upgrade_packages, upgrade_system (reboots), reboot, restart_service
         (with service), install_package / remove_package (with package, pfSense-pkg-...), free_disk_space
         (package cache and old logs), reload_filter (reload the firewall rules and check they
-        load), remove_boot_environment (with boot_environment, a name from
+        load), boot_diagnostics (read-only report on how the firewall boots: firmware and device tree, boot
+        disk, boot environments with their versions and loaders, the EFI boot partition's files, past boots
+        and the upgrade logs; for an upgrade that fell back to the old version), remove_boot_environment (with boot_environment, a name from
         get_firewall's boot_environments; admin key; never the active or next-boot one). Reboots and
         upgrades interrupt the customer's network: confirm with the user first. Follow up with get_task."""
         who = _who()

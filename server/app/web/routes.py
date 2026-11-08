@@ -127,6 +127,7 @@ MANUAL_TASKS = {
     TaskType.reboot: "Reboot",
     TaskType.free_disk_space: "Free disk space (package cache, old logs)",
     TaskType.reload_filter: "Reload firewall rules",
+    TaskType.boot_diag: "Boot diagnostics (read only)",
 }
 
 

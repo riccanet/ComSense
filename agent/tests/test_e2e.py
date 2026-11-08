@@ -949,6 +949,29 @@ def test_full_lifecycle(env):
     agent(env, "run")
     assert task(tid).status == TaskStatus.failed and "Unknown log" in task(tid).output
 
+    # 11d2. Boot diagnostics: a read-only report with each section, including the boots from the system logs;
+    #       a boot environment that can't be mounted is reported, not fatal, and nothing is changed.
+    (logs / "system.log").write_text(
+        "Nov  7 02:20:49 fw reboot[1]: rebooted by root\n"
+        "Nov  7 02:37:50 fw kernel: ---<<BOOT>>---\n"
+        "Nov  7 02:37:50 fw kernel: WARNING: DTB version is 6.4 while kernel expects 6.8, please update the DTB\n"
+        "Nov  7 02:38:00 fw sshd[5]: unrelated line\n")
+    (env["fw"] / "bes.txt").write_text("default\t-\t-\t1.4G\t2026-11-07 02:13\n"
+                                        "default_old\tNR\t/\t5.9G\t2025-02-15 19:34\n")
+    before = (env["fw"] / "actions.log").read_text() if (env["fw"] / "actions.log").exists() else ""
+    tid = queue(TaskType.boot_diag, {})
+    agent(env, "run")
+    done = task(tid)
+    assert done.status == TaskStatus.success, done.output
+    for section in ("===== Platform", "===== Disks", "===== EFI boot partition", "===== Boot environments",
+                    "===== Boots and reboots"):
+        assert section in done.output, done.output
+    assert "DTB version is 6.4" in done.output and "unrelated line" not in done.output
+    assert "default: could not mount" in done.output and "default_old: could not mount" not in done.output
+    after = (env["fw"] / "actions.log").read_text() if (env["fw"] / "actions.log").exists() else ""
+    assert "bectl" not in after[len(before):]  # nothing destroyed or changed
+    (env["fw"] / "bes.txt").unlink()
+
     # 11e. An SSH configuration: on, key-only, a key for the admin user next to the one it has; changed;
     #      then unassigned, which puts back the firewall's own settings and removes only the policy's key.
     hand_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHandAddedKeyHandAddedKeyHandAddedKey1 tech@laptop"

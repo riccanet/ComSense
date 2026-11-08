@@ -56,6 +56,8 @@ RUNNABLE = {
     "remove_package": (TaskType.remove_package, "Remove a package (needs package)"),
     "free_disk_space": (TaskType.free_disk_space, "Clear the package cache and old logs"),
     "reload_filter": (TaskType.reload_filter, "Reload the firewall rules from the saved configuration and check they load"),
+    "boot_diagnostics": (TaskType.boot_diag, "Read-only boot report: firmware and device tree, boot disk, boot "
+                         "environments, EFI boot partition, past boots, upgrade logs"),
     "remove_boot_environment": (TaskType.be_destroy, "Remove an old ZFS boot environment (needs boot_environment; admin)"),
 }
 BE_NAME = re.compile(r"[A-Za-z0-9._:+-]{1,128}")

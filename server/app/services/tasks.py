@@ -20,6 +20,7 @@ TASK_CAPABILITY: dict[TaskType, str | None] = {
     TaskType.check_updates: None,
     TaskType.refresh_inventory: None,
     TaskType.read_logs: None,  # read only
+    TaskType.boot_diag: None,  # read only
     TaskType.free_disk_space: "upgrade",
     TaskType.reload_filter: "policy",
     TaskType.be_destroy: "upgrade",
@@ -70,7 +71,7 @@ OPEN_STATES = (TaskStatus.pending, TaskStatus.sent, TaskStatus.running)
 # and is available only with CSFM_ENABLE_FIREWALL_CHANGES.
 # free_disk_space removes only pkg's download cache and rotated logs, never configuration.
 SAFE_TASKS = frozenset({TaskType.backup, TaskType.check_updates, TaskType.refresh_inventory, TaskType.read_logs,
-                        TaskType.free_disk_space})
+                        TaskType.free_disk_space, TaskType.boot_diag})
 # Updating ComSense's own agent does not change the firewall's configuration, so it is not
 # "coming soon"; it still needs the firewall's local upgrade permission.
 AGENT_TASKS = frozenset({TaskType.update_agent})
@@ -101,6 +102,7 @@ TASK_TITLES = {
     TaskType.read_logs: "Reading logs",
     TaskType.free_disk_space: "Freeing disk space",
     TaskType.reload_filter: "Reloading the firewall rules",
+    TaskType.boot_diag: "Collecting boot diagnostics",
     TaskType.be_destroy: "Removing a boot environment",
     TaskType.update_agent: "Updating the ComSense agent",
     TaskType.open_terminal: "Opening a terminal",

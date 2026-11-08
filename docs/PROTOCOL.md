@@ -79,6 +79,7 @@ no tasks.
 | `remove_policy` | `{"policy_id"}` | policy |
 | `check_updates`, `refresh_inventory` | | always |
 | `read_logs` | `{"log", "lines", "search"}`: `log` one of system, firewall, dhcp, resolver, gateways, openvpn, ipsec, auth, ntp, routing | always (read only) |
+| `boot_diag` | | always (read only): a fixed report on how the firewall boots (firmware/device tree, boot disk, boot environments with their versions and loaders, the EFI boot partition's files, past boots, upgrade logs); the boot partition is mounted read-only and other boot environments temporarily, then unmounted |
 | `free_disk_space` | | upgrade |
 | `be_destroy` | `{"name"}`: a boot environment from the reported `boot_environments` | upgrade |
 | `upgrade_system`, `upgrade_packages` | | upgrade |

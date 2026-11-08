@@ -87,6 +87,7 @@ class TaskType(str, enum.Enum):
     notifications = "notifications"
     config_edit = "config_edit"  # any part of the configuration (services/configedit.py)
     reload_filter = "reload_filter"  # reload the firewall rules from the saved configuration, and check them
+    boot_diag = "boot_diag"  # read-only report on how the firewall boots (firmware, disks, boot environments)
 
 
 class PolicyType(str, enum.Enum):

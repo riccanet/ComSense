@@ -53,6 +53,7 @@ $csfm_task_capability = array(
 	'notifications' => 'policy',
 	'config_edit' => 'policy',
 	'reload_filter' => 'policy',
+	'boot_diag' => null,
 );
 
 /* Tasks that change the configuration and run under the change guard (guard.inc). */
@@ -649,6 +650,187 @@ function csfm_task_reload_filter($client, $id, $payload) {
 		throw new Exception("The firewall rules failed to load, so the firewall is running without them. pf said: {$error}");
 	}
 	return array('output' => 'The firewall rules were reloaded and loaded.');
+}
+
+/* ------------------------------------------------------------ boot diagnostics */
+
+if (!defined('CSFM_DIAG_SECTION_MAX')) {
+	define('CSFM_DIAG_SECTION_MAX', 8000);  /* bytes per section; the report stays under the 60 KB output */
+}
+
+function csfm_diag_run($cmd, $timeout = 30) {
+	list($rc, $out) = csfm_exec($cmd, $timeout);
+	return rtrim($out) . ($rc !== 0 && $rc !== 1 ? "\n(exit {$rc})" : '');
+}
+
+function csfm_diag_cut($text) {
+	$text = rtrim((string)$text);
+	return strlen($text) > CSFM_DIAG_SECTION_MAX
+	    ? substr($text, 0, CSFM_DIAG_SECTION_MAX) . "\n... (cut)" : ($text === '' ? '(nothing)' : $text);
+}
+
+/* Files under a directory with size, date and SHA-256 (boot partitions and /boot/*.efi are small). */
+function csfm_diag_files($dir) {
+	$lines = array();
+	$it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS));
+	foreach ($it as $f) {
+		if (!$f->isFile()) {
+			continue;
+		}
+		$path = substr($f->getPathname(), strlen($dir));
+		$lines[] = sprintf('%10d  %s  %s  %s', $f->getSize(), date('Y-m-d H:i', $f->getMTime()),
+		    $f->getSize() <= 64 * 1024 * 1024 ? substr(hash_file('sha256', $f->getPathname()), 0, 16) : '-', $path);
+	}
+	sort($lines);
+	return implode("\n", $lines);
+}
+
+/* The FAT/EFI boot partitions of the boot disks (MBR "efi"/"fat32" slices, GPT "efi" partitions). */
+function csfm_diag_esp_providers() {
+	$found = array();
+	foreach (preg_split('/\s+/', trim(csfm_diag_run('/sbin/sysctl -n kern.disks', 10))) as $disk) {
+		if (!preg_match('/^[a-z]+[0-9]+$/', $disk)) {
+			continue;
+		}
+		list($rc, $out) = csfm_exec('/sbin/gpart show -p ' . escapeshellarg($disk), 10);
+		foreach (explode("\n", $out) as $line) {
+			if (preg_match('/^\s*\d+\s+\d+\s+(\S+)\s+(efi|fat32|fat32lba|fat16|!12|!239|!14)\b/', $line, $m)) {
+				$found[] = $m[1];
+			}
+		}
+	}
+	return array_values(array_unique($found));
+}
+
+function csfm_diag_esp() {
+	$mounted = csfm_diag_run('/sbin/mount -t msdosfs -p', 10);
+	$out = array();
+	foreach (csfm_diag_esp_providers() as $prov) {
+		$dev = "/dev/{$prov}";
+		/* Already mounted somewhere (/boot/efi): read it there. */
+		if (preg_match('#^' . preg_quote($dev, '#') . '\s+(\S+)#m', $mounted, $m)) {
+			$out[] = "{$dev} (mounted at {$m[1]}):\n" . csfm_diag_files($m[1]);
+			continue;
+		}
+		$dir = sys_get_temp_dir() . '/csfm-esp-' . getmypid();
+		@mkdir($dir, 0700);
+		list($rc, $err) = csfm_exec('/sbin/mount_msdosfs -o ro ' . escapeshellarg($dev) . ' ' . escapeshellarg($dir), 20);
+		if ($rc !== 0) {
+			$out[] = "{$dev}: could not mount read-only: " . trim($err);
+		} else {
+			try {
+				$out[] = "{$dev} (mounted read-only for this report):\n" . csfm_diag_files($dir);
+			} finally {
+				csfm_exec('/sbin/umount ' . escapeshellarg($dir), 20);
+			}
+		}
+		@rmdir($dir);
+	}
+	return $out ? implode("\n\n", $out) : 'No EFI/FAT boot partition found';
+}
+
+/* For each boot environment that is not running: its pfSense version, loader and last upgrade log. */
+function csfm_diag_boot_environments() {
+	$list = csfm_diag_run(CSFM_BECTL . ' list -H', 20);
+	$out = array();
+	foreach (explode("\n", $list) as $line) {
+		$f = preg_split('/\t/', $line);
+		if (count($f) < 2 || $f[0] === '' || strpos($f[1], 'N') !== false) {
+			continue;  /* the running one is described by the rest of the report */
+		}
+		$be = $f[0];
+		if (!preg_match('/^[A-Za-z0-9._:+-]{1,128}$/', $be)) {
+			continue;
+		}
+		$dir = sys_get_temp_dir() . '/csfm-be-' . getmypid();
+		@mkdir($dir, 0700);
+		list($rc, $err) = csfm_exec(CSFM_BECTL . ' mount ' . escapeshellarg($be) . ' ' . escapeshellarg($dir), 30);
+		if ($rc !== 0) {
+			$out[] = "{$be}: could not mount: " . trim($err);
+			@rmdir($dir);
+			continue;
+		}
+		try {
+			$text = "{$be}: " . trim((string)@file_get_contents("{$dir}/etc/version"));
+			foreach (glob("{$dir}/boot/*.efi") ?: array() as $efi) {
+				$text .= sprintf("\n  %s %d bytes sha256 %s", basename($efi), filesize($efi),
+				    substr(hash_file('sha256', $efi), 0, 16));
+			}
+			$log = "{$dir}/cf/conf/upgrade_log.latest.txt";
+			if (is_readable($log)) {
+				$text .= "\n  upgrade_log.latest.txt (" . date('Y-m-d H:i', filemtime($log)) . "), last lines:\n"
+				    . csfm_diag_run('/usr/bin/tail -n 15 ' . escapeshellarg($log), 10);
+			}
+			$out[] = $text;
+		} finally {
+			csfm_exec(CSFM_BECTL . ' umount ' . escapeshellarg($be), 30);
+			@rmdir($dir);
+		}
+	}
+	return $list . ($out ? "\n\n" . implode("\n\n", $out) : '');
+}
+
+function csfm_diag_boot_history() {
+	$pattern = escapeshellarg('---<<BOOT>>---|FreeBSD 1[0-9]\.[0-9]|rebooted by|syncing disks|panic|DTB|mountroot|watchdog');
+	$text = '';
+	foreach (array('system.log.1', 'system.log.0', 'system.log') as $name) {
+		$file = CSFM_LOG_DIR . '/' . $name;
+		if (is_readable($file)) {
+			$text .= csfm_diag_run('/usr/bin/grep -h -E -e ' . $pattern . ' ' . escapeshellarg($file), 30) . "\n";
+		} elseif (is_readable("{$file}.bz2")) {
+			$text .= csfm_diag_run('/usr/bin/bzgrep -h -E -e ' . $pattern . ' ' . escapeshellarg("{$file}.bz2"), 60) . "\n";
+		}
+	}
+	$lines = array_values(array_filter(explode("\n", $text), function ($l) {
+		return trim($l) !== '' && strpos($l, '(exit') !== 0;
+	}));
+	return implode("\n", array_slice($lines, -60));
+}
+
+/*
+ * Read-only boot diagnostics, for a pfSense upgrade that fell back to the old version: the hardware's
+ * firmware and device tree, the boot disk, the boot environments, the EFI boot partition's files, past boots
+ * and the upgrade logs. A fixed set of commands; nothing is changed (the boot partition and boot
+ * environments are mounted read-only/temporarily and unmounted again).
+ */
+function csfm_task_boot_diag($client, $id, $payload) {
+	$sections = array();
+	$kenv = csfm_diag_run('/bin/kenv', 10);
+	$sections['Platform'] = trim((string)@file_get_contents('/etc/version')) . "\n"
+	    . csfm_diag_run('/usr/bin/uname -a', 10) . "\n"
+	    . implode("\n", preg_grep('/smbios|fdt|dtb|u-?boot|efi|bootfile|kernelname|currdev|loaddev/i',
+	        explode("\n", $kenv)));
+	$dmesg = (string)@file_get_contents('/var/run/dmesg.boot');
+	$sections['This boot (dmesg.boot)'] = implode("\n", array_slice(explode("\n", $dmesg), 0, 12)) . "\n...\n"
+	    . implode("\n", preg_grep('/DTB|U-Boot|EFI|ahci|ada[0-9]|mmcsd|sdhci|nda[0-9]|nvme|mountroot|Trying to mount|WARNING/i',
+	        explode("\n", $dmesg)));
+	$sections['Disks'] = csfm_diag_run('/sbin/sysctl -n kern.disks', 10) . "\n"
+	    . csfm_diag_run('/sbin/gpart show -p', 20) . "\n"
+	    . csfm_diag_run('/sbin/zpool status', 20) . "\n"
+	    . csfm_diag_run('/sbin/zpool get -H bootfs', 20);
+	if (is_executable('/sbin/zfsbootcfg')) {
+		$sections['Disks'] .= "\nzfsbootcfg: " . csfm_diag_run('/sbin/zfsbootcfg', 10);
+	}
+	$loaders = array();
+	foreach (glob('/boot/*.efi') ?: array() as $efi) {
+		$loaders[] = sprintf('%10d  %s  %s  %s', filesize($efi), date('Y-m-d H:i', filemtime($efi)),
+		    substr(hash_file('sha256', $efi), 0, 16), $efi);
+	}
+	$sections['Running loader'] = implode("\n", $loaders);
+	$sections['EFI boot partition'] = csfm_diag_esp();
+	$sections['Boot environments'] = csfm_diag_boot_environments();
+	$sections['Boots and reboots (system logs)'] = csfm_diag_boot_history();
+	foreach (array('/cf/conf/upgrade_log.txt' => 20, '/cf/conf/upgrade_log.latest.txt' => 40) as $file => $n) {
+		if (is_readable($file)) {
+			$sections["Running BE {$file} (" . date('Y-m-d H:i', filemtime($file)) . ')']
+			    = csfm_diag_run("/usr/bin/tail -n {$n} " . escapeshellarg($file), 10);
+		}
+	}
+	$report = '';
+	foreach ($sections as $title => $text) {
+		$report .= "===== {$title}\n" . csfm_diag_cut($text) . "\n\n";
+	}
+	return array('output' => $report);
 }
 
 function csfm_edit_check($n, $op) {

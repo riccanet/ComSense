@@ -106,6 +106,9 @@ def test_operator_keys_queue_tasks_with_the_console_checks(client, db, agent, se
     assert client.post(f"/api/v1/firewalls/{acme_fw}/tasks", headers=key, json={"task": "rm -rf"}).status_code == 400
     r = client.post(f"/api/v1/firewalls/{acme_fw}/tasks", headers=key, json={"task": "check_now"})
     assert r.json()["type"] == "refresh_inventory"
+    # Boot diagnostics only read, so they work with firewall changes off.
+    r = client.post(f"/api/v1/firewalls/{acme_fw}/tasks", headers=key, json={"task": "boot_diagnostics"})
+    assert r.status_code == 201 and r.json()["type"] == "boot_diag"
     r = client.post(f"/api/v1/firewalls/{acme_fw}/tasks", headers=key, json={"task": "update_agent"})
     assert r.status_code == 201 and db.scalar(select(Task).where(Task.type == TaskType.update_agent)) is not None
     # Customers and alerts.
