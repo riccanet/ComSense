@@ -1,25 +1,18 @@
-{% extends "base.html" %}
-{% from "macros.html" import brand_lockup with context %}
-{% block title %}Sign in{% endblock %}
-{% block content %}
-<section class="card narrow login">
-  <div class="login-brand">{{ brand_lockup(44, "login") }}</div>
-  <p class="muted">pfSense fleet management</p>
-  {% if local %}
-  {#- /admin (or /login while no single sign-on provider is set up): a local account's username and password. -#}
-  <form method="post" action="/login" class="stack">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label>Username <input name="username" autocomplete="username" required autofocus></label>
-    <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
-    <button class="primary">Sign in</button>
-  </form>
-  {% if email_ready %}<p class="small forgot-link"><a href="/forgot">Forgot password?</a></p>{% endif %}
-  {% if sso_providers %}<p class="small muted sso-or"><a href="/login">Sign in with single sign-on instead</a></p>{% endif %}
-  {% else %}
-  {#- /login with single sign-on set up: the providers only. Local accounts sign in at /admin. -#}
-  <div class="sso-buttons sso-primary">
-    {% for p in sso_providers %}<a class="button primary sso-{{ p.kind }}" href="/sso/{{ p.id }}/login">Sign in with {{ p.name }}</a>{% endfor %}
-  </div>
-  {% endif %}
-</section>
+{% extends "login_base.html" %}
+{% block sub %}{% if local %}Sign in to ComSense with a local account{% else %}Sign in to ComSense Firewall Manager{% endif %}{% endblock %}
+{% block card %}
+{% if local %}
+{#- /admin (or /login while no single sign-on provider is set up): a local account's username and password. -#}
+<form method="post" action="/login">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label class="f"><span>Username</span><input name="username" autocomplete="username" placeholder="Enter your username" required autofocus></label>
+  <label class="f"><span>Password</span><input name="password" type="password" autocomplete="current-password" placeholder="Enter your password" required></label>
+  <button class="btn primary">Continue</button>
+</form>
+{% if email_ready %}<p class="loginnote"><a href="/forgot">Forgot password?</a></p>{% endif %}
+{% if sso_providers %}<p class="loginnote"><a href="/login">Sign in with single sign-on instead</a></p>{% endif %}
+{% else %}
+{#- /login with single sign-on set up: the providers only. Local accounts sign in at /admin. -#}
+{% for p in sso_providers %}<a class="btn idp" href="/sso/{{ p.id }}/login"><span class="idplogo {{ p.kind if p.kind in ('entra', 'google', 'duo') else 'saml' }}" aria-hidden="true"></span>Sign in with {{ p.name }}</a>{% endfor %}
+{% endif %}
 {% endblock %}

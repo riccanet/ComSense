@@ -138,14 +138,17 @@ def test_security_headers(client):
 
 
 def test_theme_cookie_is_rendered_server_side(client):
-    assert 'data-theme="auto"' in client.get("/login").text
+    # The sign-in pages are always light (the Operations Console's design); the console follows the cookie.
+    assert 'data-theme' not in client.get("/login").text and 'class="loginwrap"' in client.get("/login").text
+    login(client)
+    assert 'data-theme="auto"' in client.get("/devices").text
     for theme in ("light", "dark", "auto"):
         client.cookies.set("csfm_theme", theme)
-        html = client.get("/login").text
+        html = client.get("/devices").text
         assert f'data-theme="{theme}"' in html
         assert f'data-theme-set="{theme}" aria-pressed="true"' in html
     client.cookies.set("csfm_theme", '"><script>x</script>')
-    assert 'data-theme="auto"' in client.get("/login").text
+    assert 'data-theme="auto"' in client.get("/devices").text
 
 
 def test_brand_assets_are_served(client):

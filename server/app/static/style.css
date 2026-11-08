@@ -465,3 +465,76 @@ nav.tabs.sub { margin-top: -.25rem; font-size: .92rem; }
 .log-table .act-block, .log-table .act-reject { color: var(--bad); }
 .log-table tr.row-block td, .log-table tr.row-reject td { background: color-mix(in srgb, var(--bad-bg) 45%, transparent); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---- sign-in pages (/login, /admin, the code step, forgotten and new passwords) ----
+   The RiccaNET Operations Console's sign-in design, as in NAS Console: a rounded card with a soft shadow
+   over a faint wash of the brand colour, Public Sans with Poppins headings (static/fonts, SIL OFL), white
+   provider buttons. ComSense's red and mark. Always light, and scoped to .loginwrap. */
+@font-face { font-family: "Public Sans"; src: url(/static/fonts/public-sans-latin-wght-normal.woff2) format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Poppins"; src: url(/static/fonts/poppins-latin-500-normal.woff2) format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Poppins"; src: url(/static/fonts/poppins-latin-600-normal.woff2) format("woff2"); font-weight: 600; font-display: swap; }
+body.signin { margin: 0; background: #f2f2f2; }
+main.loginwrap {
+  color-scheme: light;
+  --l-accent: #d7262e; --l-accent-hover: #b81f26; --l-ring: rgba(215, 38, 46, .16);
+  --l-text: #000; --l-text-2: #4d534f; --l-muted: #858c88; --l-border: #e4e6e4; --l-border-strong: #c9ccc9;
+  --l-bad: #c0261f; --l-bad-soft: #fbeeed; --l-ok: #0b6e3c; --l-ok-soft: #eef5f1;
+  max-width: none; margin: 0; min-height: 100vh; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center; padding: 24px 16px;
+  color: var(--l-text); font-family: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  background:
+    radial-gradient(1100px 600px at 12% -10%, rgba(215, 38, 46, .10), transparent 60%),
+    radial-gradient(900px 520px at 100% 110%, rgba(215, 38, 46, .07), transparent 60%),
+    linear-gradient(180deg, #fafafa 0%, #f2f2f2 100%);
+}
+.loginbox {
+  width: 100%; max-width: 400px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px;
+  padding: 36px 32px 28px; background: rgba(255, 255, 255, .92);
+  border: 1px solid rgba(17, 17, 17, .06); border-radius: 20px;
+  box-shadow: 0 1px 2px rgba(16, 24, 20, .04), 0 12px 32px -8px rgba(16, 24, 20, .12), 0 32px 64px -24px rgba(51, 51, 51, .18);
+  backdrop-filter: blur(8px); animation: loginrise .45s cubic-bezier(.2, .8, .2, 1) both;
+}
+@keyframes loginrise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .loginbox { animation: none; } }
+.loginlogo { display: flex; align-items: center; justify-content: center; gap: 11px; margin: 0 auto 4px; }
+.loginlogo span { font-family: "Poppins", "Public Sans", sans-serif; font-weight: 600; font-size: 22px; letter-spacing: -.01em; color: var(--l-text); }
+.loginhead { text-align: center; margin-bottom: 4px; }
+.loginhead h1 { font-family: "Poppins", "Public Sans", sans-serif; font-size: 21px; font-weight: 600; letter-spacing: -.015em; margin: 0; color: var(--l-text); }
+.loginhead p { margin: 6px 0 0; font-size: 13.5px; color: var(--l-muted); }
+.loginbox form { display: flex; flex-direction: column; gap: 14px; margin: 0; }
+.loginbox label.f { display: flex; flex-direction: column; gap: 7px; margin: 0; font-weight: normal; }
+.loginbox label.f > span { font-size: 12.5px; color: var(--l-text-2); font-weight: 500; }
+.loginbox input {
+  width: 100%; box-sizing: border-box; min-width: 0; padding: 11px 14px; font-size: 14px; font-family: inherit; color: var(--l-text);
+  background: #fff; border: 1px solid var(--l-border-strong); border-radius: 12px; transition: border-color .15s, box-shadow .15s;
+}
+.loginbox input::placeholder { color: var(--l-muted); }
+.loginbox input:hover { border-color: var(--l-muted); }
+.loginbox input:focus, .loginbox input:focus-visible { outline: none; border-color: var(--l-accent); box-shadow: 0 0 0 4px var(--l-ring); }
+.loginbox .btn {
+  display: flex; align-items: center; width: 100%; box-sizing: border-box; justify-content: center; gap: 10px; margin: 0;
+  padding: 11px 16px; font-size: 14px; font-weight: 600; font-family: inherit; border-radius: 12px; text-decoration: none;
+  cursor: pointer; transition: background-color .15s, border-color .15s, box-shadow .15s, transform .05s;
+}
+.loginbox .btn:active { transform: translateY(1px); }
+.loginbox .btn.primary { background: var(--l-accent); border: 1px solid var(--l-accent); color: #fff; box-shadow: 0 1px 2px rgba(215, 38, 46, .25), 0 6px 16px -6px rgba(215, 38, 46, .45); }
+.loginbox .btn.primary:hover { background: var(--l-accent-hover); border-color: var(--l-accent-hover); color: #fff; }
+.loginbox .btn:focus-visible { outline: none; box-shadow: 0 0 0 4px var(--l-ring); }
+.loginbox .btn.idp { background: #fff; color: var(--l-text); border: 1px solid var(--l-border-strong); box-shadow: 0 1px 2px rgba(16, 24, 20, .05); }
+.loginbox .btn.idp:hover { background: #fafafa; border-color: var(--l-muted); color: var(--l-text); text-decoration: none; }
+.idplogo { width: 16px; height: 16px; flex: none; }
+/* Microsoft's four squares, with the hairline gap between them. */
+.idplogo.entra {
+  background:
+    linear-gradient(#f25022, #f25022) 0 0 / 7.5px 7.5px no-repeat, linear-gradient(#7fba00, #7fba00) 100% 0 / 7.5px 7.5px no-repeat,
+    linear-gradient(#00a4ef, #00a4ef) 0 100% / 7.5px 7.5px no-repeat, linear-gradient(#ffb900, #ffb900) 100% 100% / 7.5px 7.5px no-repeat;
+}
+.idplogo.google { border-radius: 50%; background: conic-gradient(#ea4335 0 25%, #fbbc05 0 50%, #34a853 0 75%, #4285f4 0); }
+.idplogo.duo { border-radius: 4px; background: #6bbf4e; }
+.idplogo.saml { border-radius: 4px; background: var(--l-accent); }
+.loginerr, .logininfo { margin: 0; padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.4; }
+.loginerr { color: var(--l-bad); background: var(--l-bad-soft); border: 1px solid rgba(192, 38, 31, .18); }
+.logininfo { color: var(--l-ok); background: var(--l-ok-soft); border: 1px solid rgba(11, 110, 60, .18); }
+.loginnote { margin: 0; font-size: 13px; color: var(--l-text-2); text-align: center; line-height: 1.5; }
+.loginnote a, .loginfoot a { color: var(--l-accent); }
+.loginfoot { margin: 6px 0 0; text-align: center; font-size: 11.5px; color: var(--l-muted); }

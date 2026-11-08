@@ -146,7 +146,7 @@ def test_password_reset_by_email(client, db, smtp):
     link = re.search(r"https://comsense\.test(/reset/\S+)", _text(msg)).group(1)
 
     page = client.get(link)
-    assert "Set a new password for alice" in page.text
+    assert "Set a new password" in page.text and "For alice" in page.text
     csrf = csrf_from(page.text)
     done = client.post(link, data={"new": "alice-new-password", "confirm": "alice-new-password", "csrf_token": csrf})
     assert "Password changed" in done.text

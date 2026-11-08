@@ -327,6 +327,7 @@ def complete_login(request: Request, db: Session, user: User, method: str = "") 
 @router.post("/logout")
 def logout(request: Request):
     request.session.clear()
+    flash(request, "You have been signed out.", "info")
     return redirect("/login")
 
 

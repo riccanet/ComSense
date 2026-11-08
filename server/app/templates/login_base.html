@@ -1,0 +1,29 @@
+{#- Sign-in pages (/login, /admin, the code step, forgotten and new passwords): the RiccaNET Operations
+    Console's sign-in design, as in NAS Console, with ComSense's red and mark. Always light. -#}
+{% from "macros.html" import brand_mark with context %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>{% block title %}Sign in{% endblock %} · ComSense Firewall Manager</title>
+  <link rel="icon" href="/static/brand/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/brand/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/static/brand/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="signin">
+<main class="loginwrap">
+  <div class="loginbox">
+    <div class="loginlogo">{{ brand_mark(40, "login") }}<span>ComSense</span></div>
+    <div class="loginhead"><h1>{% block heading %}Welcome back{% endblock %}</h1><p>{% block sub %}Sign in to ComSense Firewall Manager{% endblock %}</p></div>
+    {% for category, message in flashes if category != "approved" %}
+    <p class="{{ 'loginerr' if category in ('error', 'warn') else 'logininfo' }}" role="{{ 'alert' if category == 'error' else 'status' }}">{{ message }}</p>
+    {% endfor %}
+    {% block card %}{% endblock %}
+    <p class="loginfoot">Authorized staff only</p>
+  </div>
+</main>
+</body>
+</html>

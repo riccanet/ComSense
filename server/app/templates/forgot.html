@@ -1,20 +1,17 @@
-{% extends "base.html" %}
-{% from "macros.html" import brand_lockup with context %}
+{% extends "login_base.html" %}
 {% block title %}Reset password{% endblock %}
-{% block content %}
-<section class="card narrow login">
-  <div class="login-brand">{{ brand_lockup(44, "login") }}</div>
-  <h2>Reset your password</h2>
-  {% if email_ready %}
-  <p class="muted">Enter your username or email address. If the account has an email address, we will send it a link to set a new password.</p>
-  <form method="post" action="/forgot" class="stack">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label>Username or email <input name="identifier" autocomplete="username" required autofocus></label>
-    <button class="primary">Send reset link</button>
-  </form>
-  {% else %}
-  <p class="muted">Email is not set up on this server, so reset links cannot be sent. Ask an administrator to reset your password.</p>
-  {% endif %}
-  <p class="small"><a href="/login">Back to sign in</a></p>
-</section>
+{% block heading %}Reset your password{% endblock %}
+{% block sub %}{% if email_ready %}We'll email a link to set a new one{% else %}Ask an administrator to reset it{% endif %}{% endblock %}
+{% block card %}
+{% if email_ready %}
+<p class="loginnote">Enter your username or email address. If the account has an email address, we will send it a link to set a new password.</p>
+<form method="post" action="/forgot">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label class="f"><span>Username or email</span><input name="identifier" autocomplete="username" required autofocus></label>
+  <button class="btn primary">Send reset link</button>
+</form>
+{% else %}
+<p class="loginnote">Email is not set up on this server, so reset links cannot be sent.</p>
+{% endif %}
+<p class="loginnote"><a href="/admin">Back to sign in</a></p>
 {% endblock %}
