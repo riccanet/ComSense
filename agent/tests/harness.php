@@ -13,6 +13,10 @@ if (!$dir) {
 	exit(2);
 }
 define('CSFM_DB_DIR', $dir . '/db');
+/* When "the firewall" last booted (upgrade reporting tests). */
+if (getenv('CSFM_TEST_BOOT_TIME')) {
+	define('CSFM_TEST_BOOT_TIME', (int)getenv('CSFM_TEST_BOOT_TIME'));
+}
 /* Pretend to be another agent version (self-update tests). */
 if (getenv('CSFM_TEST_AGENT_VERSION')) {
 	define('CSFM_AGENT_VERSION', getenv('CSFM_TEST_AGENT_VERSION'));
@@ -320,6 +324,12 @@ switch ($argv[1] ?? 'run') {
 		exit($r === 'wake' ? 0 : ($r === 'idle' ? 1 : 2));
 	case 'watchdog':
 		echo csfm_guard_watchdog() . "\n";
+		break;
+	case 'exec':
+		/* csfm_exec with a time limit: argv[2] the command, argv[3] the limit (seconds). */
+		$t0 = microtime(true);
+		list($rc, $out) = csfm_exec((string)$argv[2], (int)($argv[3] ?? 5));
+		echo json_encode(array('rc' => $rc, 'out' => $out, 'seconds' => round(microtime(true) - $t0, 1))) . "\n";
 		break;
 	case 'state':
 		echo json_encode(array('credentials' => csfm_credentials(), 'state' => csfm_state())) . "\n";

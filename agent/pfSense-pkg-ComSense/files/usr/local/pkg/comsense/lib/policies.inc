@@ -1081,7 +1081,7 @@ function csfm_apply_config_set($pid, $content, $prev) {
 /* ---------------------------------------------------------------- packages */
 
 function csfm_pkg_installed($name) {
-	exec(CSFM_PKG . ' info -e ' . escapeshellarg($name), $out, $rc);
+	list($rc, $unused) = csfm_exec(CSFM_PKG . ' info -e ' . escapeshellarg($name), 60);
 	return $rc === 0;
 }
 

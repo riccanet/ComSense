@@ -782,6 +782,27 @@ def test_full_lifecycle(env):
     stopped = task(tid)
     assert stopped.status == TaskStatus.failed and "at package 42 of 243 (boost-libs" in stopped.output, stopped.output
 
+    # 11c2c. An upgrade that has finished installing and is about to reboot ("Rebooting in 10 seconds", after
+    #        pfSense-upgrade has exited) is still running, not failed; it is failed only if the firewall then
+    #        boots and is still on the old version.
+    tid = queue(TaskType.upgrade_system, {})
+    agent(env, "run")
+    (env["fw"] / "upgrade.log").write_text(
+        "[2/2] Installing pfSense-pkg-Nexus-25.11.1_1...\n>>> Activating default for the next boot only...done.\n"
+        "System is going to be upgraded.  Rebooting in 10 seconds.\n>>> Unlocking package pkg...done.\n")
+    agent(env, "run", extra_env={"CSFM_TEST_BOOT_TIME": "1000"})
+    assert task(tid).status == TaskStatus.running, task(tid).output
+    agent(env, "run", extra_env={"CSFM_TEST_BOOT_TIME": str(int(time.time()) + 60)})
+    assert task(tid).status == TaskStatus.failed and "did not finish its first boot" in task(tid).output
+
+    # 11c2d. A command that does not finish in time is given up on, even one that ignores being stopped, and
+    #        the agent goes on at once instead of waiting for it (a stuck pkg-static held up check-ins for hours).
+    import json as _json
+    r = _json.loads(agent(env, "exec", "trap '' TERM; sleep 30", "2"))
+    assert r["rc"] == 124 and r["seconds"] < 5 and "stopped by the agent after 2 seconds" in r["out"], r
+    r = _json.loads(agent(env, "exec", "echo hello; exit 3", "5"))
+    assert r == {"rc": 3, "out": "hello", "seconds": r["seconds"]} and r["seconds"] < 1, r
+
     # 11c3. NetBird's wt0 is unassigned for the upgrade (pfSense removes the package, and the new version's first
     #       boot would stop at the interface mismatch prompt), and assigned again, as it was, once wt0 exists.
     netbird = {"if": "wt0", "descr": "NETBIRD", "enable": "", "ipaddr": "none"}

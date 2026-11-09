@@ -7,7 +7,7 @@
  */
 
 if (!defined('CSFM_AGENT_VERSION')) {
-	define('CSFM_AGENT_VERSION', '0.2.44');
+	define('CSFM_AGENT_VERSION', '0.2.45');
 }
 if (!defined('CSFM_DB_DIR')) {
 	/* Overridable so the agent can be exercised outside a firewall. */
@@ -299,13 +299,58 @@ function csfm_apply_enrollment_code(&$settings, $value) {
 	return $key;
 }
 
-/* Run a command with a hard timeout; returns array(exit code, combined output). */
+/*
+ * Run a command with a time limit; returns array(exit code, combined output).
+ *
+ * The agent never waits past the limit, whatever the command does. A command stuck in the kernel (pkg-static
+ * spinning on its database, a process waiting on the disk) cannot be killed, and timeout(1) then waits for it
+ * forever; at Saint Vincent one such pkg query held up check-ins for hours. So the command runs in the
+ * background with its output and exit code going to files, the agent polls for the exit code until the limit,
+ * and then kills what it can and goes on without waiting. Exit code 124 means the limit was reached.
+ */
 function csfm_exec($cmd, $timeout = 600) {
-	$full = csfm_env_prefix() . '/usr/bin/timeout ' . (int)$timeout . ' ' . $cmd . ' 2>&1';
-	$out = array();
-	$rc = 0;
-	exec($full, $out, $rc);
-	return array($rc, implode("\n", $out));
+	$base = tempnam(sys_get_temp_dir(), 'csfm-exec');
+	if ($base === false) {
+		$out = array();
+		exec(csfm_env_prefix() . '/usr/bin/timeout -k 5 ' . (int)$timeout . ' ' . $cmd . ' 2>&1', $out, $rc);
+		return array($rc, implode("\n", $out));
+	}
+	$outf = $base . '.out';
+	$rcf = $base . '.rc';
+	$script = '(' . csfm_env_prefix() . $cmd . ') >' . escapeshellarg($outf) . ' 2>&1 </dev/null; '
+	    . 'echo $? >' . escapeshellarg($rcf . '.tmp') . ' && mv ' . escapeshellarg($rcf . '.tmp') . ' ' . escapeshellarg($rcf);
+	$pids = array();
+	exec('/bin/sh -c ' . escapeshellarg($script) . ' >/dev/null 2>&1 & echo $!', $pids);
+	$pid = (int)($pids[0] ?? 0);
+	$deadline = microtime(true) + max(1, (int)$timeout);
+	$pause = 10000;
+	while (!file_exists($rcf) && microtime(true) < $deadline) {
+		usleep($pause);
+		$pause = min($pause * 2, 250000);
+	}
+	if (file_exists($rcf)) {
+		$rc = (int)trim((string)@file_get_contents($rcf));
+		$out = (string)@file_get_contents($outf);
+	} else {
+		if ($pid > 1) {
+			/* The command and what it started, then its shell; nothing here waits for them to go. */
+			exec('/bin/pkill -9 -P ' . $pid . ' >/dev/null 2>&1; /bin/kill -9 ' . $pid . ' >/dev/null 2>&1');
+		}
+		$rc = 124;
+		$out = (string)@file_get_contents($outf) . "\n[stopped by the agent after {$timeout} seconds]";
+		csfm_log("Gave up on a command after {$timeout} seconds: " . substr($cmd, 0, 160), LOG_WARNING);
+	}
+	@unlink($outf);
+	@unlink($rcf);
+	@unlink($rcf . '.tmp');
+	@unlink($base);
+	return array($rc, rtrim($out, "\n"));
+}
+
+/* csfm_exec, as an array of output lines (for parsing). */
+function csfm_exec_lines($cmd, $timeout) {
+	list($rc, $out) = csfm_exec($cmd, $timeout);
+	return array($rc, $out === '' ? array() : explode("\n", $out));
 }
 
 if (!defined('CSFM_HEARTBEAT_EVERY')) {
@@ -360,6 +405,11 @@ function csfm_exec_watched($cmd, $timeout, $step) {
 		usleep(500000);
 	}
 	fclose($pipes[1]);  /* without waiting for services the command left running, which may hold the pipe */
+	if ($rc === 124) {
+		/* Killed: proc_close would wait for it, forever if it is stuck in the kernel. Go on without. */
+		csfm_log("Gave up on a command after {$timeout} seconds: " . substr($cmd, 0, 160), LOG_WARNING);
+		return array(124, rtrim($out, "\n"));
+	}
 	$close = proc_close($proc);
 	if ($rc === null || $rc === -1) {
 		$rc = $close;

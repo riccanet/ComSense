@@ -487,6 +487,15 @@ function csfm_upgrade_progress($log) {
 	return array('percent' => $percent, 'step' => $name);
 }
 
+/* When this boot started (Unix time); 0 if unknown. */
+function csfm_boot_time() {
+	if (defined('CSFM_TEST_BOOT_TIME')) {
+		return (int)CSFM_TEST_BOOT_TIME;
+	}
+	list($rc, $out) = csfm_exec('/sbin/sysctl -n kern.boottime', 10);
+	return ($rc === 0 && preg_match('/sec = (\d+)/', $out, $m)) ? (int)$m[1] : 0;
+}
+
 /* Called at the start of each cycle to report on an upgrade that may have rebooted the box. */
 function csfm_finish_inflight_upgrade($client) {
 	$state = csfm_state();
@@ -510,8 +519,19 @@ function csfm_finish_inflight_upgrade($client) {
 		return;
 	}
 	$now = csfm_product_version();
+	if ($now === $up['from_version'] && preg_match('/Rebooting in \d+ seconds|System is going to be upgraded/', $log)
+	    && csfm_boot_time() < (int)$up['started'] && (time() - (int)$up['started']) < 4 * 3600) {
+		/* Finished installing and about to reboot into the new version (pfSense-upgrade has already exited):
+		   the outcome is known after the reboot, not now. */
+		return;
+	}
 	if ($now !== $up['from_version']) {
 		csfm_report_result($client, $up['task_id'], 'success', "Upgraded {$up['from_version']} -> {$now}\n" . csfm_truncate($log, 8000));
+	} elseif (preg_match('/Rebooting in \d+ seconds|System is going to be upgraded/', $log)) {
+		/* It installed the new version and rebooted into it, but came back on the old one. */
+		csfm_report_result($client, $up['task_id'], 'failed', "Not upgraded: the new version was installed, but the "
+		    . "firewall came back on {$now}: the new version did not finish its first boot (see the console), so "
+		    . "pfSense went back to the old one.\n" . csfm_truncate($log, 8000));
 	} elseif (preg_match_all('/\[(\d+)\/(\d+)\] (?:Upgrading|Installing|Reinstalling|Deinstalling|Extracting|Deleting) (\S+)/',
 	    $log, $steps, PREG_SET_ORDER)) {
 		/* It was installing the new version (into a new boot environment) and stopped part way. */

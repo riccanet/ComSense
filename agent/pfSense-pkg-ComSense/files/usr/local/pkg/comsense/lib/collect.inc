@@ -268,7 +268,7 @@ function csfm_collect_carp() {
 
 function csfm_collect_packages() {
 	$out = array();
-	exec('/usr/bin/timeout 60 ' . CSFM_PKG . " query -x '%n\t%v' '^pfSense-pkg-' 2>/dev/null", $lines);
+	list($rc, $lines) = csfm_exec_lines(CSFM_PKG . " query -x '%n\t%v' '^pfSense-pkg-' 2>/dev/null", 60);
 	foreach ($lines as $line) {
 		$parts = explode("\t", $line);
 		if (count($parts) === 2) {
@@ -281,7 +281,7 @@ function csfm_collect_packages() {
 /* Package upgrades available from the configured repository. */
 function csfm_outdated_packages() {
 	$out = array();
-	exec('/usr/bin/timeout 300 ' . CSFM_PKG . " version -vRl '<' 2>/dev/null", $lines);
+	list($rc, $lines) = csfm_exec_lines(CSFM_PKG . " version -vRl '<' 2>/dev/null", 300);
 	foreach ($lines as $line) {
 		if (preg_match('/^(\S+)-([^-\s]+)\s+<\s+needs updating \(remote has ([^)]+)\)/', $line, $m)) {
 			if (strpos($m[1], 'pfSense-pkg-') === 0) {
@@ -419,8 +419,7 @@ function csfm_boot_environments() {
 	if (!is_executable(CSFM_BECTL)) {
 		return array();
 	}
-	$lines = array();
-	exec('/usr/bin/timeout 15 ' . CSFM_BECTL . ' list -H 2>/dev/null', $lines, $rc);
+	list($rc, $lines) = csfm_exec_lines(CSFM_BECTL . ' list -H 2>/dev/null', 15);
 	if ($rc !== 0) {
 		return array();
 	}
@@ -468,12 +467,13 @@ define('CSFM_COMMAND_MAX', 160);
 
 function csfm_collect_processes() {
 	/* One -o per column: FreeBSD's ps reads everything after "=" as the header, commas included. */
-	exec('/usr/bin/timeout 20 /bin/ps -axww -o pid= -o user= -o pcpu= -o pmem= -o rss= -o time= -o state= -o command='
-	    . ' 2>/dev/null', $lines, $rc);
+	list($rc, $lines) = csfm_exec_lines('/bin/ps -axww -o pid= -o user= -o pcpu= -o pmem= -o rss= -o time= -o state= -o command='
+	    . ' 2>/dev/null', 20);
 	$all = array();
 	foreach ($lines as $line) {
 		$f = preg_split('/\s+/', trim($line), 8);
-		if (count($f) < 8 || !ctype_digit($f[0]) || strpos($f[7], '/bin/ps -axww -o pid= ') === 0) {
+		if (count($f) < 8 || !ctype_digit($f[0]) || strpos($f[7], '/bin/ps -axww -o pid= ') === 0
+		    || strpos($f[7], 'csfm-exec') !== false) {
 			continue;  /* also skip this ps itself */
 		}
 		$all[] = array(

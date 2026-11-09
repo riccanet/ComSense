@@ -32,7 +32,9 @@ fi
 while true; do
 	# --foreground: time out the cycle itself only. Without it timeout(1) also waits for
 	# every process the cycle starts (an agent update, pfSense-upgrade) and keeps the lock.
-	/usr/bin/lockf -s -t 0 "${LOCK}" /usr/bin/timeout --foreground 3600 "${PHP}" -f "${AGENT}" run >/dev/null 2>&1
+	# -k: a cycle that ignores the stop signal is killed 30 seconds later, so a stuck
+	# cycle cannot hold the lock (and stop check-ins) for more than an hour.
+	/usr/bin/lockf -s -t 0 "${LOCK}" /usr/bin/timeout --foreground -k 30 3600 "${PHP}" -f "${AGENT}" run >/dev/null 2>&1
 	if [ $? -eq 75 ]; then
 		# Another cycle holds the lock (e.g. a manual check-in): do not spin on /wait.
 		release_stale_lock
