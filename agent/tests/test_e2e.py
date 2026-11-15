@@ -1087,10 +1087,15 @@ def test_full_lifecycle(env):
     assert "pfblockerng dc" in actions and "pfblockerng updateip" in actions
     # The WAN forwards open to any (on wan and on opt1, a WAN with a gateway) now allow only the alias, with the
     # linked filter rule; the LAN one, the already limited one and other filter rules are as they were.
+    # The source is pfB_NAmerica_v4 plus the private networks, so the forwards still work from inside (NAT
+    # reflection copies the source to the LAN side, where clients have private addresses).
     srcs = {r["descr"]: r["source"] for r in cfg["nat"]["rule"]}
-    assert srcs == {"RDP": {"address": "pfB_NAmerica_v4"}, "DVR": {"address": "pfB_NAmerica_v4"},
+    assert srcs == {"RDP": {"address": "CS_NAmerica_v4_LAN"}, "DVR": {"address": "CS_NAmerica_v4_LAN"},
                     "inside": {"any": ""}, "vendor": {"address": "203.0.113.9"}}, srcs
-    assert [f["source"] for f in cfg["filter"]["rule"]] == [{"address": "pfB_NAmerica_v4"}, {"any": ""}]
+    assert [f["source"] for f in cfg["filter"]["rule"]] == [{"address": "CS_NAmerica_v4_LAN"}, {"any": ""}]
+    lan_alias = next(a for a in cfg["aliases"]["alias"] if a["name"] == "CS_NAmerica_v4_LAN")
+    assert lan_alias["type"] == "network"
+    assert lan_alias["address"] == "pfB_NAmerica_v4 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
     with env["db"]() as db:
         # While Force Reload IP ran (3 seconds here), the agent reported its progress, keeping the firewall online.
         applied = db.scalar(select(Task).where(Task.type == TaskType.apply_policy).order_by(Task.id.desc()))
@@ -1119,6 +1124,7 @@ def test_full_lifecycle(env):
     srcs = {r["descr"]: r["source"] for r in cfg["nat"]["rule"]}
     assert srcs["RDP"] == {"any": ""} and srcs["DVR"] == {"any": ""} and srcs["RDG"] == {"address": "pfB_NAmerica_v4"}
     assert cfg["filter"]["rule"][0]["source"] == {"any": ""}
+    assert "CS_NAmerica_v4_LAN" not in {a["name"] for a in cfg["aliases"]["alias"]}  # no longer used: removed
     del cfg["nat"], cfg["aliases"], cfg["filter"], cfg["interfaces"]
     for s in list(cfg["installedpackages"]):
         if s.startswith("pfblockerng"):

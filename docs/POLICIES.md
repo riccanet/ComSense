@@ -148,8 +148,12 @@ under Configurations > pfBlocker GeoIP, which can copy the settings from a firew
 * `maxmind_account` / `maxmind_key`: GeoIP needs a (free) MaxMind account. The key is stored encrypted with the
   server's secret key, shown hidden, and sent in clear only to the firewall.
 * `limit_port_forwards` (optional, default false): every port forward on a WAN interface (`wan`, or any interface
-  with a gateway or a DHCP/PPPoE address) whose source is **any** gets the permitted region's IPv4 alias
-  (`pfB_NAmerica_v4`) as its source, and so does its linked filter rule. ComSense port forward configurations
+  with a gateway or a DHCP/PPPoE address) whose source is **any**, or the GeoIP alias alone, gets the alias
+  `CS_<region>_v4_LAN` (e.g. `CS_NAmerica_v4_LAN`: `pfB_NAmerica_v4` plus 10.0.0.0/8, 172.16.0.0/12 and
+  192.168.0.0/16) as its source, and so does its linked filter rule. The private networks are there for NAT
+  reflection: a forward reached from inside by its public address gets a LAN-side copy of its rule with the same
+  source, which internal clients would not match with the GeoIP alias alone; private addresses never arrive from
+  the internet, so they do not open the forward to anyone outside. ComSense port forward configurations
   are left alone. Forwards added later are limited the next time the configuration is applied. Turning the
   option off, or removing the configuration, puts the forwards it changed back to **any**. If the rules do not
   load with the forwards limited, they are put back and the apply fails.
