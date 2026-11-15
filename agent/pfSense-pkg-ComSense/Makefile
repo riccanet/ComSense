@@ -1,5 +1,5 @@
 PORTNAME=	pfSense-pkg-ComSense
-PORTVERSION=	0.2.49
+PORTVERSION=	0.2.50
 CATEGORIES=	sysutils
 MASTER_SITES=	# empty
 DISTFILES=	# empty

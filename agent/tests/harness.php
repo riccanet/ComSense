@@ -126,6 +126,7 @@ PHP
 /* VPNs: swanctl prints $dir/swanctl-sas.txt and $dir/swanctl-conns.txt, wg prints $dir/wg-dump.txt, ifconfig -l -u
    prints $dir/ifup.txt; every other call is logged to actions.log. */
 define('CSFM_VPN_SETTLE', 0);
+define('CSFM_VPN_EVERY', 0);
 foreach (array('swanctl' => "if [ \"\$1\" = --list-sas ]; then cat \"\$D/swanctl-sas.txt\" 2>/dev/null; exit 0; fi\n"
                            . "if [ \"\$1\" = --list-conns ]; then cat \"\$D/swanctl-conns.txt\" 2>/dev/null; exit 0; fi\n",
                'wg' => "if [ \"\$1 \$2 \$3\" = \"show all dump\" ]; then cat \"\$D/wg-dump.txt\" 2>/dev/null; exit 0; fi\n",

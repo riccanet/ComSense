@@ -20,8 +20,14 @@ require_once(__DIR__ . '/common.inc');
 if (!defined('CSFM_SWANCTL')) {
 	define('CSFM_SWANCTL', '/usr/local/sbin/swanctl');
 }
+/* wg: the WireGuard package's wireguard-tools, or FreeBSD's own (14 and later). */
 if (!defined('CSFM_WG')) {
-	define('CSFM_WG', '/usr/local/bin/wg');
+	define('CSFM_WG', is_executable('/usr/local/bin/wg') ? '/usr/local/bin/wg' : '/usr/bin/wg');
+}
+/* VPN status is read at most this often (seconds); between reads the agent reports the last one. Each read is
+   a few lines in the IPsec log (strongSwan logs every vici client). */
+if (!defined('CSFM_VPN_EVERY')) {
+	define('CSFM_VPN_EVERY', 180);
 }
 if (!defined('CSFM_IFCONFIG')) {
 	define('CSFM_IFCONFIG', '/sbin/ifconfig');
@@ -116,6 +122,11 @@ function csfm_collect_ipsec() {
 		}
 	}
 	$sas = csfm_ipsec_sas();
+	/* Tunnels seen connected since monitoring started. pfSense brings a tunnel up on demand by default (its
+	   traffic triggers it), so one that never came up is idle rather than broken. */
+	$seen = csfm_state()['vpn_seen_up'] ?? array();
+	$seen = is_array($seen) ? $seen : array();
+	$seen_before = $seen;
 	$out = array();
 	foreach ($phase1 as $p1) {
 		$ikeid = (string)($p1['ikeid'] ?? '');
@@ -172,6 +183,12 @@ function csfm_collect_ipsec() {
 			if ($mobile) {
 				$entry['status'] = $mobile_up > 0 ? 'up' : 'idle';
 				$entry['clients'] = $mobile_up;
+			} elseif ($state === 'ESTABLISHED') {
+				$seen[$ikeid] = true;
+			} elseif ($entry['status'] === 'down' && empty($seen[$ikeid])
+			    && (string)($p1['startaction'] ?? '') !== 'start') {
+				$entry['status'] = 'idle';
+				$entry['detail'] = 'on demand: not connected since monitoring started';
 			}
 			$entry['children_up'] = $installed;
 			$entry['connected_for'] = $established;
@@ -183,6 +200,9 @@ function csfm_collect_ipsec() {
 		if (count($out) >= CSFM_VPN_MAX) {
 			break;
 		}
+	}
+	if ($sas !== null && $seen !== $seen_before) {
+		csfm_state_set('vpn_seen_up', $seen);
 	}
 	return $out;
 }
@@ -505,7 +525,8 @@ function csfm_wg_interfaces_up() {
 
 function csfm_collect_wireguard() {
 	$tunnels = csfm_vpn_list('installedpackages/wireguard/tunnels/item');
-	if (!$tunnels) {
+	$settings = csfm_vpn_list('installedpackages/wireguard/config');
+	if (!$tunnels || (($settings[0]['enable'] ?? 'on') === 'off')) {  /* VPN > WireGuard > Settings: off */
 		return array();
 	}
 	$peers_cfg = csfm_vpn_list('installedpackages/wireguard/peers/item');
@@ -513,6 +534,9 @@ function csfm_collect_wireguard() {
 	if (is_executable(CSFM_WG)) {
 		list($rc, $out) = csfm_exec(escapeshellarg(CSFM_WG) . ' show all dump', 15);
 		$live = $rc === 0 ? csfm_parse_wg_dump($out) : null;
+		if ($live === null) {
+			csfm_log('wg show failed: ' . csfm_truncate(trim($out), 200), LOG_WARNING);
+		}
 	}
 	$up = csfm_wg_interfaces_up();
 	$now = time();
@@ -689,7 +713,12 @@ function csfm_vpn_down_keys($vpn) {
 	return $down;
 }
 
-function csfm_collect_vpn() {
+function csfm_collect_vpn($force = false) {
+	$cache = csfm_state()['vpn_cache'] ?? null;
+	if (!$force && is_array($cache) && is_array($cache['vpn'] ?? null)
+	    && time() - (int)($cache['time'] ?? 0) < CSFM_VPN_EVERY && ($cache['agent'] ?? '') === CSFM_AGENT_VERSION) {
+		return $cache['vpn'];
+	}
 	$vpn = array(
 		'ipsec' => csfm_section('ipsec', 'csfm_collect_ipsec'),
 		'openvpn' => csfm_section('openvpn', 'csfm_collect_openvpn'),
@@ -719,6 +748,7 @@ function csfm_collect_vpn() {
 		}
 	}
 	$vpn['collected'] = $now;
+	csfm_state_set('vpn_cache', array('time' => $now, 'agent' => CSFM_AGENT_VERSION, 'vpn' => $vpn));
 	return $vpn;
 }
 
@@ -745,7 +775,7 @@ function csfm_task_vpn_control($client, $id, $payload) {
 	csfm_log("VPN {$kind} {$label}: {$action}");
 	/* Give the tunnel a moment, then report how it looks now. */
 	sleep($action === 'disconnect' || $action === 'kick' ? min(2, CSFM_VPN_SETTLE) : CSFM_VPN_SETTLE);
-	$vpn = csfm_collect_vpn();
+	$vpn = csfm_collect_vpn(true);
 	$now = '';
 	foreach ($vpn[$kind] ?? array() as $t) {
 		if ((string)$t['id'] === $target) {

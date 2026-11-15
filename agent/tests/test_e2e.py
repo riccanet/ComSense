@@ -1137,9 +1137,11 @@ def test_full_lifecycle(env):
     cfg = fw_config(env)
     cfg["ipsec"] = {"phase1": [
         {"ikeid": "1", "descr": "HQ", "remote-gateway": "198.51.100.1", "iketype": "ikev2"},
-        {"ikeid": "2", "descr": "Branch", "remote-gateway": "203.0.113.9", "iketype": "ikev2"},
+        {"ikeid": "2", "descr": "Branch", "remote-gateway": "203.0.113.9", "iketype": "ikev2", "startaction": "start"},
+        {"ikeid": "4", "descr": "On demand", "remote-gateway": "192.0.2.4", "iketype": "ikev2"},
         {"ikeid": "3", "descr": "Old", "remote-gateway": "192.0.2.3", "disabled": ""}],
-        "phase2": [{"ikeid": "1", "mode": "tunnel"}, {"ikeid": "1", "mode": "tunnel"}, {"ikeid": "2", "mode": "tunnel"}]}
+        "phase2": [{"ikeid": "1", "mode": "tunnel"}, {"ikeid": "1", "mode": "tunnel"}, {"ikeid": "2", "mode": "tunnel"},
+                  {"ikeid": "4", "mode": "tunnel"}]}
     cfg["openvpn"] = {"openvpn-server": [{"vpnid": "1", "description": "Remote users", "mode": "server_tls_user"}],
                       "openvpn-client": [{"vpnid": "2", "description": "To DC", "server_addr": "dc.example.net",
                                           "server_port": "1194"}]}
@@ -1191,7 +1193,9 @@ def test_full_lifecycle(env):
         vpn = dev.inventory["vpn"]
         assert "PRIVATEKEYMUSTNOTLEAVE" not in json.dumps(dev.inventory)
         ipsec = {t["id"]: t for t in vpn["ipsec"]}
-        assert set(ipsec) == {"1", "2"}  # the disabled one is left out
+        assert set(ipsec) == {"1", "2", "4"}  # the disabled one is left out
+        # Never connected, and pfSense starts it on demand: idle, not down.
+        assert ipsec["4"]["status"] == "idle" and "down_since" not in ipsec["4"]
         # Two phase 2s on IKEv2 share one child SA.
         assert ipsec["1"]["status"] == "up" and ipsec["1"]["children_expected"] == 1, ipsec["1"]
         assert ipsec["1"]["bytes_in"] == 12345 and ipsec["1"]["connected_for"] == 3600

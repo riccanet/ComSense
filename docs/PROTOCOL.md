@@ -55,12 +55,13 @@ Body: the agent's report.
 ```
 
 `vpn` (agent 0.2.49+) holds the tunnels: `ipsec` (one per enabled phase 1: `id` = ikeid, `status` up, partial,
-down or idle for mobile, `children_up`/`children_expected`, `remote`, `mobile`, `responder`), `openvpn` (`id`
+down, or idle (mobile with no clients, or an on-demand tunnel not connected since monitoring started), `children_up`/`children_expected`, `remote`, `mobile`, `responder`), `openvpn` (`id`
 `server:<vpnid>` or `client:<vpnid>`, `status`, `p2p`, remote access servers' `connections` with `client_id`)
 and `wireguard` (`id` = tun_wg interface, `interface_up`, `peers` with `id` (first 12 hex digits of the
 SHA-256 of the public key), `endpoint`, `keepalive`, `handshake_age`, `status` up, idle or down). A tunnel
 that is down carries `down_since` (Unix time the agent first saw it down); `collected` is the agent's clock.
-WireGuard private and preshared keys are never reported.
+WireGuard private and preshared keys are never reported. The agent reads VPN status at most every 3
+minutes (each read logs a few lines in the IPsec log) and repeats the last one in between.
 
 `change_guard` is present while a change is on probation. `rollbacks` lists rollbacks not yet
 acknowledged; the agent drops them after a successful check-in, and the server ignores repeats by

@@ -54,7 +54,7 @@ own, and a reboot restores everything. To keep a tunnel down, disable it in pfSe
     {% for t in ipsec %}{% set r = t.raw %}
       <tr>
         <td>{{ t.name }}{% if r.get('responder') %} <span class="muted small" title="Waits for the other side to connect">responder</span>{% endif %}</td>
-        <td>{{ status_badge(t.status) }}{% if r.get('down_since') and t.status != "up" %} <span class="small muted">since {{ r.get('down_since')|ago_ts }}</span>{% endif %}</td>
+        <td>{{ status_badge(t.status) }}{% if r.get('down_since') and t.status != "up" %} <span class="small muted">since {{ r.get('down_since')|ago_ts }}</span>{% endif %}{% if t.detail and t.status != "up" %} <span class="small muted">{{ t.detail }}</span>{% endif %}</td>
         <td class="mono small">{% if r.get('mobile') %}{{ r.get('clients') or 0 }} mobile client{{ "" if r.get('clients') == 1 else "s" }}{% else %}{{ t.remote }}{% if r.get('remote_address') and r.get('remote_address') != t.remote %} ({{ r.get('remote_address') }}){% endif %}{% endif %}</td>
         <td class="hide-sm small">{% if not r.get('mobile') %}{{ r.get('children_up') if r.get('children_up') is not none else "?" }} / {{ r.get('children_expected') if r.get('children_expected') is not none else "?" }}{% endif %}</td>
         <td class="hide-sm small">{{ human_seconds(r.get('connected_for')) }}</td>
