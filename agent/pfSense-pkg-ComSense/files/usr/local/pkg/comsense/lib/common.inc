@@ -7,7 +7,7 @@
  */
 
 if (!defined('CSFM_AGENT_VERSION')) {
-	define('CSFM_AGENT_VERSION', '0.2.47');
+	define('CSFM_AGENT_VERSION', '0.2.48');
 }
 if (!defined('CSFM_DB_DIR')) {
 	/* Overridable so the agent can be exercised outside a firewall. */
@@ -464,11 +464,28 @@ function csfm_truncate($text, $limit = 60000) {
  * previous rules, or none after a boot, when its ruleset fails to load (a bad table file left by a removed
  * package, say), and then nothing is NATed: the firewall stays online while everything behind it is cut off.
  */
+if (!defined('CSFM_RULES_RETRY_WAIT')) {
+	/* Seconds between checks of a ruleset that did not load (see csfm_rules_error). */
+	define('CSFM_RULES_RETRY_WAIT', 5);
+}
+
 function csfm_rules_error() {
 	if (!is_file(CSFM_RULES_DEBUG)) {
 		return '';
 	}
-	$out = array();
-	exec(escapeshellarg(CSFM_PFCTL) . ' -nf ' . escapeshellarg(CSFM_RULES_DEBUG) . ' 2>&1', $out, $rc);
-	return $rc === 0 ? '' : csfm_truncate(trim(implode("\n", $out)) ?: "pfctl exit code {$rc}", 500);
+	/* pfSense rewrites rules.debug on every filter reload, and pfBlockerNG starts one of its own in the background
+	   after an update: a check that reads the file half written sees errors that are not there ("unknown protocol
+	   udEST", "Rules must be in order"). So an error counts only if it is still there after a few checks. */
+	$error = '';
+	for ($try = 0; $try < 4; $try++) {
+		if ($try > 0) {
+			sleep(CSFM_RULES_RETRY_WAIT);
+		}
+		list($rc, $out) = csfm_exec(escapeshellarg(CSFM_PFCTL) . ' -nf ' . escapeshellarg(CSFM_RULES_DEBUG), 60);
+		if ($rc === 0) {
+			return '';
+		}
+		$error = csfm_truncate(trim($out) ?: "pfctl exit code {$rc}", 500);
+	}
+	return $error;
 }

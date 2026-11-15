@@ -13,6 +13,7 @@ if (!$dir) {
 	exit(2);
 }
 define('CSFM_DB_DIR', $dir . '/db');
+define('CSFM_RULES_RETRY_WAIT', 0);
 /* When "the firewall" last booted (upgrade reporting tests). */
 if (getenv('CSFM_TEST_BOOT_TIME')) {
 	define('CSFM_TEST_BOOT_TIME', (int)getenv('CSFM_TEST_BOOT_TIME'));
