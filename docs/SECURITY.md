@@ -96,6 +96,21 @@ guarded on both sides:
 * The terminal page relaxes the Content Security Policy for styles only (`style-src 'unsafe-inline'`,
   needed by xterm.js); scripts stay restricted to the console's own files.
 
+### Deleting a firewall
+
+Deleting a firewall removes its history, tasks, alerts, terminal recordings and configuration backups
+and revokes its agent token, so it needs the same protection as the terminal:
+
+* **Admins only.** The admin types the firewall's name and approves with MFA: a code from their
+  authenticator app, or, if they signed in with single sign-on, a fresh sign-in to the provider with the
+  same checks as terminal approval (same user, signed, within 5 minutes, MFA reported by Entra). Five
+  wrong codes lock deletion for 15 minutes. A provider approval for a deletion cannot open a terminal and
+  the other way round.
+* A firewall that enrolled but was never approved (pending) is rejected without MFA: it has nothing in
+  the console yet.
+* Deletions and refused approvals (`device.delete_denied`) are in the audit log, with how the deletion was
+  approved.
+
 Policies are validated on both ends; `config_set` cannot touch users, groups, authentication servers,
 certificates, the agent's own settings or anything that runs commands (shellcmd, cron, the Filer and Sudo
 packages), nor any path above those (`system` as a whole), and only admins can create or change one.

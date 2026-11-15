@@ -103,7 +103,8 @@ def test_update_and_delete_customer(client, db, agent):
     creds = enroll(agent, key)
     resp = client.post(f"/customers/{acme.id}/delete", data={"csrf_token": csrf})
     assert "Move its firewalls" in resp.text
-    client.post(f"/devices/{creds['device_id']}/delete", data={"csrf_token": csrf})
+    db.delete(db.get(Device, creds["device_id"]))
+    db.commit()
     client.post(f"/customers/{acme.id}/delete", data={"csrf_token": csrf})
     db.expire_all()
     assert db.scalar(select(Organization)) is None

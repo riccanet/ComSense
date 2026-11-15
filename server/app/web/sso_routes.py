@@ -58,6 +58,9 @@ def sso_login(provider_id: int, request: Request, settings: Settings = Depends(g
     return response
 
 
+STEP_UP_PAGES = {"terminal": "terminal", "delete": "delete"}  # purpose kind -> /devices/{id}/<page>/sso/{token}
+
+
 def step_up_redirect(provider: SsoProvider, console_url: str, settings: Settings, purpose: dict,
                      device_id: str) -> RedirectResponse:
     """Send a signed-in user back to the provider to sign in again (ForceAuthn: its MFA runs again) to
@@ -67,7 +70,8 @@ def step_up_redirect(provider: SsoProvider, console_url: str, settings: Settings
     cookie = dict(max_age=sso.REQUEST_TTL, path="/sso/", httponly=True, secure=settings.secure_cookies,
                   samesite="none" if settings.secure_cookies else "lax")
     response.set_cookie(sso.NONCE_COOKIE, nonce, **cookie)
-    response.set_cookie(sso.STEP_UP_COOKIE, device_id, **cookie)
+    kind = purpose.get("kind", "terminal")
+    response.set_cookie(sso.STEP_UP_COOKIE, device_id if kind == "terminal" else f"{kind}:{device_id}", **cookie)
     return response
 
 
@@ -100,14 +104,14 @@ def sso_acs(
         audit(db, "system", "login.sso_failed", target=provider.name, detail=str(exc)[:500], ip=_ip(request))
         db.commit()
         if step_up_device:
-            # Approving a terminal: the user is signed in to the console, and touching the (absent) session
+            # Approving a terminal or a deletion: the user is signed in to the console, and touching the (absent) session
             # here would replace their session cookie. Hand the error to the console page instead.
             return _step_up_continue(step_up_device, {"error": f"{provider.name}: {exc}"}, request)
         flash(request, f"Sign-in with {provider.name} failed: {exc}", "error")
         return _continue("/login", request)
 
     purpose = identity.purpose or {}
-    if purpose.get("kind") == "terminal":
+    if purpose.get("kind") in STEP_UP_PAGES:
         return _terminal_step_up(db, provider, identity, purpose, request)
 
     user = db.scalar(select(User).where(or_(func.lower(User.email) == identity.email,
@@ -140,18 +144,25 @@ def sso_acs(
     return _continue(destination, request)
 
 
-def _step_up_continue(device_id: str, data: dict, request: Request) -> HTMLResponse:
-    token = sso.issue_handoff({**data, "device_id": device_id})
-    response = _continue(f"/devices/{quote(device_id, safe='')}/terminal/sso/{token}", request)
+def _step_up_continue(target: str, data: dict, request: Request) -> HTMLResponse:
+    """target is the step-up cookie: a device id (terminal) or "<kind>:<device id>"."""
+    kind, _, device_id = target.rpartition(":")
+    page = STEP_UP_PAGES.get(kind or "terminal", "terminal")
+    token = sso.issue_handoff({**data, "device_id": device_id, "kind": kind or "terminal"})
+    response = _continue(f"/devices/{quote(device_id, safe='')}/{page}/sso/{token}", request)
     response.delete_cookie(sso.STEP_UP_COOKIE, path="/sso/")
     return response
 
 
 def _terminal_step_up(db: Session, provider: SsoProvider, identity: sso.SsoIdentity, purpose: dict,
                       request: Request) -> HTMLResponse:
-    """The provider's answer to "approve this terminal session": the same user, signed in again just now
-    (and with Entra, with MFA). Hands a one-time approval to /devices/{id}/terminal/sso/{token}."""
+    """The provider's answer to "approve this terminal session" (or "delete this firewall"): the same user,
+    signed in again just now (and with Entra, with MFA). Hands a one-time approval to
+    /devices/{id}/terminal/sso/{token} (or /delete/sso/{token})."""
     device_id = str(purpose.get("device_id", ""))
+    kind = purpose.get("kind", "terminal")
+    target = device_id if kind == "terminal" else f"{kind}:{device_id}"
+    denied = "terminal.denied" if kind == "terminal" else "device.delete_denied"
     user = db.get(User, purpose.get("user_id"))
     known = {(user.email or "").lower(), (user.username or "").lower()} if user else set()
     problem = ""
@@ -160,12 +171,12 @@ def _terminal_step_up(db: Session, provider: SsoProvider, identity: sso.SsoIdent
     else:
         problem = sso.step_up_problem(identity, provider)
     if problem:
-        audit(db, user.username if user else "system", "terminal.denied", target=device_id,
+        audit(db, user.username if user else "system", denied, target=device_id,
               detail=f"{provider.name}: {problem}"[:500], ip=_ip(request))
         db.commit()
-        return _step_up_continue(device_id, {"error": f"Not approved: {problem}."}, request)
+        return _step_up_continue(target, {"error": f"Not approved: {problem}."}, request)
     methods = ", ".join(m.rstrip("/").rsplit("/", 1)[-1] for m in identity.methods) or "re-authentication"
-    return _step_up_continue(device_id, {"user_id": user.id, "approved_by": f"{provider.name} ({methods})"},
+    return _step_up_continue(target, {"user_id": user.id, "approved_by": f"{provider.name} ({methods})"},
                              request)
 
 

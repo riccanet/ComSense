@@ -155,7 +155,7 @@ def terminal_approved_sso(device_id: str, token: str, request: Request, user: Us
     device = _get_device(db, device_id)
     back = f"/devices/{device_id}/terminal"
     data = sso_svc.take_handoff(token)
-    if data is None or data.get("device_id") != device.id:
+    if data is None or data.get("kind", "terminal") != "terminal" or data.get("device_id") != device.id:
         flash(request, "That approval has expired or was already used. Approve again.", "error")
         return redirect(back)
     if data.get("error"):

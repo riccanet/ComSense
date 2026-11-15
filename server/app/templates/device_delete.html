@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}Delete · {{ device.name }}{% endblock %}
+{% block content %}
+<p class="small"><a href="/devices/{{ device.id }}">&larr; {{ device.name }}</a></p>
+<h1>Delete firewall</h1>
+<section class="card terminal-card">
+  <p>This permanently deletes <strong>{{ device.name }}</strong> from ComSense: its history, alerts, tasks, terminal
+  recordings and all {{ device.backups|length }} configuration backup{{ "" if device.backups|length == 1 else "s" }}.
+  It cannot be undone. Its agent token stops working, so the firewall needs a new enrollment key to come back.</p>
+  <dl>
+    <dt>Status</dt><dd>{{ device.status.value }}</dd>
+    <dt>Last seen</dt><dd>{{ device.last_seen_at|ago if device.last_seen_at else "never" }}{% if device.last_seen_ip %} from {{ device.last_seen_ip }}{% endif %}</dd>
+  </dl>
+  {% if device.status.value == "online" %}
+  <p class="flash error">{{ device.name }} is still checking in. If it is in use, remove the ComSense package in
+  Package Manager on the firewall first; otherwise its agent keeps trying and is turned away.</p>
+  {% endif %}
+
+  {% if needs_totp %}
+  <h2>Authenticator app required</h2>
+  <p>Deleting a firewall is approved with a code from your authenticator app. You have not set one up.</p>
+  <p><a class="button primary" href="/account#mfa">Set up an authenticator app</a></p>
+  {% elif sso %}
+  <h2>Approve with {{ sso.name }}</h2>
+  <form method="post" action="/devices/{{ device.id }}/delete/sso" class="stack">
+    {{ csrf() }}
+    <label>Type the firewall's name to confirm
+      <input name="confirm_name" autocomplete="off" required placeholder="{{ device.name }}">
+    </label>
+    <div><button class="danger sso-{{ sso.kind }}">Approve with {{ sso.name }} and delete</button></div>
+  </form>
+  <p class="muted small">You sign in to {{ sso.name }} again{% if sso.kind == "entra" %} and Entra runs its
+  multi-factor check (for example a push to Microsoft Authenticator){% endif %}; the firewall is deleted when you
+  come back.</p>
+  {% if user.totp_enabled %}
+  <details class="small"><summary>Use your authenticator app instead</summary>
+  <form method="post" action="/devices/{{ device.id }}/delete" class="stack">
+    {{ csrf() }}
+    <label>Type the firewall's name to confirm
+      <input name="confirm_name" autocomplete="off" required placeholder="{{ device.name }}">
+    </label>
+    <label>Authenticator code
+      <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required>
+    </label>
+    <div><button class="danger">Delete firewall</button></div>
+  </form>
+  </details>
+  {% endif %}
+  {% else %}
+  <form method="post" action="/devices/{{ device.id }}/delete" class="stack">
+    {{ csrf() }}
+    <label>Type the firewall's name to confirm
+      <input name="confirm_name" autocomplete="off" required placeholder="{{ device.name }}" autofocus>
+    </label>
+    <label>Authenticator code
+      <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required>
+    </label>
+    <div><button class="danger">Delete firewall</button></div>
+  </form>
+  <p class="muted small">Each code works once, so the code you signed in with cannot be used again: wait for the next one.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -433,7 +433,7 @@
     {% else %}
       <form method="post" action="/devices/{{ device.id }}/status" class="inline" data-confirm="Disable this firewall? Its agent will be rejected until re-enabled.">{{ csrf() }}<input type="hidden" name="action" value="disable"><button class="danger">Disable</button></form>
     {% endif %}
-    {{ post_button("/devices/" ~ device.id ~ "/delete", "Delete firewall", "danger", "Delete this firewall, its history and all of its backups? The agent will need a new enrollment key.") }}
+    <a class="button danger" href="/devices/{{ device.id }}/delete" title="Approved with your authenticator app or single sign-on">Delete firewall</a>
   </div>
   {% endif %}
 </section>

@@ -1293,26 +1293,6 @@ def device_set_status(
     return redirect(local_path(next, f"/devices/{device_id}"))
 
 
-@router.post("/devices/{device_id}/delete")
-def device_delete(
-    device_id: str,
-    request: Request,
-    next: str = Form(""),  # noqa: A002 - the form field
-    settings: Settings = Depends(get_settings),
-    user: User = Depends(admin),
-    db: Session = Depends(get_db),
-):
-    device = _get_device(db, device_id)
-    for backup in device.backups:
-        delete_backup_file(settings, backup)
-    audit(db, user.username, "device.deleted", target=device.id, detail=device.name, ip=_ip(request))
-    db.delete(device)
-    db.commit()
-    flash(request, "Device and its backups were deleted. Its token no longer works.", "success")
-    back = local_path(next, "/devices")
-    return redirect("/devices" if back.startswith(f"/devices/{device_id}") else back)
-
-
 @router.post("/devices/{device_id}/policies")
 def device_assign_policy(
     device_id: str,

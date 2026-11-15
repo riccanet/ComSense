@@ -23,6 +23,9 @@
     {% if can_operate and device.status.value not in ("pending", "disabled") %}
     <a class="button" href="/devices/{{ device.id }}/terminal" title="Root shell on this firewall; approved with your authenticator app">Terminal</a>
     {% endif %}
+    {% if is_admin and device.status.value in ("offline", "disabled") %}
+    <a class="button danger" href="/devices/{{ device.id }}/delete" title="Remove a firewall that no longer responds; approved with your authenticator app or single sign-on">Delete</a>
+    {% endif %}
     {% if is_admin and device.status.value == "pending" %}
     <form method="post" action="/devices/{{ device.id }}/status" class="inline">
       {{ csrf() }}<input type="hidden" name="action" value="approve"><button class="primary">Approve</button>
