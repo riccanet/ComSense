@@ -20,9 +20,10 @@ require_once(__DIR__ . '/common.inc');
 if (!defined('CSFM_SWANCTL')) {
 	define('CSFM_SWANCTL', '/usr/local/sbin/swanctl');
 }
-/* wg: the WireGuard package's wireguard-tools, or FreeBSD's own (14 and later). */
-if (!defined('CSFM_WG')) {
-	define('CSFM_WG', is_executable('/usr/local/bin/wg') ? '/usr/local/bin/wg' : '/usr/bin/wg');
+/* wg candidates, tried in order: FreeBSD's own wg(8), then wireguard-tools. On pfSense Plus /usr/local/bin/wg
+   can be something else that answers "Config file not specified", so the first one that answers wins. */
+if (!defined('CSFM_WG_CANDIDATES')) {
+	define('CSFM_WG_CANDIDATES', defined('CSFM_WG') ? CSFM_WG : '/usr/bin/wg /usr/local/bin/wg /usr/local/sbin/wg');
 }
 /* VPN status is read at most this often (seconds); between reads the agent reports the last one. Each read is
    a few lines in the IPsec log (strongSwan logs every vici client). */
@@ -518,6 +519,39 @@ function csfm_parse_wg_dump($text) {
 	return $peers;
 }
 
+/* The wg that answers "show all dump" (null if none does), remembered for this run. */
+function csfm_wg_bin() {
+	static $bin = false;
+	if ($bin === false) {
+		$bin = null;
+		$errors = array();
+		foreach (preg_split('/\s+/', trim(CSFM_WG_CANDIDATES)) as $c) {
+			if (!is_executable($c)) {
+				continue;
+			}
+			list($rc, $out) = csfm_exec(escapeshellarg($c) . ' show all dump', 15);
+			if ($rc === 0) {
+				$bin = $c;
+				break;
+			}
+			$errors[] = "{$c}: " . csfm_truncate(trim($out), 120);
+		}
+		if ($bin === null) {
+			csfm_log('wg show failed: ' . ($errors ? implode('; ', $errors) : 'no wg found'), LOG_WARNING);
+		}
+	}
+	return $bin;
+}
+
+function csfm_wg_dump() {
+	$bin = csfm_wg_bin();
+	if ($bin === null) {
+		return null;
+	}
+	list($rc, $out) = csfm_exec(escapeshellarg($bin) . ' show all dump', 15);
+	return $rc === 0 ? csfm_parse_wg_dump($out) : null;
+}
+
 function csfm_wg_interfaces_up() {
 	list($rc, $out) = csfm_exec(escapeshellarg(CSFM_IFCONFIG) . ' -l -u', 10);
 	return $rc === 0 ? preg_split('/\s+/', trim($out)) : null;
@@ -531,13 +565,7 @@ function csfm_collect_wireguard() {
 	}
 	$peers_cfg = csfm_vpn_list('installedpackages/wireguard/peers/item');
 	$live = null;
-	if (is_executable(CSFM_WG)) {
-		list($rc, $out) = csfm_exec(escapeshellarg(CSFM_WG) . ' show all dump', 15);
-		$live = $rc === 0 ? csfm_parse_wg_dump($out) : null;
-		if ($live === null) {
-			csfm_log('wg show failed: ' . csfm_truncate(trim($out), 200), LOG_WARNING);
-		}
-	}
+	$live = csfm_wg_dump();
 	$up = csfm_wg_interfaces_up();
 	$now = time();
 	$out = array();
@@ -651,7 +679,7 @@ function csfm_wireguard_control($id, $action, $payload) {
 			}
 			$host = strpos($endpoint, ':') !== false && strpos($endpoint, '[') !== 0 ? "[{$endpoint}]" : $endpoint;
 			$target = $host . ':' . ((string)($p['port'] ?? '') ?: '51820');
-			list($rc, $out) = csfm_exec(escapeshellarg(CSFM_WG) . ' set ' . escapeshellarg($id) . ' peer '
+			list($rc, $out) = csfm_exec(escapeshellarg(csfm_wg_bin() ?? 'wg') . ' set ' . escapeshellarg($id) . ' peer '
 			    . escapeshellarg($pub) . ' endpoint ' . escapeshellarg($target), 20);
 			$log[] = $rc === 0 ? 'peer ' . ((string)($p['descr'] ?? '') ?: substr($pub, 0, 8)) . " → {$target}"
 			    : 'peer ' . substr($pub, 0, 8) . ': ' . trim($out);
@@ -674,7 +702,7 @@ function csfm_wireguard_peer_reconnect($id, $peer) {
 			}
 			$host = strpos($endpoint, ':') !== false && strpos($endpoint, '[') !== 0 ? "[{$endpoint}]" : $endpoint;
 			$target = $host . ':' . ((string)($p['port'] ?? '') ?: '51820');
-			list($rc, $out) = csfm_exec(escapeshellarg(CSFM_WG) . ' set ' . escapeshellarg($id) . ' peer '
+			list($rc, $out) = csfm_exec(escapeshellarg(csfm_wg_bin() ?? 'wg') . ' set ' . escapeshellarg($id) . ' peer '
 			    . escapeshellarg($pub) . ' endpoint ' . escapeshellarg($target), 20);
 			if ($rc !== 0) {
 				throw new Exception('wg set failed: ' . trim($out));

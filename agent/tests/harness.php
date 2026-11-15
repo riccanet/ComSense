@@ -138,7 +138,12 @@ foreach (array('swanctl' => "if [ \"\$1\" = --list-sas ]; then cat \"\$D/swanctl
 	}
 }
 define('CSFM_SWANCTL', "{$dir}/swanctl");
-define('CSFM_WG', "{$dir}/wg");
+/* Like pfSense Plus: the first wg found is not WireGuard's (it wants a config file); the agent must move on. */
+if (!file_exists("{$dir}/wg-other")) {
+	file_put_contents("{$dir}/wg-other", "#!/bin/sh\necho 'Config file not specified' >&2\nexit 1\n");
+	chmod("{$dir}/wg-other", 0755);
+}
+define('CSFM_WG_CANDIDATES', "{$dir}/wg-other {$dir}/wg");
 define('CSFM_IFCONFIG', "{$dir}/ifconfig");
 define('CSFM_OPENVPN_BASE', "{$dir}/openvpn");
 /* OpenVPN status as pfSense's openvpn.inc returns it: $dir/ovpn-servers-<type>.json, $dir/ovpn-clients.json. */
