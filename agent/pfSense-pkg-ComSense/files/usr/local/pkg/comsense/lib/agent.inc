@@ -7,6 +7,7 @@ require_once(__DIR__ . '/common.inc');
 require_once(__DIR__ . '/client.inc');
 require_once(__DIR__ . '/collect.inc');
 require_once(__DIR__ . '/tasks.inc');
+require_once(__DIR__ . '/vpn.inc');
 require_once(__DIR__ . '/guard.inc');
 require_once(__DIR__ . '/recovery.inc');
 

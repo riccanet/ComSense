@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +59,7 @@ from ..services import neighbors as neighbors_svc
 from ..services.bulk import BULK_ACTIONS, available_actions, check_now, run_bulk, target_devices, update_agent
 from ..services.backups import BackupError, delete_backup_file, load_backup
 from ..services import configedit
+from ..services import vpn as vpn_svc
 from ..services.logview import BUILTIN_RULES, LINE_CHOICES, LOGS, TABS, parse_filter_line, parse_line, tab_of
 from ..services.configview import config_summary, current_backup, is_system_alias, redact
 from ..services.policies import (
@@ -179,6 +180,9 @@ def _fmt_isodate(value) -> str:
 
 
 TEMPLATES.env.filters["ago"] = _ago
+# A Unix timestamp the firewall reported (VPN status), shown like "ago".
+TEMPLATES.env.filters["ago_ts"] = lambda ts: _ago(datetime.fromtimestamp(ts, tz=timezone.utc)) \
+    if isinstance(ts, (int, float)) and not isinstance(ts, bool) and ts > 0 else ""
 TEMPLATES.env.filters["isodate"] = _fmt_isodate
 TEMPLATES.env.filters["agent_outdated"] = agent_outdated
 TEMPLATES.env.filters["arch"] = _fmt_arch
@@ -533,6 +537,7 @@ def device_detail(
         request,
         "device.html",
         device=device,
+        device_vpn=vpn_svc.counts(device),
         metrics=_metric_buckets(metrics),
         tasks=tasks,
         backups=backups,

@@ -34,6 +34,7 @@ from .web import (
     sso_routes,
     terminal_routes,
     device_delete_routes,
+    vpn_routes,
 )
 from .web import routes as web_routes
 from .web.auth import LoginRequired, MfaSetupRequired, PasswordChangeRequired
@@ -171,6 +172,7 @@ def create_web_app(settings: Settings) -> FastAPI:
     app.include_router(sso_routes.public)
     app.include_router(terminal_routes.router)
     app.include_router(device_delete_routes.router)
+    app.include_router(vpn_routes.router)
     app.include_router(terminal_routes.ws_router)
     app.include_router(web_routes.router)
     return app

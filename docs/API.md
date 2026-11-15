@@ -44,11 +44,14 @@ while.
 | POST | `/firewalls/{id}/config` | Edit any setting (admin): `{"operations": [{"op": "set|delete|append|insert", "path": ..., "value": ..., "expect": {...}}], "summary": ...}`; never package settings, accounts, certificates, cron or shell commands |
 | GET | `/firewalls/{id}/rules?interface=` | Firewall rules in order, optionally one interface, and aliases |
 | GET | `/firewalls/{id}/network?q=` | ARP entries, DHCP leases and static mappings, optionally filtered |
+| GET | `/firewalls/{id}/vpn` | IPsec, OpenVPN and WireGuard tunnels with their status (agent 0.2.49+) |
+| POST | `/firewalls/{id}/vpn` | Connect, disconnect or reconnect a tunnel (operator): `{"type": "ipsec", "tunnel": "2", "action": "reconnect"}`; `action` `kick` with `client` disconnects one OpenVPN remote access user; `peer` reconnects one WireGuard peer |
+| GET | `/vpn?problems=` | Every firewall's tunnels; `problems=true`: only those down |
 | GET | `/devices/search?q=` | Find a device by MAC (any notation), IP or hostname on every firewall |
 | GET | `/tasks/{id}` | One task with its status and output |
 | GET | `/tasks-available` | The task names `POST /firewalls/{id}/tasks` accepts |
 | GET | `/customers`, `/customers/{id}` | Customers; one customer with its firewalls |
-| GET | `/alerts?open_only=&firewall_id=&limit=` | Alerts, newest first, with their category (system, wan, down, services, resources) |
+| GET | `/alerts?open_only=&firewall_id=&limit=` | Alerts, newest first, with their category (system, wan, down, services, resources, vpn) |
 | POST | `/alerts/{id}/acknowledge` | Acknowledge (operator) |
 | GET | `/configurations` | Configurations (policies) |
 
@@ -74,7 +77,7 @@ enough), 404, 409 (refused, e.g. the firewall does not allow it) or 429.
 A [Model Context Protocol](https://modelcontextprotocol.io) server on its own port: Streamable HTTP at
 `/mcp`, stateless, with the API key as a bearer token. Its tools: `list_firewalls`, `get_firewall`,
 `list_customers`, `get_customer`, `list_alerts`, `acknowledge_alert`, `list_tasks`, `get_task`,
-`run_task`, `list_backups`, `assign_customer`, `list_configurations`. Read tools are marked read only;
+`run_task`, `get_vpn`, `vpn_control`, `list_backups`, `assign_customer`, `list_configurations`. Read tools are marked read only;
 `run_task` is marked destructive, so assistants ask before rebooting or upgrading.
 
 | Setting | Default | |

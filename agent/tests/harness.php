@@ -123,6 +123,32 @@ file_put_contents($xmlf, str_replace($m[1], base64_encode(json_encode($c)), $xml
 PHP
 	);
 }
+/* VPNs: swanctl prints $dir/swanctl-sas.txt and $dir/swanctl-conns.txt, wg prints $dir/wg-dump.txt, ifconfig -l -u
+   prints $dir/ifup.txt; every other call is logged to actions.log. */
+define('CSFM_VPN_SETTLE', 0);
+foreach (array('swanctl' => "if [ \"\$1\" = --list-sas ]; then cat \"\$D/swanctl-sas.txt\" 2>/dev/null; exit 0; fi\n"
+                           . "if [ \"\$1\" = --list-conns ]; then cat \"\$D/swanctl-conns.txt\" 2>/dev/null; exit 0; fi\n",
+               'wg' => "if [ \"\$1 \$2 \$3\" = \"show all dump\" ]; then cat \"\$D/wg-dump.txt\" 2>/dev/null; exit 0; fi\n",
+               'ifconfig' => "if [ \"\$1 \$2\" = \"-l -u\" ]; then cat \"\$D/ifup.txt\" 2>/dev/null; exit 0; fi\n") as $bin => $body) {
+	$path = "{$dir}/{$bin}";
+	if (!file_exists($path)) {
+		file_put_contents($path, "#!/bin/sh\nD=" . escapeshellarg($dir) . "\n{$body}echo \"{$bin} \$*\" >> \"\$D/actions.log\"\nexit 0\n");
+		chmod($path, 0755);
+	}
+}
+define('CSFM_SWANCTL', "{$dir}/swanctl");
+define('CSFM_WG', "{$dir}/wg");
+define('CSFM_IFCONFIG', "{$dir}/ifconfig");
+define('CSFM_OPENVPN_BASE', "{$dir}/openvpn");
+/* OpenVPN status as pfSense's openvpn.inc returns it: $dir/ovpn-servers-<type>.json, $dir/ovpn-clients.json. */
+function openvpn_get_active_servers($type = 'multipoint') {
+	return json_decode(@file_get_contents(getenv('CSFM_TEST_DIR') . "/ovpn-servers-{$type}.json") ?: '[]', true);
+}
+function openvpn_get_active_clients() {
+	return json_decode(@file_get_contents(getenv('CSFM_TEST_DIR') . '/ovpn-clients.json') ?: '[]', true);
+}
+function service_control_start($name, $extras) { csfm_test_action("start {$name} " . json_encode($extras)); return "{$name} has been started."; }
+function service_control_stop($name, $extras) { csfm_test_action("stop {$name} " . json_encode($extras)); return "{$name} has been stopped."; }
 define('CSFM_ISC_LEASES', $dir . '/dhcpd.leases');
 define('CSFM_KEA_LEASES', $dir . '/kea-dhcp4.leases');
 define('CSFM_NEIGHBORS_EVERY', (int)(getenv('CSFM_TEST_NEIGHBORS_EVERY') ?: 0));
@@ -283,7 +309,10 @@ function get_service_status($svc) {
 	}
 	return true;
 }
-function service_control_restart($name, $extras) { csfm_test_action("restart {$name}"); return "{$name} has been restarted."; }
+function service_control_restart($name, $extras) {
+	csfm_test_action("restart {$name}" . ($name === 'openvpn' ? ' ' . json_encode($extras) : ''));
+	return "{$name} has been restarted.";
+}
 function get_system_pkg_version($baseonly = false, $use_cache = true) {
 	return array('version' => '2.7.2-RELEASE', 'installed_version' => '2.7.0-RELEASE', 'pkg_version_compare' => '<');
 }

@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge with context %}
+{% block title %}VPN{% endblock %}
+{% block content %}
+<div class="heading">
+  <h1>VPN tunnels</h1>
+</div>
+<form method="get" class="toolbar">
+  <a class="button{% if show != 'problems' %} primary{% endif %}" href="/vpn">All tunnels</a>
+  <a class="button{% if show == 'problems' %} primary{% endif %}" href="/vpn?show=problems">Down only{% if problems %} ({{ problems }}){% endif %}</a>
+</form>
+<p class="small muted">IPsec, OpenVPN and WireGuard tunnels as each firewall reported them at its last check-in.
+{{ reporting }} of {{ total }} firewalls report VPN status (agent 0.2.49 or later). Open a firewall's VPN page to
+connect, disconnect or reconnect a tunnel.</p>
+<section class="card">
+  <table class="list">
+    <thead><tr><th>Firewall</th><th class="hide-sm">Customer</th><th>Type</th><th>Tunnel</th><th>Status</th><th class="hide-sm">Remote</th></tr></thead>
+    <tbody>
+    {% for d, t in rows %}
+      <tr>
+        <td><a href="/devices/{{ d.id }}/vpn">{{ d.name }}</a>{% if d.status.value != "online" %} {{ status_badge(d.status.value) }}{% endif %}</td>
+        <td class="hide-sm">{{ d.organization.name if d.organization else "" }}</td>
+        <td>{{ t.kind_name }}</td>
+        <td>{{ t.name }}</td>
+        <td>{{ status_badge(t.status) }}{% if t.detail and t.status != "up" %} <span class="small muted">{{ t.detail }}</span>{% endif %}</td>
+        <td class="hide-sm mono small">{{ t.remote or t.raw.get('remote_address') or "" }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">{% if show == "problems" %}No tunnel is down.{% else %}No firewall has reported a VPN tunnel yet.{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

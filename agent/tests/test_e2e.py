@@ -1131,6 +1131,118 @@ def test_full_lifecycle(env):
             del cfg["installedpackages"][s]
     (env["fw"] / "config.json").write_text(json.dumps(cfg))
 
+    # 11g. VPN status: IPsec from swanctl, OpenVPN from pfSense's openvpn.inc, WireGuard from wg; then connect,
+    #      disconnect and reconnect, each checked against the firewall's own configuration.
+    fw = env["fw"]
+    cfg = fw_config(env)
+    cfg["ipsec"] = {"phase1": [
+        {"ikeid": "1", "descr": "HQ", "remote-gateway": "198.51.100.1", "iketype": "ikev2"},
+        {"ikeid": "2", "descr": "Branch", "remote-gateway": "203.0.113.9", "iketype": "ikev2"},
+        {"ikeid": "3", "descr": "Old", "remote-gateway": "192.0.2.3", "disabled": ""}],
+        "phase2": [{"ikeid": "1", "mode": "tunnel"}, {"ikeid": "1", "mode": "tunnel"}, {"ikeid": "2", "mode": "tunnel"}]}
+    cfg["openvpn"] = {"openvpn-server": [{"vpnid": "1", "description": "Remote users", "mode": "server_tls_user"}],
+                      "openvpn-client": [{"vpnid": "2", "description": "To DC", "server_addr": "dc.example.net",
+                                          "server_port": "1194"}]}
+    pub_office, pub_laptop = "T2ZmaWNlUHVibGljS2V5" + "A" * 23 + "=", "TGFwdG9wUHVibGljS2V5" + "B" * 23 + "="
+    cfg["installedpackages"]["wireguard"] = {
+        "tunnels": {"item": [{"name": "tun_wg0", "descr": "Sites", "enabled": "yes", "listenport": "51820"}]},
+        "peers": {"item": [
+            {"tun": "tun_wg0", "descr": "Office", "enabled": "yes", "publickey": pub_office,
+             "endpoint": "office.example.net", "port": "51821", "persistentkeepalive": "25"},
+            {"tun": "tun_wg0", "descr": "Laptop", "enabled": "yes", "publickey": pub_laptop}]}}
+    (fw / "config.json").write_text(json.dumps(cfg))
+    (fw / "swanctl-sas.txt").write_text(
+        "con1: #3, ESTABLISHED, IKEv2, 1a2b3c4d5e6f7a8b_i* 9c8d7e6f5a4b3c2d_r\n"
+        "  local  'fw' @ 198.51.100.2[4500]\n"
+        "  remote '198.51.100.1' @ 198.51.100.1[4500]\n"
+        "  AES_GCM_16-256/PRF_HMAC_SHA2_256/ECP_256\n"
+        "  established 3600s ago, rekeying in 25000s\n"
+        "  con1_1: #10, reqid 1, INSTALLED, TUNNEL, ESP:AES_GCM_16-256\n"
+        "    installed 600s ago, rekeying in 2500s, expires in 3000s\n"
+        "    in  c1234567,  12345 bytes,   100 packets,     5s ago\n"
+        "    out c7654321,  54321 bytes,   120 packets,     5s ago\n"
+        "    local  10.0.0.0/24 10.0.1.0/24\n"
+        "    remote 10.1.0.0/24 10.1.1.0/24\n"
+        "con2: #4, CONNECTING, IKEv2, 2a2b3c4d5e6f7a8b_i 0000000000000000_r\n"
+        "  local  'fw' @ 198.51.100.2[500]\n"
+        "  remote '%any' @ 203.0.113.9[500]\n")
+    (fw / "swanctl-conns.txt").write_text(
+        "con1: IKEv1/2, no reauthentication, rekeying every 25000s\n"
+        "  local:  198.51.100.2\n  remote: 198.51.100.1\n"
+        "  local pre-shared key authentication:\n    id: 198.51.100.2\n"
+        "  con1_1: TUNNEL, rekeying every 3000s\n    local:  10.0.0.0/24\n    remote: 10.1.0.0/24\n"
+        "con2: IKEv1/2, no reauthentication, rekeying every 25000s\n"
+        "  con2_1: TUNNEL, rekeying every 3000s\n")
+    (fw / "ovpn-servers-multipoint.json").write_text(json.dumps([{"name": "Remote users UDP4:1194", "vpnid": "1",
+        "mgmt": "server1", "conns": [{"common_name": "alice", "remote_host": "203.0.113.50:51000",
+                                      "virtual_addr": "10.8.0.2", "connect_time": "Mon Nov 16 08:00:00 2026",
+                                      "bytes_recv": "1000", "bytes_sent": "2000", "client_id": "7"}]}]))
+    (fw / "ovpn-clients.json").write_text(json.dumps([{"name": "To DC", "vpnid": "2",
+                                                       "status": "reconnecting; ping-restart"}]))
+    now = int(time.time())
+    (fw / "wg-dump.txt").write_text(
+        "tun_wg0\tPRIVATEKEYMUSTNOTLEAVE=\tPublicKeyOfTheFirewall=\t51820\toff\n"
+        f"tun_wg0\t{pub_office}\t(none)\t192.0.2.80:51821\t10.9.0.2/32\t{now - 900}\t100\t200\t25\n"
+        f"tun_wg0\t{pub_laptop}\t(none)\t(none)\t10.9.0.3/32\t0\t0\t0\toff\n")
+    (fw / "ifup.txt").write_text("vtnet0 vtnet1 lo0 tun_wg0\n")
+    agent(env, "run")
+    with env["db"]() as db:
+        dev = db.get(Device, creds["device_id"])
+        vpn = dev.inventory["vpn"]
+        assert "PRIVATEKEYMUSTNOTLEAVE" not in json.dumps(dev.inventory)
+        ipsec = {t["id"]: t for t in vpn["ipsec"]}
+        assert set(ipsec) == {"1", "2"}  # the disabled one is left out
+        # Two phase 2s on IKEv2 share one child SA.
+        assert ipsec["1"]["status"] == "up" and ipsec["1"]["children_expected"] == 1, ipsec["1"]
+        assert ipsec["1"]["bytes_in"] == 12345 and ipsec["1"]["connected_for"] == 3600
+        assert ipsec["2"]["status"] == "down" and ipsec["2"]["down_since"] > 0
+        ovpn = {t["id"]: t for t in vpn["openvpn"]}
+        assert ovpn["server:1"]["clients"] == 1 and ovpn["server:1"]["connections"][0]["user"] == "alice"
+        assert ovpn["client:2"]["status"] == "down" and "reconnecting" in ovpn["client:2"]["detail"]
+        wg = vpn["wireguard"][0]
+        peers = {p["name"]: p for p in wg["peers"]}
+        assert peers["Office"]["status"] == "down" and peers["Office"]["endpoint"] == "office.example.net:51821"
+        assert peers["Laptop"]["status"] == "idle" and wg["interface_up"] is True
+        office_id = peers["Office"]["id"]
+        first_down = ipsec["2"]["down_since"]
+    agent(env, "run")  # still down: the same "since"
+    with env["db"]() as db:
+        assert {t["id"]: t for t in db.get(Device, creds["device_id"]).inventory["vpn"]["ipsec"]}["2"][
+            "down_since"] == first_down
+
+    def vpn_task(payload):
+        tid = queue(TaskType.vpn_control, payload)
+        before = (fw / "actions.log").read_text() if (fw / "actions.log").exists() else ""
+        agent(env, "run")
+        return task(tid), (fw / "actions.log").read_text()[len(before):]
+
+    done, log = vpn_task({"kind": "ipsec", "id": "2", "action": "connect", "name": "Branch"})
+    assert done.status == TaskStatus.success, done.output
+    assert "swanctl --initiate --child con2_1" in log
+    done, log = vpn_task({"kind": "ipsec", "id": "1", "action": "reconnect", "name": "HQ"})
+    assert done.status == TaskStatus.success, done.output
+    assert log.index("swanctl --terminate --ike con1") < log.index("swanctl --initiate --child con1_1")
+    assert "It is now up" in done.output and done.result["vpn"]["ipsec"]
+    done, _ = vpn_task({"kind": "ipsec", "id": "3", "action": "connect"})
+    assert done.status == TaskStatus.failed and "disabled" in done.output
+    done, log = vpn_task({"kind": "openvpn", "id": "client:2", "action": "reconnect"})
+    assert done.status == TaskStatus.success and 'restart openvpn {"vpnmode":"client","id":"2"}' in log, log
+    done, log = vpn_task({"kind": "openvpn", "id": "server:1", "action": "disconnect"})
+    assert 'stop openvpn {"vpnmode":"server","id":"1"}' in log
+    done, _ = vpn_task({"kind": "openvpn", "id": "server:1", "action": "kick", "client": "7", "user": "alice"})
+    assert done.status == TaskStatus.failed and "management socket" in done.output  # no OpenVPN running here
+    done, log = vpn_task({"kind": "wireguard", "id": "tun_wg0", "action": "reconnect", "peer": office_id})
+    assert done.status == TaskStatus.success, done.output
+    assert f"wg set tun_wg0 peer {pub_office} endpoint office.example.net:51821" in log and "ifconfig" not in log
+    done, log = vpn_task({"kind": "wireguard", "id": "tun_wg0", "action": "reconnect"})
+    assert log.index("ifconfig tun_wg0 down") < log.index("ifconfig tun_wg0 up") < log.index("wg set tun_wg0")
+    assert pub_laptop not in log  # no endpoint: nothing to reconnect
+    done, _ = vpn_task({"kind": "wireguard", "id": "tun_wg9; reboot", "action": "disconnect"})
+    assert done.status == TaskStatus.failed and "Unknown WireGuard tunnel" in done.output
+    cfg = fw_config(env)
+    del cfg["ipsec"], cfg["openvpn"], cfg["installedpackages"]["wireguard"]
+    (fw / "config.json").write_text(json.dumps(cfg))
+
     # 12. A disabled device is locked out.
     with env["db"]() as db:
         from app.models import DeviceStatus

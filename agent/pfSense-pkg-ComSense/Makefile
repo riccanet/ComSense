@@ -1,5 +1,5 @@
 PORTNAME=	pfSense-pkg-ComSense
-PORTVERSION=	0.2.48
+PORTVERSION=	0.2.49
 CATEGORIES=	sysutils
 MASTER_SITES=	# empty
 DISTFILES=	# empty
@@ -33,7 +33,7 @@ do-install:
 		${STAGEDIR}${PREFIX}/pkg
 	${INSTALL_DATA} ${FILESDIR}${PREFIX}/pkg/comsense/agent.php \
 		${STAGEDIR}${PREFIX}/pkg/comsense
-.for f in agent client collect common guard policies tasks
+.for f in agent client collect common guard policies recovery tasks terminal vpn
 	${INSTALL_DATA} ${FILESDIR}${PREFIX}/pkg/comsense/lib/${f}.inc \
 		${STAGEDIR}${PREFIX}/pkg/comsense/lib
 .endfor

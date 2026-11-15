@@ -242,7 +242,7 @@ async def checkin(
     inventory = {
         k: data[k]
         for k in ("system", "interfaces", "gateways", "services", "carp", "metrics", "packages", "change_guard", "processes",
-                  "update_branch", "ddns", "boot_environments", "detached_interfaces")
+                  "update_branch", "ddns", "boot_environments", "detached_interfaces", "vpn")
         if k in data
     }
     if inventory:
@@ -433,6 +433,8 @@ async def task_result(
     if (task.type == TaskType.be_destroy and status == TaskStatus.success and isinstance(result, dict)
             and isinstance(result.get("boot_environments"), list)):
         device.inventory = {**(device.inventory or {}), "boot_environments": result["boot_environments"]}
+    if task.type == TaskType.vpn_control and isinstance(result, dict) and isinstance(result.get("vpn"), dict):
+        device.inventory = {**(device.inventory or {}), "vpn": result["vpn"]}  # how the tunnels look now
     if task.type in (TaskType.apply_policy, TaskType.remove_policy) and status == TaskStatus.success:
         applied = dict(device.applied_policies or {})
         if task.type == TaskType.apply_policy:

@@ -29,6 +29,7 @@ TASK_CAPABILITY: dict[TaskType, str | None] = {
     TaskType.install_package: "packages",
     TaskType.remove_package: "packages",
     TaskType.restart_service: "services",
+    TaskType.vpn_control: "services",
     TaskType.restore_backup: "restore",
     TaskType.reboot: "reboot",
     TaskType.update_agent: "upgrade",
@@ -96,6 +97,7 @@ TASK_TITLES = {
     TaskType.remove_package: "Removing a package",
     TaskType.upgrade_packages: "Upgrading packages",
     TaskType.restart_service: "Restarting a service",
+    TaskType.vpn_control: "VPN",
     TaskType.restore_backup: "Restoring a configuration backup",
     TaskType.reboot: "Rebooting",
     TaskType.refresh_inventory: "Checking in",
@@ -128,6 +130,10 @@ def task_title(task: Task) -> str:
         detail = (task.payload.get("policy") or {}).get("name", "")
     elif task.type == TaskType.config_edit:
         detail = str(task.payload.get("summary") or "")[:80]
+    elif task.type == TaskType.vpn_control:
+        action = {"kick": "disconnect user"}.get(task.payload.get("action"), task.payload.get("action", ""))
+        target = task.payload.get("user") or task.payload.get("name") or task.payload.get("id") or ""
+        return f"VPN: {str(action).capitalize()} {target}".strip()
     return f"{title} ({detail})" if detail and isinstance(detail, str) else title
 
 

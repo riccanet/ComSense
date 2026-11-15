@@ -48,6 +48,15 @@ class RunTask(BaseModel):
                                                   "boot_environments")
 
 
+class VpnControl(BaseModel):
+    type: str = Field(description="ipsec, openvpn or wireguard")
+    tunnel: str = Field(description="The tunnel's id from GET /firewalls/{id}/vpn (IPsec: the phase 1 ikeid; "
+                                    "OpenVPN: server:<vpnid> or client:<vpnid>; WireGuard: the tun_wg interface)")
+    action: str = Field(description="connect, disconnect, reconnect, or kick (one OpenVPN remote access user)")
+    peer: str = Field("", description="WireGuard: reconnect only this peer (its id)")
+    client: str = Field("", description="kick: the connection's client_id (or remote address)")
+
+
 class PortForward(BaseModel):
     """A port forward's fields. When changing one, leave out what stays as it is."""
     interface: str | None = Field(None, description="Interface name (WAN, VERIZON) or id (wan, opt1); default wan")
@@ -156,6 +165,22 @@ def create_rest_app(settings: Settings) -> FastAPI:
                           db: Session = Depends(get_db)) -> dict[str, Any]:
         return apiops.run_task(db, settings, who, firewall_id, body.task, body.package, body.service, _ip(request),
                                body.boot_environment)
+
+    @app.get("/vpn", dependencies=read, summary="Every firewall's VPN tunnels (problems=true: only those down)")
+    def vpn_tunnels(problems: bool = False, db: Session = Depends(get_db)) -> dict[str, Any]:
+        return apiops.get_vpn(db, None, problems)
+
+    @app.get("/firewalls/{firewall_id}/vpn", dependencies=read,
+             summary="A firewall's IPsec, OpenVPN and WireGuard tunnels with their status")
+    def firewall_vpn(firewall_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+        return apiops.get_vpn(db, firewall_id)
+
+    @app.post("/firewalls/{firewall_id}/vpn", status_code=201,
+              summary="Connect, disconnect or reconnect a VPN tunnel (operator)")
+    def firewall_vpn_control(firewall_id: str, request: Request, body: VpnControl, who: Principal = Depends(principal),
+                             db: Session = Depends(get_db)) -> dict[str, Any]:
+        return apiops.vpn_control(db, settings, who, firewall_id, body.type, body.tunnel, body.action, body.peer,
+                                  body.client, _ip(request))
 
     @app.put("/firewalls/{firewall_id}/customer", summary="Assign a firewall to a customer (operator)")
     def firewall_customer(firewall_id: str, request: Request, body: SetCustomer = Body(...),

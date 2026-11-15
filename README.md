@@ -47,6 +47,7 @@ The server has two separate listeners, so it needs only two ports forwarded thro
 | **Backups** | `config.xml` is uploaded automatically whenever it changes and at least daily, deduplicated by SHA-256, **encrypted at rest**, keeping the last 5 per firewall (configurable) plus any you pin, with download and one-click restore (typed confirmation; reboots the box). |
 | **Policies** | Aliases, firewall rules, system settings (DNS, NTP, timezone, hostname/domain), package install/remove, and a restricted generic config setter. Assign to one firewall, a customer or all firewalls. Policies are applied idempotently, report compliance, and removing a policy removes only what it created. Every change is **rolled back automatically if the firewall can no longer reach the server**, right away or when a 5-minute probation ends, even across a reboot. |
 | **Updates** | Shows available pfSense and package updates; upgrade pfSense (after an automatic, pinned backup, with its progress shown on the firewall's page), upgrade packages, install/remove packages, restart services, reboot. Upgrade pfSense, packages or the agent on many firewalls at once (only where an update is available), now or as a **scheduled job** (once, daily or weekly, in a maintenance window) on the Schedules page. |
+| **VPN** | IPsec (phase 1 and phase 2), OpenVPN (clients, servers and their connected users) and WireGuard (tunnels and each peer's last handshake) reported at every check-in, on each firewall's VPN page and a fleet-wide VPN page; alerts when a site-to-site tunnel stays down for 5 minutes; connect, disconnect or reconnect a tunnel (or disconnect one OpenVPN user) from the console, the API or the MCP server. |
 | **Network** | Each firewall's ARP table, DHCP leases (ISC and Kea) and static mappings, reported every five minutes; each firewall's overview lists its DHCP leases and finds a device there by MAC address (any notation), IP or hostname; the API and MCP server search every firewall. |
 | **Logs** | System, firewall, DHCP, DNS resolver, gateway, VPN, authentication, NTP and routing logs fetched from the firewall on demand, searched on the firewall, firewall entries shown as action, interface, protocol, source and destination. |
 | **Email** | SMTP settings on the console's Settings page (stored in the database, password encrypted). Alert emails as per-minute summaries to opted-in users and extra addresses, by severity and category, repeated every 24 hours until acknowledged, with optional "cleared" notices. Self-service password reset links. |
@@ -121,7 +122,7 @@ python -m app.serve        # web console on :8000, agent listener on :10443
 
 ## Status
 
-Version 0.2.52. The server and the agent's protocol, policy and task logic are covered by automated
+Version 0.2.53. The server and the agent's protocol, policy and task logic are covered by automated
 tests, including an end-to-end run of the real PHP agent against the real server. The pfSense
 integration points (package hooks, GUI pages, pfSense library calls) follow the conventions of
 packages in the official pfSense ports tree but should be validated on a lab firewall for each pfSense

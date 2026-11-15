@@ -65,6 +65,7 @@ class TaskType(str, enum.Enum):
     remove_package = "remove_package"
     upgrade_packages = "upgrade_packages"
     restart_service = "restart_service"
+    vpn_control = "vpn_control"  # connect, disconnect or reconnect a VPN tunnel
     restore_backup = "restore_backup"
     reboot = "reboot"
     refresh_inventory = "refresh_inventory"

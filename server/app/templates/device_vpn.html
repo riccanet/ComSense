@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge, csrf with context %}
+{% block title %}{{ device.name }}: VPN{% endblock %}
+{% block banner %}{% include "_task_banner.html" %}{% endblock %}
+{% block content %}
+{% set can_operate = user.role.value in ("operator", "admin") and device.status.value == "online" %}
+{% macro vpn_button(t, action, label, cls="", confirm="", peer="", client="") -%}
+<form method="post" action="/devices/{{ device.id }}/vpn" class="inline"{% if confirm %} data-confirm="{{ confirm }}"{% endif %}>
+  {{ csrf() }}<input type="hidden" name="kind" value="{{ t.kind }}"><input type="hidden" name="tunnel" value="{{ t.id }}">
+  <input type="hidden" name="action" value="{{ action }}">
+  {% if peer %}<input type="hidden" name="peer" value="{{ peer }}">{% endif %}
+  {% if client %}<input type="hidden" name="client" value="{{ client }}">{% endif %}
+  <button class="small {{ cls }}">{{ label }}</button>
+</form>
+{%- endmacro %}
+{% macro controls(t) -%}
+{% if can_operate %}
+  {% if t.status in ("down", "idle", "unknown") %}{{ vpn_button(t, "connect", "Connect", "primary") }}{% endif %}
+  {{ vpn_button(t, "reconnect", "Reconnect", "", "Reconnect " ~ t.name ~ "? Traffic through it stops for a few seconds.") }}
+  {% if t.status != "down" %}{{ vpn_button(t, "disconnect", "Disconnect", "danger", "Disconnect " ~ t.name ~ "? Traffic through it stops until it is connected again (a tunnel set to start by itself comes back on its own).") }}{% endif %}
+{% endif %}
+{%- endmacro %}
+<p class="small"><a href="/devices">Firewalls</a> / <a href="/devices/{{ device.id }}">{{ device.name }}</a> /</p>
+<div class="heading" data-poll="/devices/{{ device.id }}/poll" data-poll-token="{{ page_token }}">
+  <h1>VPN {{ status_badge(device.status.value) }}</h1>
+  {% if user.role.value in ("operator", "admin") and device.status.value not in ("pending", "disabled") %}
+  <div class="actions">
+    <form method="post" action="/devices/{{ device.id }}/check-now" class="inline">
+      {{ csrf() }}<input type="hidden" name="next" value="/devices/{{ device.id }}/vpn">
+      <button>Refresh now</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+{% if not reported %}
+<p class="flash warn">This firewall has not reported its VPN status yet. VPN monitoring needs agent 0.2.49 or later;
+update the agent from the firewall's page.</p>
+{% elif not tunnels %}
+<p class="muted">No IPsec, OpenVPN or WireGuard tunnels are set up (and enabled) on this firewall.</p>
+{% else %}
+<p class="small muted">Reported {% if vpn.collected %}{{ vpn.collected|ago_ts }}{% endif %}, at every check-in.
+{% if can_operate %}Connect, disconnect and reconnect are temporary: a tunnel set to start by itself comes back on its
+own, and a reboot restores everything. To keep a tunnel down, disable it in pfSense.{% endif %}</p>
+{% endif %}
+
+{% set ipsec = tunnels|selectattr("kind", "equalto", "ipsec")|list %}
+{% if ipsec %}
+<section class="card">
+  <h2>IPsec</h2>
+  <table class="list">
+    <thead><tr><th>Tunnel</th><th>Status</th><th>Remote gateway</th><th class="hide-sm">Phase 2</th><th class="hide-sm">Up for</th><th class="hide-sm">Traffic in / out</th><th></th></tr></thead>
+    <tbody>
+    {% for t in ipsec %}{% set r = t.raw %}
+      <tr>
+        <td>{{ t.name }}{% if r.get('responder') %} <span class="muted small" title="Waits for the other side to connect">responder</span>{% endif %}</td>
+        <td>{{ status_badge(t.status) }}{% if r.get('down_since') and t.status != "up" %} <span class="small muted">since {{ r.get('down_since')|ago_ts }}</span>{% endif %}</td>
+        <td class="mono small">{% if r.get('mobile') %}{{ r.get('clients') or 0 }} mobile client{{ "" if r.get('clients') == 1 else "s" }}{% else %}{{ t.remote }}{% if r.get('remote_address') and r.get('remote_address') != t.remote %} ({{ r.get('remote_address') }}){% endif %}{% endif %}</td>
+        <td class="hide-sm small">{% if not r.get('mobile') %}{{ r.get('children_up') if r.get('children_up') is not none else "?" }} / {{ r.get('children_expected') if r.get('children_expected') is not none else "?" }}{% endif %}</td>
+        <td class="hide-sm small">{{ human_seconds(r.get('connected_for')) }}</td>
+        <td class="hide-sm small">{% if r.get('bytes_in') or r.get('bytes_out') %}{{ human_bytes(r.get('bytes_in')) }} / {{ human_bytes(r.get('bytes_out')) }}{% endif %}</td>
+        <td class="actions-cell">{% if not r.get('mobile') %}{{ controls(t) }}{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% set ovpn = tunnels|selectattr("kind", "equalto", "openvpn")|list %}
+{% if ovpn %}
+<section class="card">
+  <h2>OpenVPN</h2>
+  <table class="list">
+    <thead><tr><th>Instance</th><th>Status</th><th>Connection</th><th class="hide-sm">Since</th><th></th></tr></thead>
+    <tbody>
+    {% for t in ovpn %}{% set r = t.raw %}
+      <tr>
+        <td>{{ t.name }} <span class="muted small">{{ "client" if r.get('mode') == "client" else ("peer-to-peer server" if r.p2p else "remote access server") }}</span></td>
+        <td>{{ status_badge(t.status) }}{% if r.get('down_since') and t.status != "up" %} <span class="small muted">since {{ r.get('down_since')|ago_ts }}</span>{% endif %}</td>
+        <td class="small">{% if r.get('mode') == "server" and not r.p2p %}{{ r.get('clients') or 0 }} user{{ "" if r.get('clients') == 1 else "s" }} connected{% else %}<span class="mono">{{ r.get('remote_address') or t.remote }}</span>{% if r.get('address') %} → <span class="mono">{{ r.get('address') }}</span>{% endif %}{% endif %}{% if t.detail and t.status != "up" %} <span class="muted">({{ t.detail }})</span>{% endif %}</td>
+        <td class="hide-sm small">{{ r.get('connected_since') or "" }}</td>
+        <td class="actions-cell">{{ controls(t) }}</td>
+      </tr>
+      {% for c in r.get('connections') or [] %}
+      <tr class="sub">
+        <td class="small">&nbsp;&nbsp;↳ {{ c.get('user') or "?" }}</td>
+        <td></td>
+        <td class="small"><span class="mono">{{ c.get('remote') }}</span>{% if c.get('address') %} → <span class="mono">{{ c.get('address') }}</span>{% endif %}
+          {% if c.get('bytes_in') or c.get('bytes_out') %}<span class="muted">{{ human_bytes(c.get('bytes_in')) }} / {{ human_bytes(c.get('bytes_out')) }}</span>{% endif %}</td>
+        <td class="hide-sm small">{{ c.get('since') or "" }}</td>
+        <td class="actions-cell">{% if can_operate %}{{ vpn_button(t, "kick", "Disconnect", "danger", "Disconnect " ~ (c.get('user') or c.get('remote')) ~ " from " ~ t.name ~ "? Their VPN client may reconnect by itself.", client=(c.get('client_id') or c.get('remote'))) }}{% endif %}</td>
+      </tr>
+      {% endfor %}
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% set wg = tunnels|selectattr("kind", "equalto", "wireguard")|list %}
+{% if wg %}
+<section class="card">
+  <h2>WireGuard</h2>
+  <table class="list">
+    <thead><tr><th>Tunnel / peer</th><th>Status</th><th>Endpoint</th><th class="hide-sm">Last handshake</th><th class="hide-sm">Traffic in / out</th><th></th></tr></thead>
+    <tbody>
+    {% for t in wg %}{% set r = t.raw %}
+      <tr>
+        <td>{{ t.name }} <span class="muted small mono">{{ r.get('interface') }}{% if r.get('port') %} :{{ r.get('port') }}{% endif %}</span></td>
+        <td>{{ status_badge(t.status) }}{% if t.detail %} <span class="small muted">{{ t.detail }}</span>{% endif %}</td>
+        <td></td><td class="hide-sm"></td><td class="hide-sm"></td>
+        <td class="actions-cell">{{ controls(t) }}</td>
+      </tr>
+      {% for p in r.get('peers') or [] %}
+      <tr class="sub">
+        <td class="small">&nbsp;&nbsp;↳ {{ p.get('name') }}</td>
+        <td>{{ status_badge(p.get('status')) }}</td>
+        <td class="mono small">{{ p.get('remote_address') or p.get('endpoint') or "—" }}</td>
+        <td class="hide-sm small">{% if p.get('handshake_age') is not none %}{{ human_seconds(p.get('handshake_age')) }} ago{% else %}never{% endif %}{% if p.get('keepalive') %} <span class="muted">(keepalive {{ p.get('keepalive') }}s)</span>{% endif %}</td>
+        <td class="hide-sm small">{% if p.get('bytes_in') or p.get('bytes_out') %}{{ human_bytes(p.get('bytes_in')) }} / {{ human_bytes(p.get('bytes_out')) }}{% endif %}</td>
+        <td class="actions-cell">{% if can_operate and p.get('endpoint') and r.get('interface_up') is not false %}{{ vpn_button(t, "reconnect", "Reconnect", "", "", peer=p.get('id')) }}{% endif %}</td>
+      </tr>
+      {% endfor %}
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="small muted">A WireGuard peer is up while its last handshake is under three minutes old. Peers that the
+  firewall keeps alive (an endpoint and a keepalive) are down without one; others are only idle when quiet.</p>
+</section>
+{% endif %}
+{% endblock %}

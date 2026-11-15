@@ -39,6 +39,7 @@ from .alerts import category_of
 from .configview import config_summary, current_backup, is_system_alias
 from .policies import PolicyError, port_forward_rule
 from .tasks import TaskError, queue_task
+from . import vpn
 
 KEY_PREFIX = "csfm_api_"
 ROLE_RANK = {Role.viewer: 0, Role.operator: 1, Role.admin: 2}
@@ -209,8 +210,48 @@ def get_firewall(db: Session, settings: Settings, firewall_id: str) -> dict[str,
         packages=inv.get("packages") or [],
         pfsense_updates=device.updates or {},
         boot_environments=inv.get("boot_environments") or [],
+        vpn_summary=vpn.counts(device) if vpn.reported(device) else None,
     )
     return detail
+
+
+def get_vpn(db: Session, firewall_id: str | None = None, problems_only: bool = False) -> dict[str, Any]:
+    """VPN tunnels (IPsec, OpenVPN, WireGuard) as one firewall, or every firewall, last reported them."""
+    devices = [_device(db, firewall_id)] if firewall_id else list(db.scalars(
+        select(Device).where(Device.status != DeviceStatus.pending)))
+    out = []
+    for d in devices:
+        for t in vpn.tunnels(d):
+            if problems_only and not t.problem:
+                continue
+            out.append({"firewall_id": d.id, "firewall": d.name, "type": t.kind, "tunnel": t.id, "name": t.name,
+                        "status": t.status, "alerting": t.problem, "remote": t.remote, "detail": t.detail,
+                        "report": t.raw})
+    result: dict[str, Any] = {"tunnels": out}
+    if firewall_id:
+        result["reported"] = vpn.reported(devices[0])
+        collected = vpn.report(devices[0]).get("collected")
+        result["collected"] = collected
+    return result
+
+
+def vpn_control(db: Session, settings: Settings, who: Principal, firewall_id: str, vpn_type: str, tunnel: str,
+                action: str, peer: str = "", client: str = "", ip: str = "") -> dict[str, Any]:
+    """Connect, disconnect or reconnect a tunnel (or disconnect one OpenVPN user: action kick, client)."""
+    who.require(Role.operator)
+    device = _device(db, firewall_id)
+    try:
+        payload = vpn.control_payload(device, vpn_type, tunnel, action, peer=peer, client=client)
+        queued = queue_task(db, device, TaskType.vpn_control, payload, actor=who.actor,
+                            changes_enabled=settings.enable_firewall_changes)
+    except vpn.VpnError as exc:
+        raise ApiError(400, str(exc)) from exc
+    except TaskError as exc:
+        raise ApiError(409, str(exc)) from exc
+    db.flush()
+    audit(db, who.actor, "task.vpn_control", target=device.id, detail=f"via API {payload}", ip=ip)
+    db.commit()
+    return _task(queued)
 
 
 def get_network(db: Session, firewall_id: str, query: str = "") -> dict[str, Any]:

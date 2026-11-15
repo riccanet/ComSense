@@ -31,7 +31,11 @@ CATEGORIES = {
     "down": ("Firewall down", "The firewall stopped checking in"),
     "services": ("Services not running", "An enabled service on the firewall is stopped"),
     "resources": ("High resources", "Disk, memory, CPU or state table usage above its threshold"),
+    "vpn": ("VPN tunnels", "An IPsec, OpenVPN client or WireGuard tunnel has been down for 5 minutes"),
 }
+# A tunnel must stay down this long (seconds, by the firewall's clock) before it alerts: rekeys and restarts
+# take a moment.
+VPN_GRACE = 300
 RESOURCE_KEYS = ("disk", "memory", "cpu", "states")
 
 
@@ -42,6 +46,8 @@ def category_of(key: str) -> str:
         return "wan"
     if key.startswith("service:"):
         return "services"
+    if key.startswith("vpn:"):
+        return "vpn"
     if key in RESOURCE_KEYS:
         return "resources"
     return "system"
@@ -53,6 +59,7 @@ def category_filter(category: str):
         "down": Alert.key == OFFLINE_KEY,
         "wan": Alert.key.like("gateway:%"),
         "services": Alert.key.like("service:%"),
+        "vpn": Alert.key.like("vpn:%"),
         "resources": Alert.key.in_(RESOURCE_KEYS),
     }
     if category in by_category:
@@ -78,6 +85,7 @@ def _conditions(report: dict[str, Any], cfg: AlertCategorySettings, cpu_history:
         if svc.get("enabled", True) and svc.get("running") is False:
             name = str(svc.get("name", "?"))
             found[f"service:{name}"] = ("warning", f"Service {name} is not running")
+    found.update(vpn_conditions(report.get("vpn")))
     metrics = report.get("metrics") or {}
     disk = metrics.get("disk_pct")
     if _number(disk) and disk >= cfg.disk_pct:
@@ -99,6 +107,69 @@ def _conditions(report: dict[str, Any], cfg: AlertCategorySettings, cpu_history:
         found[RULES_KEY] = ("critical", f"No connections through the firewall for {EMPTY_STATE_SAMPLES} check-ins: "
                                         "its rules may have failed to load (check with pfctl -nf /tmp/rules.debug)")
     return {k: v for k, v in found.items() if cfg.flag(category_of(k), "enabled")}
+
+
+def _down_long_enough(entry: dict[str, Any], collected: Any) -> bool:
+    since = entry.get("down_since")
+    if not _number(since) or not _number(collected):
+        return True  # an agent that does not say since when
+    return collected - since >= VPN_GRACE
+
+
+def _down_for(entry: dict[str, Any], collected: Any) -> str:
+    since = entry.get("down_since")
+    if not _number(since) or not _number(collected):
+        return ""
+    minutes = int((collected - since) // 60)
+    return f" for {minutes} minutes" if minutes < 120 else f" for {minutes // 60} hours"
+
+
+def vpn_conditions(vpn: Any) -> dict[str, tuple[str, str]]:
+    """Tunnels that stayed down: IPsec site-to-site tunnels this firewall starts, OpenVPN clients and
+    point-to-point servers, WireGuard tunnels whose interface is down and peers it keeps alive itself (an
+    endpoint and a keepalive) with no recent handshake. Remote-access servers and quiet WireGuard peers do not
+    alert: users and traffic come and go."""
+    found: dict[str, tuple[str, str]] = {}
+    if not isinstance(vpn, dict):
+        return found
+    collected = vpn.get("collected")
+
+    def items(kind: str) -> list[dict[str, Any]]:
+        return [t for t in vpn.get(kind) or [] if isinstance(t, dict) and str(t.get("id", ""))]
+
+    for t in items("ipsec"):
+        status = t.get("status")
+        if t.get("mobile") or t.get("responder") or status not in ("down", "partial"):
+            continue
+        if not _down_long_enough(t, collected):
+            continue
+        where = f" to {t['remote']}" if t.get("remote") else ""
+        if status == "down":
+            found[f"vpn:ipsec:{t['id']}"] = ("critical", f"IPsec tunnel {t.get('name')}{where} is down"
+                                                         f"{_down_for(t, collected)}")
+        else:
+            found[f"vpn:ipsec:{t['id']}"] = (
+                "warning", f"IPsec tunnel {t.get('name')}{where} is up, but only {t.get('children_up', '?')} of "
+                           f"{t.get('children_expected', '?')} phase 2 networks are connected")
+    for t in items("openvpn"):
+        if t.get("status") != "down" or not (t.get("mode") == "client" or t.get("p2p")):
+            continue
+        if _down_long_enough(t, collected):
+            what = "client" if t.get("mode") == "client" else "server"
+            detail = f" ({t['detail']})" if t.get("detail") else ""
+            found[f"vpn:openvpn:{t['id']}"] = ("critical", f"OpenVPN {what} {t.get('name')} is down"
+                                                           f"{_down_for(t, collected)}{detail}")
+    for t in items("wireguard"):
+        if t.get("status") == "down" and t.get("interface_up") is False and _down_long_enough(t, collected):
+            found[f"vpn:wireguard:{t['id']}"] = ("critical", f"WireGuard tunnel {t.get('name')} is down "
+                                                             f"(interface {t.get('interface')} is down)")
+            continue
+        for p in t.get("peers") or []:
+            if isinstance(p, dict) and p.get("status") == "down" and _down_long_enough(p, collected):
+                found[f"vpn:wireguard:{t['id']}:{p.get('id')}"] = (
+                    "critical", f"WireGuard peer {p.get('name')} on {t.get('name')} has not connected"
+                                f"{_down_for(p, collected) or ' recently'} (endpoint {p.get('endpoint') or '?'})")
+    return found
 
 
 def _number(value: Any) -> bool:

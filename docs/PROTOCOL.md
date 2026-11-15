@@ -54,6 +54,14 @@ Body: the agent's report.
                 "changed_at": "…", "rolled_back_at": "…"}]}
 ```
 
+`vpn` (agent 0.2.49+) holds the tunnels: `ipsec` (one per enabled phase 1: `id` = ikeid, `status` up, partial,
+down or idle for mobile, `children_up`/`children_expected`, `remote`, `mobile`, `responder`), `openvpn` (`id`
+`server:<vpnid>` or `client:<vpnid>`, `status`, `p2p`, remote access servers' `connections` with `client_id`)
+and `wireguard` (`id` = tun_wg interface, `interface_up`, `peers` with `id` (first 12 hex digits of the
+SHA-256 of the public key), `endpoint`, `keepalive`, `handshake_age`, `status` up, idle or down). A tunnel
+that is down carries `down_since` (Unix time the agent first saw it down); `collected` is the agent's clock.
+WireGuard private and preshared keys are never reported.
+
 `change_guard` is present while a change is on probation. `rollbacks` lists rollbacks not yet
 acknowledged; the agent drops them after a successful check-in, and the server ignores repeats by
 `id`.
@@ -79,6 +87,7 @@ no tasks.
 | `remove_policy` | `{"policy_id"}` | policy |
 | `check_updates`, `refresh_inventory` | | always |
 | `read_logs` | `{"log", "lines", "search"}`: `log` one of system, firewall, dhcp, resolver, gateways, openvpn, ipsec, auth, ntp, routing | always (read only) |
+| `vpn_control` | `{"kind": "ipsec"/"openvpn"/"wireguard", "id", "action": "connect"/"disconnect"/"reconnect"/"kick", "name", "peer"?, "client"?}`: IPsec via `swanctl --initiate`/`--terminate`, OpenVPN by starting, stopping or restarting the instance (`kick`: one remote access user, through the server's management socket), WireGuard by taking the interface down/up and setting each peer's endpoint again (`peer`: that peer only). The target must exist and be enabled in config.xml. The result's `vpn` is the status afterwards. Temporary: nothing in config.xml changes | services |
 | `boot_diag` | | always (read only): a fixed report on how the firewall boots (firmware/device tree, boot disk, boot environments with their versions and loaders, the EFI boot partition's files, past boots, upgrade logs); the boot partition is mounted read-only and other boot environments temporarily, then unmounted |
 | `free_disk_space` | | upgrade |
 | `be_destroy` | `{"name"}`: a boot environment from the reported `boot_environments` | upgrade |

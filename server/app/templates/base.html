@@ -24,7 +24,7 @@
   </button>
   <nav id="topnav">
     {% for href, label, admin_only in [
-      ("/", "Dashboard", False), ("/customers", "Customers", False), ("/devices", "Firewalls", False),
+      ("/", "Dashboard", False), ("/customers", "Customers", False), ("/devices", "Firewalls", False), ("/vpn", "VPN", False),
       ("/configurations", "Configurations", False), ("/schedules", "Schedules", False), ("/alerts", "Alerts", False),
       ("/audit", "Audit log", True)] %}
       {% if not admin_only or user.role == Role.admin %}

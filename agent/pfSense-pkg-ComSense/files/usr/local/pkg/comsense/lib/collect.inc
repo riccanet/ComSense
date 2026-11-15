@@ -675,6 +675,7 @@ function csfm_collect_report() {
 		'update_branch' => csfm_section('update_branch', 'csfm_collect_update_branch'),
 		'ddns' => function_exists('csfm_collect_ddns') ? csfm_section('ddns', 'csfm_collect_ddns') : array(),
 		'boot_environments' => csfm_section('boot_environments', 'csfm_boot_environments'),
+		'vpn' => function_exists('csfm_collect_vpn') ? csfm_section('vpn', 'csfm_collect_vpn') : array(),
 		'config' => array(
 			'sha256' => (string)@hash_file('sha256', csfm_config_file()),
 			'revision' => (string)csfm_cfg_get('revision/description', ''),

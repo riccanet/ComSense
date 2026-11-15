@@ -206,6 +206,27 @@ def build_server(settings: Settings) -> MCPServer:
         return await _call(apiops.get_network, firewall_id, query)
 
     @server.tool(annotations=READ)
+    async def get_vpn(firewall_id: str = "", problems_only: bool = False) -> dict[str, Any]:
+        """VPN tunnels (IPsec, OpenVPN, WireGuard) with their status, for one firewall or (firewall_id empty)
+        every firewall. status is up, partial, down, idle or unknown; alerting marks tunnels that raise alerts when
+        down (site-to-site IPsec, OpenVPN clients and point-to-point servers, WireGuard peers kept alive by the
+        firewall). report has the detail: phase 2 counts, connected OpenVPN users, WireGuard handshakes."""
+        _who()
+        return await _call(apiops.get_vpn, firewall_id or None, problems_only)
+
+    @server.tool(annotations=WRITE)
+    async def vpn_control(firewall_id: str, type: str, tunnel: str, action: str, peer: str = "",  # noqa: A002
+                          client: str = "") -> dict[str, Any]:
+        """Connect, disconnect or reconnect a VPN tunnel (needs an operator or admin key). type is ipsec,
+        openvpn or wireguard; tunnel is the id from get_vpn; action is connect, disconnect, reconnect, or kick
+        (disconnect one user from an OpenVPN remote access server: client is the connection's client_id).
+        WireGuard: peer reconnects one peer only. Disconnecting stops traffic through the tunnel (temporary: a
+        tunnel set to start by itself comes back); confirm with the user first. Follow up with get_task."""
+        who = _who()
+        return await _call(apiops.vpn_control, settings, who, firewall_id, type, tunnel, action, peer, client,
+                           _client_ip.get())
+
+    @server.tool(annotations=READ)
     async def list_tasks(firewall_id: str, limit: int = 20) -> list[dict[str, Any]]:
         """A firewall's recent tasks with their status and output."""
         _who()

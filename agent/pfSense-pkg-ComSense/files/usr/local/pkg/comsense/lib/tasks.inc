@@ -54,6 +54,7 @@ $csfm_task_capability = array(
 	'config_edit' => 'policy',
 	'reload_filter' => 'policy',
 	'boot_diag' => null,
+	'vpn_control' => 'services',
 );
 
 /* Tasks that change the configuration and run under the change guard (guard.inc). */
