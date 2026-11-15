@@ -146,6 +146,11 @@
         <input name="maxmind_key" type="password" value="" autocomplete="new-password"
                placeholder="{{ "saved; leave empty to keep it" if content.get("maxmind_key") else "license key" }}"></label>
     </div>
+    <label class="check"><input type="checkbox" name="limit_port_forwards"{% if content.get("limit_port_forwards") %} checked{% endif %}>
+      Limit port forwards to this alias: every port forward on a WAN interface whose source is <strong>any</strong>
+      gets {% if geoip_alias %}<span class="mono">{{ geoip_alias }}</span>{% else %}the region's IPv4 alias{% endif %} as
+      its source (and so does its linked firewall rule). Port forwards added later are limited the next time the
+      configuration is applied; unassigning puts the ones it changed back to <strong>any</strong>.</label>
     <p class="small muted">On each assigned firewall: pfBlockerNG is installed if it is missing, the chosen region is set
     to <strong>Alias Permit</strong> with these countries, and every other GeoIP region (and Top Spammers, Proxy and
     Satellite) is turned off. That builds the aliases {% if geoip_alias %}<span class="mono">{{ geoip_alias }}</span> and

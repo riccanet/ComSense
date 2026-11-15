@@ -165,7 +165,8 @@ def content_from_form(ptype: PolicyType, form) -> dict[str, Any]:
 
         return {"permit": str(form.get("permit", "")), "countries4": codes("countries4"),
                 "countries6": codes("countries6"), "maxmind_account": str(form.get("maxmind_account", "")).strip(),
-                "maxmind_key": str(form.get("maxmind_key", "")).strip()}
+                "maxmind_key": str(form.get("maxmind_key", "")).strip(),
+                "limit_port_forwards": form.get("limit_port_forwards") == "on"}
 
     raw = str(form.get("content", ""))
     try:

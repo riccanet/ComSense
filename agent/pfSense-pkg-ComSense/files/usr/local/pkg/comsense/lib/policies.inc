@@ -1148,6 +1148,84 @@ function csfm_pfblocker_run($arg) {
 	return array($rc, $out);
 }
 
+/*
+ * Port forwards open to anyone (source "any") on a WAN interface, limited to a GeoIP alias: the forward's source
+ * and its linked filter rule's source become the alias. Returns the fingerprints changed. ComSense port forward
+ * configurations are left alone (their own content says what they allow).
+ */
+function csfm_wan_interfaces() {
+	$wan = array('wan' => true);
+	foreach ((array)csfm_cfg_get('interfaces', array()) as $key => $if) {
+		if (!is_array($if)) {
+			continue;
+		}
+		$ip = (string)($if['ipaddr'] ?? '');
+		if ((string)($if['gateway'] ?? '') !== '' || (string)($if['gatewayv6'] ?? '') !== ''
+		    || in_array($ip, array('dhcp', 'pppoe', 'pptp', 'l2tp'), true)) {
+			$wan[(string)$key] = true;
+		}
+	}
+	return $wan;
+}
+
+function csfm_source_is_any($src) {
+	if (!is_array($src)) {
+		return true;
+	}
+	return !isset($src['not']) && (string)($src['address'] ?? '') === '' && (string)($src['network'] ?? '') === '';
+}
+
+/* Set the source of the port forwards with these fingerprints (and of their linked filter rules). */
+function csfm_set_forward_sources($select, $source) {
+	$rules = array_values((array)csfm_cfg_get('nat/rule', array()));
+	$filters = array_values((array)csfm_cfg_get('filter/rule', array()));
+	$changed = array();
+	foreach ($rules as $i => $nat) {
+		$fp = csfm_nat_fingerprint($nat);
+		if (!$select($nat, $fp)) {
+			continue;
+		}
+		$rules[$i]['source'] = $source;
+		$changed[] = $fp;
+		$assoc = (string)($nat['associated-rule-id'] ?? '');
+		if ($assoc !== '' && $assoc !== 'pass') {
+			foreach ($filters as $k => $f) {
+				if ((string)($f['associated-rule-id'] ?? '') === $assoc) {
+					$filters[$k]['source'] = $source;
+				}
+			}
+		}
+	}
+	if ($changed) {
+		csfm_cfg_set('nat/rule', $rules);
+		csfm_cfg_set('filter/rule', $filters);
+	}
+	return $changed;
+}
+
+function csfm_geoip_limit_forwards($alias) {
+	$wan = csfm_wan_interfaces();
+	return csfm_set_forward_sources(function ($nat) use ($wan) {
+		if (!empty($nat['comsense_policy']) || !csfm_source_is_any($nat['source'] ?? null)) {
+			return false;
+		}
+		foreach (explode(',', (string)($nat['interface'] ?? '')) as $if) {
+			if (isset($wan[$if])) {
+				return true;
+			}
+		}
+		return false;
+	}, array('address' => $alias));
+}
+
+/* Back to "any" for the forwards this configuration limited, where the source is still the alias. */
+function csfm_geoip_unlimit_forwards($fingerprints, $alias) {
+	$fingerprints = array_flip((array)$fingerprints);
+	return csfm_set_forward_sources(function ($nat, $fp) use ($fingerprints, $alias) {
+		return isset($fingerprints[$fp]) && (string)($nat['source']['address'] ?? '') === $alias && !isset($nat['source']['not']);
+	}, array('any' => ''));
+}
+
 function csfm_apply_geoip($pid, $content, $prev) {
 	global $csfm_geoip_regions, $csfm_geoip_other;
 	$region = (string)($content['permit'] ?? '');
@@ -1250,10 +1328,51 @@ function csfm_apply_geoip($pid, $content, $prev) {
 		throw $e;
 	}
 	$log[] = "{$alias} built: " . str_replace(',', ', ', $countries4) . ' permitted; every other GeoIP region off.';
-	return array('items' => array($alias), 'saved' => $saved, 'summary' => implode("\n", $log));
+
+	/* Port forwards open to anyone on a WAN interface take the alias as their source (and are put back to "any"
+	   when the option is turned off or the configuration removed). */
+	$limited = array_values((array)($prev['limited'] ?? array()));
+	if (!empty($content['limit_port_forwards'])) {
+		$new = csfm_geoip_limit_forwards($alias);
+		if ($new) {
+			write_config("ComSense: pfBlocker GeoIP policy {$pid} limited " . count($new) . " port forward(s) to {$alias}");
+			csfm_reload(array('filter'));
+			$err = function_exists('csfm_rules_error') ? csfm_rules_error() : '';
+			if ($err !== '') {
+				csfm_geoip_unlimit_forwards($new, $alias);
+				write_config("ComSense: undid limiting port forwards to {$alias}");
+				csfm_reload(array('filter'));
+				throw new CsfmPolicyError("The firewall rules failed to load with port forwards limited to {$alias}, so "
+				    . "they were put back. pf said: {$err}");
+			}
+			$limited = array_values(array_unique(array_merge($limited, $new)));
+			$log[] = count($new) . " port forward(s) open to any source on WAN now allow only {$alias}.";
+		} else {
+			$log[] = 'No port forward on WAN was open to any source.';
+		}
+	} elseif ($limited) {
+		$back = csfm_geoip_unlimit_forwards($limited, $alias);
+		if ($back) {
+			write_config("ComSense: pfBlocker GeoIP policy {$pid} no longer limits port forwards");
+			csfm_reload(array('filter'));
+			$log[] = count($back) . ' port forward(s) open to any source again.';
+		}
+		$limited = array();
+	}
+	return array('items' => array($alias), 'saved' => $saved, 'limited' => $limited, 'summary' => implode("\n", $log));
 }
 
 function csfm_remove_geoip($pid, $prev) {
+	/* The port forwards this configuration limited go back to "any" first. */
+	$limited = (array)($prev['limited'] ?? array());
+	$back = array();
+	foreach ((array)($prev['items'] ?? array()) as $alias) {
+		$back = array_merge($back, $limited ? csfm_geoip_unlimit_forwards($limited, $alias) : array());
+	}
+	if ($back) {
+		write_config("ComSense: pfBlocker GeoIP policy {$pid} removed; port forwards open to any source again");
+		csfm_reload(array('filter'));
+	}
 	/* A port forward or rule still using the alias would stop the rules loading if pfBlockerNG dropped it. */
 	$used = array_values(array_filter((array)($prev['items'] ?? array()), function ($alias) {
 		return csfm_alias_in_use($alias) || csfm_alias_in_use(preg_replace('/_v4$/', '_v6', $alias));

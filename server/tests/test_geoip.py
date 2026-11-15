@@ -61,6 +61,12 @@ def test_saved_encrypted_kept_when_left_empty_and_sent_to_the_firewall_in_clear(
     client.post(f"/configurations/{policy.id}", data={**form, "countries4": "US, US_rep, CA", "enabled": "true"})
     db.refresh(policy)
     assert policy.content["maxmind_key"] == stored and "CA" in policy.content["countries4"]
+    assert policy.content["limit_port_forwards"] is False
+    # The option to limit WAN port forwards open to any source to the alias.
+    client.post(f"/configurations/{policy.id}", data={**form, "limit_port_forwards": "on", "enabled": "true"})
+    db.refresh(policy)
+    assert policy.content["limit_port_forwards"] is True
+    assert "port forwards open to any source limited to pfB_NAmerica_v4" in client.get("/configurations/geoip").text
     # Only what goes to the firewall has it in clear.
     from app.services.policies import policy_payload
 
@@ -74,7 +80,7 @@ def test_validation():
             "maxmind_key": "enc:x"}
     geoip.validate(good)
     for bad in ({"permit": "mars"}, {"countries4": ["usa"]}, {"countries4": []}, {"maxmind_account": "abc"},
-                {"maxmind_key": "plain"}):
+                {"maxmind_key": "plain"}, {"limit_port_forwards": "yes"}):
         with pytest.raises(ValueError):
             geoip.validate({**good, **bad})
 

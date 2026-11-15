@@ -1041,10 +1041,25 @@ def test_full_lifecycle(env):
     cfg = fw_config(env)
     cfg["installedpackages"]["pfblockerngeurope"] = {"config": [{"action": "Deny_Inbound", "countries4": "RU"}]}
     cfg["installedpackages"]["pfblockernglistsv4"] = {"config": [{"aliasname": "PRI1", "action": "Deny_Both"}]}
+    # Port forwards: open to any on WAN (with its linked filter rule), open to any on LAN, and one already limited.
+    cfg["interfaces"] = {"wan": {"if": "vtnet0", "ipaddr": "dhcp"}, "lan": {"if": "vtnet1", "ipaddr": "192.168.1.1"},
+                         "opt1": {"if": "vtnet2", "ipaddr": "203.0.113.2", "gateway": "WAN2GW"}}
+    cfg["nat"] = {"rule": [
+        {"source": {"any": ""}, "destination": {"network": "wanip", "port": "3389"}, "protocol": "tcp",
+         "target": "192.168.1.20", "local-port": "3389", "interface": "wan", "descr": "RDP", "associated-rule-id": "nat_1"},
+        {"source": {"any": ""}, "destination": {"network": "opt1ip", "port": "81"}, "protocol": "tcp",
+         "target": "192.168.1.30", "local-port": "81", "interface": "opt1", "descr": "DVR"},
+        {"source": {"any": ""}, "destination": {"network": "lanip", "port": "8080"}, "protocol": "tcp",
+         "target": "192.168.1.40", "local-port": "80", "interface": "lan", "descr": "inside"},
+        {"source": {"address": "203.0.113.9"}, "destination": {"network": "wanip", "port": "22"}, "protocol": "tcp",
+         "target": "192.168.1.50", "local-port": "22", "interface": "wan", "descr": "vendor"}]}
+    cfg["filter"] = {"rule": [{"source": {"any": ""}, "interface": "wan", "associated-rule-id": "nat_1", "descr": "NAT RDP"},
+                              {"source": {"any": ""}, "interface": "lan", "descr": "LAN out"}]}
     (env["fw"] / "config.json").write_text(json.dumps(cfg))
     with env["db"]() as db:
         content = geoip_svc.protect_key({"permit": "northamerica", "countries4": ["US", "US_rep"], "countries6": ["US"],
-                                         "maxmind_account": "282790", "maxmind_key": "AbC123_test_key"}, None, "s" * 48)
+                                         "maxmind_account": "282790", "maxmind_key": "AbC123_test_key",
+                                         "limit_port_forwards": True}, None, "s" * 48)
         assert content["maxmind_key"].startswith("enc:") and "AbC123" not in content["maxmind_key"]
         geo = Policy(name="geoip", type=PolicyType.geoip, content=content)
         db.add(geo)
@@ -1070,6 +1085,12 @@ def test_full_lifecycle(env):
                                                                                           "pfB_NAmerica_v6"}
     actions = (env["fw"] / "actions.log").read_text()
     assert "pfblockerng dc" in actions and "pfblockerng updateip" in actions
+    # The WAN forwards open to any (on wan and on opt1, a WAN with a gateway) now allow only the alias, with the
+    # linked filter rule; the LAN one, the already limited one and other filter rules are as they were.
+    srcs = {r["descr"]: r["source"] for r in cfg["nat"]["rule"]}
+    assert srcs == {"RDP": {"address": "pfB_NAmerica_v4"}, "DVR": {"address": "pfB_NAmerica_v4"},
+                    "inside": {"any": ""}, "vendor": {"address": "203.0.113.9"}}, srcs
+    assert [f["source"] for f in cfg["filter"]["rule"]] == [{"address": "pfB_NAmerica_v4"}, {"any": ""}]
     with env["db"]() as db:
         # While Force Reload IP ran (3 seconds here), the agent reported its progress, keeping the firewall online.
         applied = db.scalar(select(Task).where(Task.type == TaskType.apply_policy).order_by(Task.id.desc()))
@@ -1079,10 +1100,11 @@ def test_full_lifecycle(env):
         assert str(geo_id) in (dev.applied_policies or {})
         stored = db.scalar(select(Task).where(Task.type == TaskType.apply_policy).order_by(Task.id.desc()))
         assert "AbC123" not in json.dumps(stored.payload)  # the task keeps the key encrypted
-    # A port forward using the alias keeps the GeoIP settings when the configuration is unassigned.
+    # Unassigning puts the forwards it limited back to any; one limited by hand keeps the alias in use, so the
+    # GeoIP settings stay.
     cfg = fw_config(env)
-    cfg.setdefault("nat", {})["rule"] = [{"source": {"address": "pfB_NAmerica_v4"}, "destination": {"network": "wanip", "port": "443"},
-                                          "protocol": "tcp", "target": "192.168.1.10", "local-port": "443", "interface": "wan", "descr": "RDG"}]
+    cfg["nat"]["rule"].append({"source": {"address": "pfB_NAmerica_v4"}, "destination": {"network": "wanip", "port": "443"},
+                               "protocol": "tcp", "target": "192.168.1.10", "local-port": "443", "interface": "wan", "descr": "RDG"})
     (env["fw"] / "config.json").write_text(json.dumps(cfg))
     with env["db"]() as db:
         for a in db.scalars(select(PolicyAssignment).where(PolicyAssignment.policy_id == geo_id)):
@@ -1094,7 +1116,10 @@ def test_full_lifecycle(env):
         removal = db.scalar(select(Task).where(Task.type == TaskType.remove_policy).order_by(Task.id.desc()))
         assert "still used by port forwards" in removal.output, removal.output
     cfg = fw_config(env)
-    del cfg["nat"], cfg["aliases"]
+    srcs = {r["descr"]: r["source"] for r in cfg["nat"]["rule"]}
+    assert srcs["RDP"] == {"any": ""} and srcs["DVR"] == {"any": ""} and srcs["RDG"] == {"address": "pfB_NAmerica_v4"}
+    assert cfg["filter"]["rule"][0]["source"] == {"any": ""}
+    del cfg["nat"], cfg["aliases"], cfg["filter"], cfg["interfaces"]
     for s in list(cfg["installedpackages"]):
         if s.startswith("pfblockerng"):
             del cfg["installedpackages"][s]

@@ -63,6 +63,8 @@ def validate(content: dict[str, Any]) -> None:
     key = str(content.get("maxmind_key") or "")
     if not key.startswith(ENCRYPTED) or len(key) <= len(ENCRYPTED):
         raise _error("Enter the MaxMind license key")
+    if not isinstance(content.get("limit_port_forwards", False), bool):
+        raise _error("limit_port_forwards must be true or false")
 
 
 def protect_key(content: dict[str, Any], previous: dict[str, Any] | None, secret_key: str) -> dict[str, Any]:
@@ -120,6 +122,7 @@ def capture(settings: Settings, backup: Backup) -> dict[str, Any]:
         "countries6": split(region.get("countries6")),
         "maxmind_account": ip.get("maxmind_account", ""),
         "maxmind_key": ENCRYPTED + encrypt_secret(settings.secret_key, key) if key else "",
+        "limit_port_forwards": True,
     }
 
 
@@ -128,4 +131,7 @@ def summary(content: dict[str, Any]) -> str:
     if region not in REGIONS:
         return ""
     countries = ", ".join(c for c in content.get("countries4") or [] if not c.endswith("_rep"))
-    return f"Permit {countries or 'nothing'} as {alias_name(region)}; every other region off"
+    text = f"Permit {countries or 'nothing'} as {alias_name(region)}; every other region off"
+    if content.get("limit_port_forwards"):
+        text += f"; WAN port forwards open to any source limited to {alias_name(region)}"
+    return text

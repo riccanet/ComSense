@@ -139,7 +139,7 @@ under Configurations > pfBlocker GeoIP, which can copy the settings from a firew
 
 ```json
 {"permit": "northamerica", "countries4": ["US", "US_rep"], "countries6": ["US"],
- "maxmind_account": "282790", "maxmind_key": "enc:..."}
+ "maxmind_account": "282790", "maxmind_key": "enc:...", "limit_port_forwards": true}
 ```
 
 * `permit`: `africa`, `antarctica`, `asia`, `europe`, `northamerica`, `oceania` or `southamerica`.
@@ -147,6 +147,12 @@ under Configurations > pfBlocker GeoIP, which can copy the settings from a firew
   registers to the country).
 * `maxmind_account` / `maxmind_key`: GeoIP needs a (free) MaxMind account. The key is stored encrypted with the
   server's secret key, shown hidden, and sent in clear only to the firewall.
+* `limit_port_forwards` (optional, default false): every port forward on a WAN interface (`wan`, or any interface
+  with a gateway or a DHCP/PPPoE address) whose source is **any** gets the permitted region's IPv4 alias
+  (`pfB_NAmerica_v4`) as its source, and so does its linked filter rule. ComSense port forward configurations
+  are left alone. Forwards added later are limited the next time the configuration is applied. Turning the
+  option off, or removing the configuration, puts the forwards it changed back to **any**. If the rules do not
+  load with the forwards limited, they are put back and the apply fails.
 
 The agent installs pfBlockerNG when it is missing (refused when the firewall's package repository is for a
 newer pfSense: upgrade pfSense first), writes the GeoIP sections, runs pfBlockerNG's MaxMind download and
