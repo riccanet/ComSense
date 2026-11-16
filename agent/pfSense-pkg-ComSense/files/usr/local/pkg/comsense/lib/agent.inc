@@ -123,6 +123,13 @@ function csfm_cycle() {
 		csfm_record_error('Could not assign interfaces again after the upgrade: ' . $e->getMessage());
 	}
 
+	if (function_exists('csfm_geoip_sync_lan_tables')) {
+		try {
+			csfm_geoip_sync_lan_tables();
+		} catch (Throwable $e) {
+			csfm_log('Could not refresh the GeoIP port forward tables: ' . $e->getMessage(), LOG_WARNING);
+		}
+	}
 	try {
 		$report = csfm_collect_report();
 		$resp = $client->postJson('/checkin', $report);

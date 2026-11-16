@@ -157,6 +157,10 @@ under Configurations > pfBlocker GeoIP, which can copy the settings from a firew
   are left alone. Forwards added later are limited the next time the configuration is applied. Turning the
   option off, or removing the configuration, puts the forwards it changed back to **any**. If the rules do not
   load with the forwards limited, they are put back and the apply fails.
+  pfSense copies `pfB_<region>_v4`'s addresses into `CS_<region>_v4_LAN` only when it rebuilds the whole ruleset,
+  while pfBlockerNG refreshes its own list in place; so the agent (0.2.52+) refreshes the `CS_` table itself
+  (`pfctl -T replace`) whenever pfBlockerNG's list file changes, and a country added in pfBlockerNG reaches the
+  port forwards within a minute of its update.
 
 The agent installs pfBlockerNG when it is missing (refused when the firewall's package repository is for a
 newer pfSense: upgrade pfSense first), writes the GeoIP sections, runs pfBlockerNG's MaxMind download and

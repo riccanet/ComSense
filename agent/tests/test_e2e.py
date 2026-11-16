@@ -1096,6 +1096,21 @@ def test_full_lifecycle(env):
     lan_alias = next(a for a in cfg["aliases"]["alias"] if a["name"] == "CS_NAmerica_v4_LAN")
     assert lan_alias["type"] == "network"
     assert lan_alias["address"] == "pfB_NAmerica_v4 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
+    # pfBlocker refreshes pfB_NAmerica_v4 in place (a country added, an hourly update); pfSense would copy it into
+    # CS_NAmerica_v4_LAN only at the next full ruleset reload, so the agent refreshes that table itself, once per
+    # change of the list.
+    tables = env["fw"] / "aliastables"
+    tables.mkdir(exist_ok=True)
+    (tables / "pfB_NAmerica_v4.txt").write_text("3.0.0.0/15\n24.48.0.0/15\n")  # US, Canada
+    before = (env["fw"] / "actions.log").read_text()
+    agent(env, "run")
+    agent(env, "run")
+    assert (env["fw"] / "actions.log").read_text()[len(before):].count("pfctl -t CS_NAmerica_v4_LAN -T replace") == 1
+    assert (env["fw"] / "table-CS_NAmerica_v4_LAN.txt").read_text().split() == [
+        "3.0.0.0/15", "24.48.0.0/15", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+    (tables / "pfB_NAmerica_v4.txt").write_text("3.0.0.0/15\n24.48.0.0/15\n99.224.0.0/11\n")
+    agent(env, "run")
+    assert "99.224.0.0/11" in (env["fw"] / "table-CS_NAmerica_v4_LAN.txt").read_text()
     with env["db"]() as db:
         # While Force Reload IP ran (3 seconds here), the agent reported its progress, keeping the firewall online.
         applied = db.scalar(select(Task).where(Task.type == TaskType.apply_policy).order_by(Task.id.desc()))

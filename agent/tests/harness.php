@@ -80,9 +80,12 @@ if (!file_exists(CSFM_FILTER_SYNC_BIN)) {
 	chmod(CSFM_FILTER_SYNC_BIN, 0755);
 }
 define('CSFM_PFCTL', $dir . '/pfctl');
+/* pfBlocker's URL table files, as /var/db/aliastables holds them. */
+define('CSFM_ALIASTABLES_DIR', $dir . '/aliastables');
 if (!file_exists(CSFM_PFCTL)) {
 	$states = escapeshellarg($dir . '/states.txt');
 	file_put_contents(CSFM_PFCTL, "#!/bin/sh\nif [ \"\$1\" = -si ]; then echo \"  current entries \$(cat {$states} 2>/dev/null || echo 5)\"; exit 0; fi\n"
+	    . "if [ \"\$3\" = -T ] && [ \"\$4\" = replace ]; then echo \"pfctl -t \$2 -T replace\" >> " . escapeshellarg($dir . '/actions.log') . "; cp \"\$6\" " . escapeshellarg($dir . '/table-') . "\$2.txt; echo '3 addresses added.'; exit 0; fi\n"
 	    . "if [ \"\$1\" = -nf ] && grep -q BADTABLE \"\$2\"; then echo \"\$2:107: cannot load \\\"/var/db/aliastables/BADTABLE.txt\\\": Invalid argument\"; exit 1; fi\nexit 0\n");
 	chmod(CSFM_PFCTL, 0755);
 }

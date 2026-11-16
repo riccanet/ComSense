@@ -1234,6 +1234,68 @@ function csfm_geoip_ensure_lan_alias($alias) {
 	return $name;
 }
 
+if (!defined('CSFM_ALIASTABLES_DIR')) {
+	define('CSFM_ALIASTABLES_DIR', '/var/db/aliastables');
+}
+
+/*
+ * Keep each CS_<region>_LAN table in step with its pfBlocker list. pfSense copies a nested URL table alias's
+ * entries into the outer alias only when it rebuilds the whole ruleset; pfBlocker's own updates refresh its
+ * table in place, so without this the combined alias keeps the old countries (a country added in pfBlocker
+ * stays blocked on the port forwards) until the next filter reload. Runs every cycle; does work only when the
+ * pfBlocker list file changed. Returns the tables it refreshed.
+ */
+function csfm_geoip_sync_lan_tables() {
+	$synced = array();
+	$state = csfm_state();
+	$done = is_array($state['cs_lan_tables'] ?? null) ? $state['cs_lan_tables'] : array();
+	$seen = array();
+	foreach ((array)csfm_cfg_get('aliases/alias', array()) as $a) {
+		$name = (string)($a['name'] ?? '');
+		if (!preg_match('/^CS_[A-Za-z0-9_]+_LAN$/', $name)) {
+			continue;
+		}
+		$parts = preg_split('/\s+/', trim((string)($a['address'] ?? '')));
+		$pfb = $parts[0] ?? '';
+		if (!preg_match('/^pfB_[A-Za-z0-9_]+$/', $pfb)) {
+			continue;
+		}
+		$file = CSFM_ALIASTABLES_DIR . "/{$pfb}.txt";
+		$mtime = @filemtime($file);
+		if ($mtime === false) {
+			continue;
+		}
+		$seen[$name] = true;
+		$key = $mtime . ':' . @filesize($file);
+		if (($done[$name] ?? '') === $key) {
+			continue;
+		}
+		$entries = array_filter(array_map('trim', (array)@file($file, FILE_IGNORE_NEW_LINES)), function ($l) {
+			return $l !== '' && $l[0] !== '#';
+		});
+		if (!$entries) {
+			continue;  /* pfBlocker mid-update: try again next cycle */
+		}
+		$tmp = tempnam(sys_get_temp_dir(), 'csfm-lan');
+		file_put_contents($tmp, implode("\n", array_merge($entries, array_slice($parts, 1))) . "\n");
+		list($rc, $out) = csfm_exec(escapeshellarg(CSFM_PFCTL) . ' -t ' . escapeshellarg($name) . ' -T replace -f '
+		    . escapeshellarg($tmp), 60);
+		@unlink($tmp);
+		if ($rc === 0) {
+			$done[$name] = $key;
+			$synced[] = $name;
+			csfm_log("{$name} refreshed from {$pfb}: " . trim($out));
+		} else {
+			csfm_log("Could not refresh {$name} from {$pfb}: " . csfm_truncate(trim($out), 200), LOG_WARNING);
+		}
+	}
+	$done = array_intersect_key($done, $seen);
+	if ($done !== ($state['cs_lan_tables'] ?? array())) {
+		csfm_state_set('cs_lan_tables', $done);
+	}
+	return $synced;
+}
+
 function csfm_geoip_remove_lan_alias($alias) {
 	$name = csfm_geoip_lan_alias_name($alias);
 	if (csfm_alias_in_use($name)) {
